@@ -1,0 +1,11 @@
+services:
+  aura-api:
+    build:
+      context: ./backend
+    ports:
+      - "8000:8000"
+    environment:
+      AURA_ENVIRONMENT: development
+      AURA_SPEECH_PROVIDER: none
+      AURA_CORS_ORIGINS: http://localhost:3000,http://localhost:5173,http://localhost:8080
+    restart: unless-stopped
