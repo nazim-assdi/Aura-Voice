@@ -4,6 +4,7 @@ import 'package:aura_voice_ai/app.dart';
 void main() {
   testWidgets('renders Aura Voice AI app shell', (tester) async {
     await tester.pumpWidget(const AuraVoiceApp());
+    await tester.pump(const Duration(seconds: 5));
     expect(find.text('AURA'), findsOneWidget);
     expect(find.text('VOICE AI'), findsOneWidget);
     expect(find.text('Home'), findsOneWidget);
