@@ -1,0 +1,161 @@
+name: Build all platforms
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  flutter-check:
+    name: Flutter analyze and tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Prepare web project
+        working-directory: app
+        run: flutter create --platforms=web .
+      - name: Resolve packages
+        working-directory: app
+        run: flutter pub get
+      - name: Format check
+        working-directory: app
+        run: dart format --output=none --set-exit-if-changed lib test
+      - name: Analyze
+        working-directory: app
+        run: flutter analyze
+      - name: Widget tests
+        working-directory: app
+        run: flutter test
+
+  android:
+    name: Android APK and AAB
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Build release artifacts
+        working-directory: app
+        run: |
+          flutter create --platforms=android .
+          flutter pub get
+          flutter build apk --release
+          flutter build appbundle --release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: aura-voice-android
+          path: |
+            app/build/app/outputs/flutter-apk/app-release.apk
+            app/build/app/outputs/bundle/release/app-release.aab
+
+  web:
+    name: Web
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Build web
+        working-directory: app
+        run: |
+          flutter create --platforms=web .
+          flutter pub get
+          flutter build web --release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: aura-voice-web
+          path: app/build/web/
+
+  linux:
+    name: Linux desktop
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Linux desktop dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Build Linux
+        working-directory: app
+        run: |
+          flutter create --platforms=linux .
+          flutter pub get
+          flutter build linux --release
+      - name: Package Linux bundle
+        run: |
+          cd app/build/linux/x64/release/bundle
+          tar -czf ../../../../../../aura-voice-linux-x64.tar.gz .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: aura-voice-linux-x64
+          path: aura-voice-linux-x64.tar.gz
+
+  windows:
+    name: Windows desktop
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Build Windows
+        working-directory: app
+        run: |
+          flutter create --platforms=windows .
+          flutter pub get
+          flutter build windows --release
+      - name: Package Windows bundle
+        shell: pwsh
+        run: Compress-Archive -Path app/build/windows/x64/runner/Release/* -DestinationPath aura-voice-windows-x64.zip -Force
+      - uses: actions/upload-artifact@v4
+        with:
+          name: aura-voice-windows-x64
+          path: aura-voice-windows-x64.zip
+
+  apple:
+    name: macOS and iOS (unsigned)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Build Apple targets
+        working-directory: app
+        run: |
+          flutter create --platforms=macos,ios .
+          flutter pub get
+          flutter build macos --release
+          flutter build ios --release --no-codesign
+      - name: Package macOS app
+        run: ditto -c -k --sequesterRsrc --keepParent app/build/macos/Build/Products/Release/aura_voice_ai.app aura-voice-macos.zip
+      - name: Package unsigned iOS app
+        run: ditto -c -k --sequesterRsrc --keepParent app/build/ios/iphoneos/Runner.app aura-voice-ios-unsigned.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: aura-voice-apple
+          path: |
+            aura-voice-macos.zip
+            aura-voice-ios-unsigned.zip
