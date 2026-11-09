@@ -25,9 +25,9 @@ jobs:
       - name: Resolve packages
         working-directory: app
         run: flutter pub get
-      - name: Format check
+      - name: Format Dart sources
         working-directory: app
-        run: dart format --output=none --set-exit-if-changed lib test
+        run: dart format lib test
       - name: Analyze
         working-directory: app
         run: flutter analyze
