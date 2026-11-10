@@ -135,13 +135,13 @@ class _HeroPanel extends StatelessWidget {
       gradient: const LinearGradient(
         colors: [Color(0xFF183447), Color(0xFF25264A), Color(0xFF171C32)],
         begin: Alignment.topLeft, end: Alignment.bottomRight),
-      border: Border.all(color: Colors.white.withOpacity(0.09)),
+      border: Border.all(color: Colors.white.withValues(alpha: 0.09)),
     ),
     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Row(children: [
         const _StatusChip(label: 'CREATIVE STUDIO'),
         const Spacer(),
-        Icon(Icons.auto_awesome_rounded, color: AuraTheme.mint.withOpacity(0.9)),
+        Icon(Icons.auto_awesome_rounded, color: AuraTheme.mint.withValues(alpha: 0.9)),
       ]),
       const SizedBox(height: 28),
       Text('Shape sound.\nExpress more.',
@@ -180,11 +180,11 @@ class _FeatureCard extends StatelessWidget {
     padding: const EdgeInsets.all(15),
     decoration: BoxDecoration(
       color: AuraTheme.panel, borderRadius: BorderRadius.circular(19),
-      border: Border.all(color: Colors.white.withOpacity(0.055))),
+      border: Border.all(color: Colors.white.withValues(alpha: 0.055))),
     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Container(
         height: 38, width: 38,
-        decoration: BoxDecoration(color: data.accent.withOpacity(0.12),
+        decoration: BoxDecoration(color: data.accent.withValues(alpha: 0.12),
           borderRadius: BorderRadius.circular(12)),
         child: Icon(data.icon, color: data.accent, size: 21)),
       const SizedBox(height: 18),
@@ -205,8 +205,8 @@ class _StatusChip extends StatelessWidget {
   Widget build(BuildContext context) => Container(
     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
     decoration: BoxDecoration(
-      color: Colors.white.withOpacity(0.07), borderRadius: BorderRadius.circular(30),
-      border: Border.all(color: Colors.white.withOpacity(0.07))),
+      color: Colors.white.withValues(alpha: 0.07), borderRadius: BorderRadius.circular(30),
+      border: Border.all(color: Colors.white.withValues(alpha: 0.07))),
     child: Text(label, style: Theme.of(context).textTheme.labelSmall?.copyWith(
       color: Colors.white70, letterSpacing: 1.1, fontWeight: FontWeight.w700)),
   );
