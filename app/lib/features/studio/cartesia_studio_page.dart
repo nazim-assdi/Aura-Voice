@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
@@ -30,7 +31,7 @@ class _CartesiaStudioPageState extends State<CartesiaStudioPage> {
   bool _playing = false;
   String? _error;
   String? _notice;
-  List<int>? _audioBytes;
+  Uint8List? _audioBytes;
 
   @override
   void initState() {
