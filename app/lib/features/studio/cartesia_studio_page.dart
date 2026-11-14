@@ -352,7 +352,7 @@ class _CartesiaStudioPageState extends State<CartesiaStudioPage> {
 
   Widget _languageDropdown() {
     return DropdownButtonFormField<String>(
-      value: _language,
+      initialValue: _language,
       decoration: const InputDecoration(
         labelText: 'Language',
         filled: true,
@@ -373,7 +373,7 @@ class _CartesiaStudioPageState extends State<CartesiaStudioPage> {
 
   Widget _voiceDropdown() {
     return DropdownButtonFormField<String>(
-      value: _selectedVoiceId,
+      initialValue: _selectedVoiceId,
       decoration: InputDecoration(
         labelText: 'Cartesia voice',
         filled: true,
