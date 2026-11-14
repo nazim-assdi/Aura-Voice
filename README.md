@@ -2,7 +2,7 @@
 
 **Premium omni-voice and emotion studio · Hybrid cloud + optional on-device engines**
 
-> Status: early development scaffold (v0.1.0). This repository establishes the product architecture and a runnable UI/API foundation. Voice cloning, production TTS, real-time call routing, watermark embedding, and app-store-ready signing are not implemented yet.
+> Status: early development (v0.2.0). The repository includes a runnable cross-platform UI/API foundation and an optional Cartesia Sonic text-to-speech provider. Voice cloning, real-time conversational streaming, call routing, watermark embedding, and app-store-ready signing are not implemented yet.
 
 Aura Voice AI is designed as a cross-platform voice workspace for Android, iOS, Windows, macOS, Linux, and Web. The hybrid architecture keeps the interface independent from speech engines so local and hosted providers can be added without rewriting the app.
 
@@ -28,15 +28,16 @@ Aura Voice AI is designed as a cross-platform voice workspace for Android, iOS, 
 ## What works in this foundation
 
 - Flutter app shell with premium dark visual system and responsive dashboard/navigation.
-- API connectivity indicator and a FastAPI health endpoint.
+- API connectivity indicator and a FastAPI health endpoint that reports actual provider configuration.
 - Versioned capabilities endpoint describing which engines are actually available.
-- Provider interface and a safe `none` provider that reports speech generation as unavailable instead of returning fake audio.
+- Cartesia Sonic TTS adapter with a server-side API key, voice catalogue endpoint, WAV generation, and speaking-speed control.
+- Flutter Voice Studio with language/voice selection and generated-audio preview.
+- Safe `none` provider that reports speech generation as unavailable instead of returning fake audio.
 - Backend tests, Docker development setup, and CI build jobs for Android, iOS (unsigned), Windows, macOS, Linux, and Web.
 
 ## What is not implemented yet
 
-- Speech synthesis or voice cloning model inference.
-- Voice sample recording/upload, identity verification, and durable consent records.
+- Voice cloning, voice sample recording/upload, identity verification, and durable consent records.
 - Emotion/accent controls connected to a model.
 - Real-time microphone/call routing or virtual audio devices.
 - Audio editing, dubbing, subtitle export, and cryptographic watermark embedding.
@@ -88,6 +89,29 @@ docker compose up --build
 
 Copy `.env.example` to `.env` before configuring environment-specific values. Never commit real API keys or private audio.
 
+### Enable Cartesia Sonic TTS
+
+Create a Cartesia API key at https://play.cartesia.ai/keys, then set these values in the backend `.env` file or your hosting provider's environment settings:
+
+```dotenv
+AURA_SPEECH_PROVIDER=cartesia
+AURA_CARTESIA_API_KEY=sk_car_your_real_key_here
+AURA_CARTESIA_MODEL_ID=sonic-3.6
+AURA_CARTESIA_VOICE_ID=db6b0ed5-d5d3-463d-ae85-518a07d3c2b4
+AURA_CARTESIA_VERSION=2026-08-14
+AURA_CARTESIA_TIMEOUT_SECONDS=45
+```
+
+Keep the API key on the backend only. Do not put it in Flutter code, `--dart-define`, web assets, or a committed file. The Flutter app requests voices from `/api/v1/speech/voices` and generated WAV audio from `/api/v1/speech/generate`; the backend calls Cartesia.
+
+For an Android, desktop, or web build, point the Flutter client at the deployed HTTPS API rather than its local default, for example:
+
+```bash
+flutter run --dart-define=AURA_API_BASE_URL=https://your-aura-api.example.com
+```
+
+The current implementation provides request/response WAV generation and preview. It does not yet provide low-latency WebSocket conversation streaming, STT, voice cloning, or offline inference.
+
 ## Build targets
 
 The GitHub Actions workflow creates platform artifacts on pushes and pull requests:
@@ -105,15 +129,14 @@ Desktop build outputs are not automatically installers. Store releases and signe
 
 ## Hybrid engine design
 
-The client talks to the versioned API, not directly to a model. The backend exposes an engine contract under `backend/app/engines/`. A provider should only be marked ready after its model is installed, its license is reviewed, and an inference smoke test passes.
+The client talks to the versioned API, not directly to a model. The backend exposes an engine contract under `backend/app/engines/`. Cartesia is selected with `AURA_SPEECH_PROVIDER=cartesia`; the provider reports ready only when a backend API key is configured. A successful generation request is still required to verify the key, selected voice, and account credits.
 
 Recommended integration order:
 
-1. Add one reliable multilingual TTS provider behind the engine contract.
-2. Add optional local inference adapters after measuring device RAM, CPU/GPU use, latency, and supported languages.
-3. Add voice-profile enrollment only with explicit, recorded permission from the voice owner and authenticated account ownership.
-4. Add emotion/accent conditioning only for models that support it; do not imply sliders change a voice until inference is wired.
-5. Add live routing as a separate desktop/OS integration, not as a universal Flutter feature.
+1. Add optional local inference adapters after measuring device RAM, CPU/GPU use, latency, and supported languages.
+2. Add voice-profile enrollment only with explicit, recorded permission from the voice owner and authenticated account ownership.
+3. Add emotion/accent conditioning only for models that support it; do not imply sliders change a voice until inference is wired.
+4. Add live routing as a separate desktop/OS integration, not as a universal Flutter feature.
 
 Model weights are deliberately not committed. They can be large, licensed, and may contain sensitive assets.
 
