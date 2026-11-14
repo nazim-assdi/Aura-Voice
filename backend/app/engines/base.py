@@ -15,7 +15,15 @@ class SpeechProvider(Protocol):
         language: str,
         audio_format: str,
         voice_profile_id: str | None = None,
+        speed: float = 1.0,
     ) -> bytes: ...
+
+    async def list_voices(
+        self,
+        *,
+        language: str | None = None,
+        limit: int = 100,
+    ) -> list[dict[str, object]]: ...
 
 
 class UnavailableSpeechProvider:
@@ -39,5 +47,14 @@ class UnavailableSpeechProvider:
         language: str,
         audio_format: str,
         voice_profile_id: str | None = None,
+        speed: float = 1.0,
     ) -> bytes:
+        raise RuntimeError("Speech provider is unavailable. Configure a real provider first.")
+
+    async def list_voices(
+        self,
+        *,
+        language: str | None = None,
+        limit: int = 100,
+    ) -> list[dict[str, object]]:
         raise RuntimeError("Speech provider is unavailable. Configure a real provider first.")

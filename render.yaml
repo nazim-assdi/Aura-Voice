@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: aura-voice-api
+    runtime: python
+    plan: free
+    region: singapore
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    autoDeployTrigger: checksPass
+    envVars:
+      - key: AURA_SPEECH_PROVIDER
+        value: cartesia
+      - key: AURA_CARTESIA_API_KEY
+        sync: false
+      - key: AURA_CARTESIA_MODEL_ID
+        value: sonic-3.6
+      - key: AURA_CARTESIA_VERSION
+        value: "2026-08-14"
+      - key: AURA_CARTESIA_TIMEOUT_SECONDS
+        value: "45"
