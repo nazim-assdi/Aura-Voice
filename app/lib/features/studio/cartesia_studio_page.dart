@@ -66,7 +66,7 @@ class _CartesiaStudioPageState extends State<CartesiaStudioPage> {
         _voices = voices;
         _loadingVoices = false;
         if (voices.isEmpty) {
-          _notice = 'No voices were returned for this language. You can still try the backend default voice.';
+          _notice = 'No voices were returned for this language. Choose another language or configure a compatible voice ID on the backend.';
         }
       });
     } catch (error) {
@@ -400,7 +400,7 @@ class _CartesiaStudioPageState extends State<CartesiaStudioPage> {
                 icon: const Icon(Icons.refresh_rounded),
               ),
       ),
-      hint: Text(_voices.isEmpty ? 'Use backend default voice' : 'Choose a voice'),
+      hint: Text(_voices.isEmpty ? 'No voice found for this language' : 'Choose a voice'),
       items: _voices
           .map(
             (voice) => DropdownMenuItem<String>(
