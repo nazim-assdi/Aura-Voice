@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:audioplayers/audioplayers.dart';
@@ -21,14 +20,12 @@ class _CartesiaStudioPageState extends State<CartesiaStudioPage> {
   );
   final _player = AudioPlayer();
 
-  late final StreamSubscription<PlayerState> _playerSubscription;
   String _language = 'bn';
   String? _selectedVoiceId;
   double _speed = 1.0;
   List<Map<String, dynamic>> _voices = [];
   bool _loadingVoices = false;
   bool _generating = false;
-  bool _playing = false;
   String? _error;
   String? _notice;
   Uint8List? _audioBytes;
@@ -36,17 +33,11 @@ class _CartesiaStudioPageState extends State<CartesiaStudioPage> {
   @override
   void initState() {
     super.initState();
-    _playerSubscription = _player.onPlayerStateChanged.listen((state) {
-      if (mounted) {
-        setState(() => _playing = state == PlayerState.playing);
-      }
-    });
     _loadVoices();
   }
 
   @override
   void dispose() {
-    _playerSubscription.cancel();
     _player.dispose();
     _textController.dispose();
     super.dispose();
