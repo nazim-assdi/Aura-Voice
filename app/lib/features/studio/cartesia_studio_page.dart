@@ -188,6 +188,7 @@ class _CartesiaStudioPageState extends State<CartesiaStudioPage> {
                       minLines: 6,
                       maxLines: 12,
                       maxLength: 5000,
+                      onChanged: (_) => setState(() {}),
                       textCapitalization: TextCapitalization.sentences,
                       decoration: const InputDecoration(
                         hintText: 'Write or paste the words you want to speak...',
