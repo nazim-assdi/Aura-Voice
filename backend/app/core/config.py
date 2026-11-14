@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     speech_provider: str = "none"
     cartesia_api_key: str = ""
     cartesia_model_id: str = "sonic-3.6"
-    cartesia_voice_id: str = "db6b0ed5-d5d3-463d-ae85-518a07d3c2b4"
+    cartesia_voice_id: str = ""
     cartesia_version: str = "2026-08-14"
     cartesia_timeout_seconds: float = 45.0
     cors_origins: str = (
