@@ -97,7 +97,7 @@ Create a Cartesia API key at https://play.cartesia.ai/keys, then set these value
 AURA_SPEECH_PROVIDER=cartesia
 AURA_CARTESIA_API_KEY=sk_car_your_real_key_here
 AURA_CARTESIA_MODEL_ID=sonic-3.6
-AURA_CARTESIA_VOICE_ID=db6b0ed5-d5d3-463d-ae85-518a07d3c2b4
+AURA_CARTESIA_VOICE_ID=
 AURA_CARTESIA_VERSION=2026-08-14
 AURA_CARTESIA_TIMEOUT_SECONDS=45
 ```
