@@ -64,6 +64,7 @@ class _CartesiaStudioPageState extends State<CartesiaStudioPage> {
       if (!mounted) return;
       setState(() {
         _voices = voices;
+        _selectedVoiceId = voices.isNotEmpty ? voices.first['id']?.toString() : null;
         _loadingVoices = false;
         if (voices.isEmpty) {
           _notice = 'No voices were returned for this language. Choose another language or configure a compatible voice ID on the backend.';
