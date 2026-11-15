@@ -48,6 +48,7 @@ class ApiClient {
     required String language,
     required double speed,
     required double volume,
+    required String audioFormat,
     String? emotion,
     String? voiceId,
   }) async {
@@ -56,12 +57,12 @@ class ApiClient {
           Uri.parse('$_baseUrl/api/v1/speech/generate'),
           headers: const {
             'Content-Type': 'application/json',
-            'Accept': 'audio/wav',
+            'Accept': audioFormat == 'mp3' ? 'audio/mpeg' : 'audio/wav',
           },
           body: jsonEncode({
             'text': text,
             'language': language,
-            'audio_format': 'wav',
+            'audio_format': audioFormat,
             'speed': speed,
             'volume': volume,
             if (emotion != null && emotion.isNotEmpty) 'emotion': emotion,
