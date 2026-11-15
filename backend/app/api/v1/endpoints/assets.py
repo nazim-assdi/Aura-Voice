@@ -2,13 +2,14 @@ from uuid import uuid4
 
 from fastapi import APIRouter, File, HTTPException, UploadFile, status
 from fastapi.responses import Response
-from sqlalchemy import select
+from sqlalchemy import func, select
 from app.core.limits import enforce_rate_limit
 from app.api.deps import CurrentUser, SessionDep
 from app.models import AudioAsset, Project
 
 router = APIRouter(prefix="/projects")
 MAX_AUDIO_BYTES = 10 * 1024 * 1024
+MAX_USER_AUDIO_BYTES = 100 * 1024 * 1024
 
 
 @router.post("/{project_id}/assets", status_code=status.HTTP_201_CREATED)
@@ -24,6 +25,23 @@ async def upload_audio_asset(
     )
     if not project:
         raise HTTPException(status_code=404, detail="Project not found.")
+
+    current_storage = await session.scalar(
+        select(func.coalesce(func.sum(AudioAsset.size_bytes), 0)).where(
+            AudioAsset.owner_id == user.id
+        )
+    )
+    if int(current_storage or 0) >= MAX_USER_AUDIO_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail={
+                "code": "storage_quota_reached",
+                "message": "Your private audio storage limit is 100 MB on the free plan.",
+                "storage_limit_bytes": MAX_USER_AUDIO_BYTES,
+                "storage_used_bytes": int(current_storage or 0),
+            },
+        )
+
     media_type = (file.content_type or "").lower().split(";", 1)[0].strip()
     allowed_media_types = {
         "audio/wav", "audio/x-wav", "audio/mpeg", "audio/mp4",
@@ -35,6 +53,16 @@ async def upload_audio_asset(
     content = await file.read(MAX_AUDIO_BYTES + 1)
     if not content or len(content) > MAX_AUDIO_BYTES:
         raise HTTPException(status_code=413, detail="Audio asset limit is 10 MB.")
+    if int(current_storage or 0) + len(content) > MAX_USER_AUDIO_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail={
+                "code": "storage_quota_reached",
+                "message": "This upload would exceed your 100 MB private audio storage limit.",
+                "storage_limit_bytes": MAX_USER_AUDIO_BYTES,
+                "storage_used_bytes": int(current_storage or 0),
+            },
+        )
     raw_filename = (file.filename or "audio-export").replace("/", "_").replace("\\", "_")
     filename = "".join(char for char in raw_filename if char.isalnum() or char in " ._-()").strip()[:120] or "audio-export"
     asset = AudioAsset(
