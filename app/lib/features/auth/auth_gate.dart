@@ -1,5 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 
+import '../../core/theme/aura_theme.dart';
+
 import '../../core/services/api_client.dart';
 import '../home/home_shell.dart';
 
