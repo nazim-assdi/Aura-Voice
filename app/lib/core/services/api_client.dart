@@ -66,7 +66,7 @@ class ApiClient {
     final response = await http
         .post(
           Uri.parse('$_baseUrl/api/v1/speech/generate'),
-          headers: const {
+          headers: {
             'Content-Type': 'application/json',
             'Accept': audioFormat == 'mp3' ? 'audio/mpeg' : 'audio/wav',
           },
