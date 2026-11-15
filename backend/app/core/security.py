@@ -1,3 +1,5 @@
+import hashlib
+import secrets
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
@@ -21,16 +23,27 @@ def verify_password(password: str, password_hash: str) -> bool:
         return False
 
 
-def create_access_token(subject: str) -> str:
+def new_refresh_token() -> str:
+    return secrets.token_urlsafe(48)
+
+
+def hash_refresh_token(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def create_access_token(subject: str, *, jti: str | None = None) -> str:
     if not settings.auth_ready:
         raise HTTPException(
             status_code=503,
-            detail={"code": "auth_not_configured", "message": "Database and a 32-character JWT secret are required."},
+            detail={
+                "code": "auth_not_configured",
+                "message": "A persistent database and a 32-character JWT secret are required.",
+            },
         )
     now = datetime.now(timezone.utc)
     payload = {
         "sub": subject,
-        "jti": str(uuid4()),
+        "jti": jti or str(uuid4()),
         "iat": now,
         "exp": now + timedelta(minutes=settings.access_token_minutes),
         "iss": "aura-voice-api",
@@ -39,7 +52,9 @@ def create_access_token(subject: str) -> str:
     return jwt.encode(payload, settings.auth_jwt_secret, algorithm="HS256")
 
 
-def decode_access_token(token: str) -> str | None:
+def decode_access_claims(token: str) -> dict[str, str] | None:
+    if not settings.auth_jwt_secret.strip():
+        return None
     try:
         payload = jwt.decode(
             token,
@@ -50,9 +65,17 @@ def decode_access_token(token: str) -> str | None:
             options={"require": ["sub", "exp", "iat", "jti"]},
         )
         subject = payload.get("sub")
-        return subject if isinstance(subject, str) else None
+        jti = payload.get("jti")
+        if not isinstance(subject, str) or not isinstance(jti, str):
+            return None
+        return {"sub": subject, "jti": jti}
     except jwt.InvalidTokenError:
         return None
+
+
+def decode_access_token(token: str) -> str | None:
+    claims = decode_access_claims(token)
+    return claims["sub"] if claims else None
 
 
 def bearer_or_cookie(request: Request) -> str | None:
