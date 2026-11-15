@@ -351,3 +351,17 @@ audio { width: 100%; height: 41px; accent-color: var(--mint); margin-bottom: 10p
   .editor-actions .primary-button { width:100%; justify-content:center; }
   .workflow-panel { padding:16px; }
 }
+
+
+.script-heading-actions { display:flex; align-items:center; gap:12px; }
+.project-row-actions { display:flex; align-items:center; gap:7px; }
+.history-delete { border:1px solid rgba(255,133,143,.18); color:#ff9aa2; background:transparent; border-radius:8px; padding:7px 10px; font-size:9px; }
+.history-delete:hover { background:rgba(255,133,143,.08); }
+.voice-favorite-button { width:31px; height:31px; display:grid; place-items:center; border:1px solid var(--line-strong); border-radius:9px; color:var(--mint); background:rgba(140,242,211,.04); font-size:18px; }
+.voice-favorite-button:hover { background:rgba(140,242,211,.13); }
+.voice-card .voice-tag { display:inline-block; margin-bottom:12px; }
+@media(max-width:680px) {
+  .script-heading-actions { gap:8px; }
+  .script-heading-actions .quiet-button,.script-heading-actions .inline-link { font-size:9px; }
+  .project-row-actions { flex-direction:column; align-items:stretch; }
+}
