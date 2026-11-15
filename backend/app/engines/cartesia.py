@@ -113,7 +113,7 @@ class CartesiaSpeechProvider:
                 response = await client.post(
                     f"{self.BASE_URL}/stt",
                     headers={
-                        "Authorization": f"Bearer {settings.cartesia_api_key}",
+                        "X-API-Key": settings.cartesia_api_key,
                         "Cartesia-Version": settings.cartesia_version,
                     },
                     data={"model": settings.cartesia_stt_model_id, "language": language},
