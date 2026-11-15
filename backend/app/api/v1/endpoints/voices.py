@@ -1,11 +1,12 @@
 from uuid import uuid4
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
 from app.api.deps import CurrentUser, SessionDep
+from app.core.client_ip import get_client_ip
 from app.core.limits import enforce_rate_limit
 from app.engines.registry import get_speech_provider
 from app.models import VoiceFavorite
@@ -21,11 +22,13 @@ class FavoriteRequest(BaseModel):
 
 @router.get("")
 async def list_voices(
+    request: Request,
     user: CurrentUser,
     session: SessionDep,
     language: str | None = None,
 ) -> dict[str, object]:
     await enforce_rate_limit(session, f"voice-library:{user.id}", limit=30)
+    await enforce_rate_limit(session, f"voice-library-ip:{get_client_ip(request)}", limit=120)
     provider = get_speech_provider()
     if not provider.is_ready:
         raise HTTPException(
