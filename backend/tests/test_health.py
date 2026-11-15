@@ -24,10 +24,10 @@ def test_capabilities_do_not_claim_unimplemented_features() -> None:
     assert body["live_audio_routing_ready"] is False
 
 
-def test_speech_endpoint_fails_clearly_without_provider() -> None:
+def test_speech_endpoint_requires_a_configured_account_session() -> None:
     response = client.post(
         "/api/v1/speech/generate",
         json={"text": "Hello from Aura", "language": "en"},
     )
     assert response.status_code == 503
-    assert response.json()["detail"]["code"] == "speech_engine_not_configured"
+    assert response.json()["detail"]["code"] == "auth_not_configured"

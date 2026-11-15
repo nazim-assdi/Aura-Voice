@@ -1,10 +1,13 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../../core/services/api_client.dart';
 import '../../core/theme/aura_theme.dart';
+import '../studio/cartesia_studio_page.dart';
 
 class HomeShell extends StatefulWidget {
-  const HomeShell({super.key});
+  const HomeShell({required this.onSignOut, super.key});
+
+  final VoidCallback onSignOut;
 
   @override
   State<HomeShell> createState() => _HomeShellState();
@@ -16,7 +19,10 @@ class _HomeShellState extends State<HomeShell> {
   @override
   Widget build(BuildContext context) {
     final pages = <Widget>[
-      DashboardPage(onOpenStudio: () => setState(() => _index = 1)),
+      DashboardPage(
+        onOpenStudio: () => setState(() => _index = 1),
+        onSignOut: widget.onSignOut,
+      ),
       const StudioPage(),
       const LibraryPage(),
     ];
@@ -36,8 +42,13 @@ class _HomeShellState extends State<HomeShell> {
 }
 
 class DashboardPage extends StatelessWidget {
-  const DashboardPage({required this.onOpenStudio, super.key});
+  const DashboardPage({
+    required this.onOpenStudio,
+    required this.onSignOut,
+    super.key,
+  });
   final VoidCallback onOpenStudio;
+  final VoidCallback onSignOut;
 
   @override
   Widget build(BuildContext context) {
@@ -47,7 +58,7 @@ class DashboardPage extends StatelessWidget {
           padding: const EdgeInsets.fromLTRB(22, 18, 22, 28),
           sliver: SliverList(
             delegate: SliverChildListDelegate([
-              const _TopBar(),
+              _TopBar(onSignOut: onSignOut),
               const SizedBox(height: 34),
               Text('YOUR CREATIVE AUDIO SPACE',
                   style: Theme.of(context).textTheme.labelSmall?.copyWith(
@@ -58,19 +69,36 @@ class DashboardPage extends StatelessWidget {
                     height: 1.06, fontWeight: FontWeight.w800, letterSpacing: -1.1)),
               const SizedBox(height: 22),
               _HeroPanel(onOpenStudio: onOpenStudio),
-              const SizedBox(height: 26),
+              const SizedBox(height: 16),
+              LayoutBuilder(builder: (context, constraints) {
+                final columns = constraints.maxWidth > 620 ? 3 : 1;
+                final width = (constraints.maxWidth - (columns - 1) * 10) / columns;
+                const stats = [
+                  _CapabilityStat(Icons.language_rounded, '04', 'Language choices'),
+                  _CapabilityStat(Icons.multitrack_audio_rounded, '02', 'Audio export formats'),
+                  _CapabilityStat(Icons.tune_rounded, '03', 'Voice controls'),
+                ];
+                return Wrap(
+                  spacing: 10,
+                  runSpacing: 10,
+                  children: stats
+                      .map((item) => SizedBox(width: width, child: item))
+                      .toList(),
+                );
+              }),
+              const SizedBox(height: 28),
               Row(children: [
                 Text('Your workspace',
                     style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700)),
                 const Spacer(),
-                const _StatusChip(label: 'FOUNDATION'),
+                const _StatusChip(label: 'CREATOR EDITION'),
               ]),
               const SizedBox(height: 14),
               LayoutBuilder(builder: (context, constraints) {
                 final columns = constraints.maxWidth > 720 ? 4 : 2;
                 final width = (constraints.maxWidth - (columns - 1) * 12) / columns;
                 const features = [
-                  _FeatureData(Icons.record_voice_over_rounded, 'Voice Studio', 'Speech workspace', AuraTheme.mint),
+                  _FeatureData(Icons.record_voice_over_rounded, 'Voice Studio', 'Cartesia Sonic TTS', AuraTheme.mint, available: true),
                   _FeatureData(Icons.tune_rounded, 'Emotion Lab', 'Style controls', AuraTheme.violet),
                   _FeatureData(Icons.multitrack_audio_rounded, 'Audio Tools', 'Edit and export', Color(0xFFFFC27A)),
                   _FeatureData(Icons.translate_rounded, 'AI Dubbing', 'Voice and language', Color(0xFF80B8FF)),
@@ -84,7 +112,7 @@ class DashboardPage extends StatelessWidget {
               const _ApiStatusPanel(),
               const SizedBox(height: 18),
               Text(
-                'Foundation preview · Speech models and voice processing are not connected yet.',
+                'Create polished narration, tune delivery and export production-ready audio. More studio modules will be introduced as their engines are completed.',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(color: AuraTheme.muted, height: 1.5),
               ),
             ]),
@@ -95,8 +123,50 @@ class DashboardPage extends StatelessWidget {
   }
 }
 
+class _CapabilityStat extends StatelessWidget {
+  const _CapabilityStat(this.icon, this.value, this.label);
+
+  final IconData icon;
+  final String value;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          color: AuraTheme.panel,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, color: AuraTheme.mint, size: 20),
+            const SizedBox(width: 12),
+            Text(
+              value,
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.w900,
+                    color: Colors.white,
+                  ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                label,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: AuraTheme.muted,
+                    ),
+              ),
+            ),
+          ],
+        ),
+      );
+}
+
 class _TopBar extends StatelessWidget {
-  const _TopBar();
+  const _TopBar({required this.onSignOut});
+  final VoidCallback onSignOut;
+
   @override
   Widget build(BuildContext context) => Row(children: [
     Container(
@@ -117,8 +187,11 @@ class _TopBar extends StatelessWidget {
     const Spacer(),
     const _StatusChip(label: 'HYBRID'),
     const SizedBox(width: 8),
-    const CircleAvatar(radius: 19, backgroundColor: AuraTheme.panelLight,
-      child: Icon(Icons.person_outline_rounded, color: Colors.white70)),
+    IconButton(
+      tooltip: 'Sign out',
+      onPressed: onSignOut,
+      icon: const Icon(Icons.logout_rounded, color: Colors.white70),
+    ),
   ]);
 }
 
@@ -164,11 +237,12 @@ class _HeroPanel extends StatelessWidget {
 }
 
 class _FeatureData {
-  const _FeatureData(this.icon, this.title, this.subtitle, this.accent);
+  const _FeatureData(this.icon, this.title, this.subtitle, this.accent, {this.available = false});
   final IconData icon;
   final String title;
   final String subtitle;
   final Color accent;
+  final bool available;
 }
 
 class _FeatureCard extends StatelessWidget {
@@ -192,8 +266,8 @@ class _FeatureCard extends StatelessWidget {
       const SizedBox(height: 4),
       Text(data.subtitle, style: Theme.of(context).textTheme.bodySmall?.copyWith(color: AuraTheme.muted)),
       const SizedBox(height: 12),
-      Text('PLANNED', style: Theme.of(context).textTheme.labelSmall?.copyWith(
-        color: AuraTheme.muted, letterSpacing: 1.2)),
+      Text(data.available ? 'TTS STUDIO' : 'PLANNED', style: Theme.of(context).textTheme.labelSmall?.copyWith(
+        color: data.available ? AuraTheme.mint : AuraTheme.muted, letterSpacing: 1.2)),
     ]),
   );
 }
@@ -227,11 +301,18 @@ class _ApiStatusPanel extends StatelessWidget {
         Text('Backend availability check',
           style: Theme.of(context).textTheme.bodySmall?.copyWith(color: AuraTheme.muted)),
       ])),
-      FutureBuilder<bool>(
-        future: const ApiClient().isApiHealthy(),
+      FutureBuilder<ApiHealthStatus>(
+        future: const ApiClient().getHealthStatus(),
         builder: (context, snapshot) {
-          final label = snapshot.connectionState != ConnectionState.done
-              ? 'CHECKING' : snapshot.data == true ? 'API ONLINE' : 'API OFFLINE';
+          final waiting = snapshot.connectionState != ConnectionState.done;
+          final status = snapshot.data;
+          final label = waiting
+              ? 'CONNECTING'
+              : status?.online != true
+                  ? 'API OFFLINE'
+                  : status?.speechConfigured == true
+                      ? 'CARTESIA CONFIGURED'
+                      : 'KEY REQUIRED';
           return _StatusChip(label: label);
         },
       ),
@@ -242,10 +323,7 @@ class _ApiStatusPanel extends StatelessWidget {
 class StudioPage extends StatelessWidget {
   const StudioPage({super.key});
   @override
-  Widget build(BuildContext context) => const _ComingSoonPage(
-    icon: Icons.graphic_eq_rounded, title: 'Voice Studio',
-    description: 'The studio shell is ready. Speech generation, voice enrollment and audio processing will appear here after the engine and consent layers are connected.',
-  );
+  Widget build(BuildContext context) => const CartesiaStudioPage();
 }
 
 class LibraryPage extends StatelessWidget {
