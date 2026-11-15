@@ -21,7 +21,7 @@ class CartesiaSpeechProvider:
 
     def _headers(self) -> dict[str, str]:
         return {
-            "Authorization": f"Bearer {settings.cartesia_api_key}",
+            "X-API-Key": settings.cartesia_api_key,
             "Cartesia-Version": settings.cartesia_version,
             "Content-Type": "application/json",
         }
@@ -34,6 +34,8 @@ class CartesiaSpeechProvider:
         audio_format: str,
         voice_profile_id: str | None = None,
         speed: float = 1.0,
+        volume: float = 1.0,
+        emotion: str | None = None,
     ) -> bytes:
         if not self.is_ready:
             raise RuntimeError("Cartesia is not configured. Add AURA_CARTESIA_API_KEY to the backend environment.")
@@ -47,7 +49,7 @@ class CartesiaSpeechProvider:
         payload = {
             "model_id": settings.cartesia_model_id,
             "transcript": text,
-            "voice": voice_id,
+            "voice": {"id": voice_id},
             "language": language,
             "output_format": {
                 "container": "wav",
@@ -55,7 +57,11 @@ class CartesiaSpeechProvider:
                 "sample_rate": 44100,
             },
             "normalization": "auto",
-            "generation_config": {"speed": speed, "volume": 1.0},
+            "generation_config": {
+                "speed": speed,
+                "volume": volume,
+                **({"emotion": emotion} if emotion else {}),
+            },
         }
 
         try:
