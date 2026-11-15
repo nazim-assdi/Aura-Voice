@@ -296,7 +296,29 @@
           <section class="panel settings-info-panel"><div class="panel-heading simple-heading"><div><h2>Privacy & security</h2><p>How this web workspace handles your data.</p></div><span class="privacy-icon">⬡</span></div>
             <ul class="privacy-list"><li>Your Cartesia API key is stored on the backend, never in this browser.</li><li>Voice generation sends your script to Cartesia for synthesis.</li><li>Project scripts and audio assets are stored in your private account workspace.</li><li>Do not upload or clone a voice unless you have the voice owner's permission.</li></ul>
           </section>
-          <section class="panel settings-info-panel session-panel"><div class="panel-heading simple-heading"><div><h2>Active sessions</h2><p>Review browsers and sign out devices you no longer use.</p></div><button class="inline-link" id="refreshSessions">Refresh ↻</button></div><div id="sessionList" class="session-list"><div class="empty-history">Loading active sessions…</div></div></section>
+          <section class="panel settings-info-panel">
+            <div class="panel-heading simple-heading">
+              <div><h2>Account security</h2><p>Change your password or permanently remove your account.</p></div>
+              <span class="privacy-icon">⬡</span>
+            </div>
+            <div class="form-field">
+              <label class="field-label" for="currentPassword">CURRENT PASSWORD</label>
+              <input id="currentPassword" class="text-input" type="password" autocomplete="current-password" maxlength="128" placeholder="Enter current password">
+            </div>
+            <div class="form-field">
+              <label class="field-label" for="newPassword">NEW PASSWORD</label>
+              <input id="newPassword" class="text-input" type="password" autocomplete="new-password" minlength="10" maxlength="128" placeholder="At least 10 characters">
+            </div>
+            <button class="secondary-button full-button" id="changePasswordButton" type="button">Change password</button>
+            <div class="form-field security-danger-zone">
+              <label class="field-label" for="deleteAccountPassword">DELETE ACCOUNT PASSWORD</label>
+              <input id="deleteAccountPassword" class="text-input" type="password" autocomplete="current-password" maxlength="128" placeholder="Re-enter password to delete">
+              <button class="danger-button full-button" id="deleteAccountButton" type="button">Permanently delete account</button>
+              <p class="field-note">This permanently removes your account, projects, saved audio, favourites and sessions.</p>
+            </div>
+            <div class="notice-bar" id="accountSecurityNotice" role="status" aria-live="polite"></div>
+          </section>
+                    <section class="panel settings-info-panel session-panel"><div class="panel-heading simple-heading"><div><h2>Active sessions</h2><p>Review browsers and sign out devices you no longer use.</p></div><button class="inline-link" id="refreshSessions">Refresh ↻</button></div><div id="sessionList" class="session-list"><div class="empty-history">Loading active sessions…</div></div></section>
         </div>
       </section>
 
