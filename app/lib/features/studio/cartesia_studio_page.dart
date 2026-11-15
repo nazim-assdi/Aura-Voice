@@ -123,10 +123,14 @@ class _CartesiaStudioPageState extends State<CartesiaStudioPage> {
     final rawName = _projectController.text.trim().isEmpty
         ? 'aura-voice'
         : _projectController.text.trim();
-    final safeName = rawName
-        .toLowerCase()
-        .replaceAll(RegExp('[^a-z0-9]+'), '-')
-        .replaceAll(RegExp(r'(^-+|-+$)'), '');
+    var safeName =
+        rawName.toLowerCase().replaceAll(RegExp('[^a-z0-9]+'), '-');
+    while (safeName.startsWith('-')) {
+      safeName = safeName.substring(1);
+    }
+    while (safeName.endsWith('-')) {
+      safeName = safeName.substring(0, safeName.length - 1);
+    }
 
     setState(() {
       _saving = true;
