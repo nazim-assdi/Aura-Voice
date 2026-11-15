@@ -59,12 +59,29 @@ class DashboardPage extends StatelessWidget {
                     height: 1.06, fontWeight: FontWeight.w800, letterSpacing: -1.1)),
               const SizedBox(height: 22),
               _HeroPanel(onOpenStudio: onOpenStudio),
-              const SizedBox(height: 26),
+              const SizedBox(height: 16),
+              LayoutBuilder(builder: (context, constraints) {
+                final columns = constraints.maxWidth > 620 ? 3 : 1;
+                final width = (constraints.maxWidth - (columns - 1) * 10) / columns;
+                const stats = [
+                  _CapabilityStat(Icons.language_rounded, '04', 'Language choices'),
+                  _CapabilityStat(Icons.multitrack_audio_rounded, '02', 'Audio export formats'),
+                  _CapabilityStat(Icons.tune_rounded, '03', 'Voice controls'),
+                ];
+                return Wrap(
+                  spacing: 10,
+                  runSpacing: 10,
+                  children: stats
+                      .map((item) => SizedBox(width: width, child: item))
+                      .toList(),
+                );
+              }),
+              const SizedBox(height: 28),
               Row(children: [
                 Text('Your workspace',
                     style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700)),
                 const Spacer(),
-                const _StatusChip(label: 'FOUNDATION'),
+                const _StatusChip(label: 'CREATOR EDITION'),
               ]),
               const SizedBox(height: 14),
               LayoutBuilder(builder: (context, constraints) {
@@ -85,7 +102,7 @@ class DashboardPage extends StatelessWidget {
               const _ApiStatusPanel(),
               const SizedBox(height: 18),
               Text(
-                'Cartesia Sonic TTS is available when the backend API key is configured. Other audio features remain in development.',
+                'Create polished narration, tune delivery and export production-ready audio. More studio modules will be introduced as their engines are completed.',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(color: AuraTheme.muted, height: 1.5),
               ),
             ]),
@@ -94,6 +111,46 @@ class DashboardPage extends StatelessWidget {
       ],
     );
   }
+}
+
+class _CapabilityStat extends StatelessWidget {
+  const _CapabilityStat(this.icon, this.value, this.label);
+
+  final IconData icon;
+  final String value;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          color: AuraTheme.panel,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, color: AuraTheme.mint, size: 20),
+            const SizedBox(width: 12),
+            Text(
+              value,
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.w900,
+                    color: Colors.white,
+                  ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                label,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: AuraTheme.muted,
+                    ),
+              ),
+            ),
+          ],
+        ),
+      );
 }
 
 class _TopBar extends StatelessWidget {
@@ -229,11 +286,18 @@ class _ApiStatusPanel extends StatelessWidget {
         Text('Backend availability check',
           style: Theme.of(context).textTheme.bodySmall?.copyWith(color: AuraTheme.muted)),
       ])),
-      FutureBuilder<bool>(
-        future: const ApiClient().isApiHealthy(),
+      FutureBuilder<ApiHealthStatus>(
+        future: const ApiClient().getHealthStatus(),
         builder: (context, snapshot) {
-          final label = snapshot.connectionState != ConnectionState.done
-              ? 'CHECKING' : snapshot.data == true ? 'API ONLINE' : 'API OFFLINE';
+          final waiting = snapshot.connectionState != ConnectionState.done;
+          final status = snapshot.data;
+          final label = waiting
+              ? 'CONNECTING'
+              : status?.online != true
+                  ? 'API OFFLINE'
+                  : status?.speechConfigured == true
+                      ? 'CARTESIA CONFIGURED'
+                      : 'KEY REQUIRED';
           return _StatusChip(label: label);
         },
       ),
