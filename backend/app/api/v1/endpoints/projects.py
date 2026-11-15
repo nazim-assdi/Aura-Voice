@@ -3,7 +3,7 @@ from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException, Response, status
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import CurrentUser, SessionDep
@@ -64,13 +64,34 @@ async def create_project(
     session: SessionDep,
 ) -> dict[str, object]:
     await enforce_rate_limit(session, f"projects:{user.id}", limit=30)
+    name = payload.name.strip()
+    if not name:
+        raise HTTPException(status_code=422, detail="Project name cannot be blank.")
+    settings_json = json.dumps(payload.settings, ensure_ascii=False)
+    if len(settings_json) > 5000:
+        raise HTTPException(status_code=413, detail="Project settings are limited to 5 KB.")
+    project_count = await session.scalar(
+        select(func.count(Project.id)).where(
+            Project.owner_id == user.id,
+            Project.is_archived.is_(False),
+        )
+    )
+    if int(project_count or 0) >= 50:
+        raise HTTPException(
+            status_code=429,
+            detail={
+                "code": "project_quota_reached",
+                "message": "Your free plan can keep up to 50 active projects.",
+                "project_limit": 50,
+            },
+        )
     project = Project(
         id=str(uuid4()),
         owner_id=user.id,
-        name=payload.name.strip(),
+        name=name,
         script=payload.script,
         language=payload.language,
-        settings_json=json.dumps(payload.settings, ensure_ascii=False),
+        settings_json=settings_json,
     )
     session.add(project)
     await session.commit()
