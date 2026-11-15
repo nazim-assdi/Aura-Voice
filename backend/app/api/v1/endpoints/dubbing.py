@@ -10,6 +10,7 @@ from app.core.limits import (
     refund_generation_quota,
 )
 from app.core.config import settings
+from app.core.client_ip import get_client_ip
 from app.engines.registry import get_speech_provider
 from app.services.llm import complete_chat
 
@@ -26,7 +27,7 @@ async def transcribe_audio(
     language: str = Form(default="en", min_length=2, max_length=16),
 ) -> dict[str, object]:
     await enforce_rate_limit(session, f"stt:{user.id}", limit=10)
-    host = request.client.host if request.client else "unknown"
+    host = get_client_ip(request)
     await enforce_rate_limit(session, f"stt-ip:{host[:64]}", limit=40)
     if not settings.cartesia_api_key.strip():
         raise HTTPException(status_code=503, detail={"code": "stt_not_configured", "message": "Configure the Cartesia API key first."})
@@ -81,7 +82,7 @@ async def translate_text(
     session: SessionDep,
 ) -> dict[str, str]:
     await enforce_rate_limit(session, f"translate:{user.id}", limit=10)
-    host = request.client.host if request.client else "unknown"
+    host = get_client_ip(request)
     await enforce_rate_limit(session, f"translate-ip:{host[:64]}", limit=40)
     await consume_feature_quota(session, user.id, "translation", units=len(payload.text))
     prompt = (
@@ -112,7 +113,7 @@ async def render_dub(
     session: SessionDep,
 ) -> Response:
     await enforce_rate_limit(session, f"dub:{user.id}", limit=10)
-    host = request.client.host if request.client else "unknown"
+    host = get_client_ip(request)
     await enforce_rate_limit(session, f"dub-ip:{host[:64]}", limit=40)
     provider = get_speech_provider()
     if not provider.is_ready:
