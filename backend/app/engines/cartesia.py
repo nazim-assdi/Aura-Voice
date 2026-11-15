@@ -49,7 +49,7 @@ class CartesiaSpeechProvider:
         payload = {
             "model_id": settings.cartesia_model_id,
             "transcript": text,
-            "voice": {"id": voice_id},
+            "voice": {"mode": "id", "id": voice_id},
             "language": language,
             "output_format": (
                 {
