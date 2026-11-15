@@ -35,6 +35,22 @@ class User(Base):
     )
 
 
+class AuthSession(Base):
+    __tablename__ = "auth_sessions"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    jti: Mapped[str] = mapped_column(String(36), unique=True, index=True)
+    refresh_token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    access_expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    refresh_expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    ip_address: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    user_agent: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    last_used_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
 class Project(Base):
     __tablename__ = "projects"
 
@@ -73,7 +89,9 @@ class AudioAsset(Base):
 
 class VoiceFavorite(Base):
     __tablename__ = "voice_favorites"
-    __table_args__ = (UniqueConstraint("owner_id", "voice_id", name="uq_voice_favorite_owner_voice"),)
+    __table_args__ = (
+        UniqueConstraint("owner_id", "voice_id", name="uq_voice_favorite_owner_voice"),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     owner_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
@@ -85,7 +103,9 @@ class VoiceFavorite(Base):
 
 class RateLimitBucket(Base):
     __tablename__ = "rate_limit_buckets"
-    __table_args__ = (UniqueConstraint("bucket_key", "window_start", name="uq_rate_window"),)
+    __table_args__ = (
+        UniqueConstraint("bucket_key", "window_start", name="uq_rate_window"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     bucket_key: Mapped[str] = mapped_column(String(180), index=True)
@@ -95,10 +115,12 @@ class RateLimitBucket(Base):
 
 class UsageBucket(Base):
     __tablename__ = "usage_buckets"
-    __table_args__ = (UniqueConstraint("owner_id", "period_key", name="uq_usage_period"),)
+    __table_args__ = (
+        UniqueConstraint("owner_id", "period_key", name="uq_usage_period"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    owner_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    owner_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     period_key: Mapped[str] = mapped_column(String(10))
     generation_count: Mapped[int] = mapped_column(Integer, default=0)
     character_count: Mapped[int] = mapped_column(Integer, default=0)
