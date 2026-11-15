@@ -11,16 +11,27 @@ class ApiClient {
     defaultValue: 'https://aura-voice-api.onrender.com',
   );
 
-  Future<bool> isApiHealthy() async {
+  Future<ApiHealthStatus> getHealthStatus() async {
     try {
       final response = await http
           .get(Uri.parse('$_baseUrl/health'))
-          .timeout(const Duration(seconds: 4));
-      return response.statusCode == 200;
+          .timeout(const Duration(seconds: 6));
+      if (response.statusCode != 200) {
+        return const ApiHealthStatus.offline();
+      }
+      final decoded = jsonDecode(response.body) as Map<String, dynamic>;
+      return ApiHealthStatus(
+        online: decoded['ok'] == true,
+        speechConfigured: decoded['speech_ready'] == true,
+        provider: decoded['speech_provider']?.toString() ?? 'none',
+        version: decoded['version']?.toString() ?? '',
+      );
     } catch (_) {
-      return false;
+      return const ApiHealthStatus.offline();
     }
   }
+
+  Future<bool> isApiHealthy() async => (await getHealthStatus()).online;
 
   Future<List<Map<String, dynamic>>> listVoices({
     required String language,
@@ -96,4 +107,25 @@ class ApiClient {
     }
     return '$fallback (HTTP ${response.statusCode})';
   }
+}
+
+
+class ApiHealthStatus {
+  const ApiHealthStatus({
+    required this.online,
+    required this.speechConfigured,
+    required this.provider,
+    required this.version,
+  });
+
+  const ApiHealthStatus.offline()
+      : online = false,
+        speechConfigured = false,
+        provider = 'none',
+        version = '';
+
+  final bool online;
+  final bool speechConfigured;
+  final String provider;
+  final String version;
 }
