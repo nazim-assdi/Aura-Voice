@@ -8,7 +8,7 @@ class ApiClient {
 
   static const String _baseUrl = String.fromEnvironment(
     'AURA_API_BASE_URL',
-    defaultValue: 'http://127.0.0.1:8000',
+    defaultValue: 'https://aura-voice-api.onrender.com',
   );
 
   Future<bool> isApiHealthy() async {
