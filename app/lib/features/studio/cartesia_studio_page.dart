@@ -119,13 +119,43 @@ class _CartesiaStudioPageState extends State<CartesiaStudioPage> {
   Future<void> _saveAudio() async {
     final bytes = _audioBytes;
     if (bytes == null || _saving) return;
+
     final rawName = _projectController.text.trim().isEmpty
         ? 'aura-voice'
         : _projectController.text.trim();
     final safeName = rawName
         .toLowerCase()
-        .replaceAll(RegExp(r'[^a-z0-9]+'), '-')
-        .replaceAll(RegExp(r'^-+|-+
+        .replaceAll(RegExp('[^a-z0-9]+'), '-')
+        .replaceAll(RegExp('^-+|-+$'), '');
+
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+
+    try {
+      await FileSaver.instance.saveFile(
+        name: safeName.isEmpty ? 'aura-voice' : safeName,
+        bytes: bytes,
+        fileExtension: _audioFormat,
+        mimeType: MimeType.custom,
+        customMimeType: _audioFormat == 'mp3' ? 'audio/mpeg' : 'audio/wav',
+      );
+      if (!mounted) return;
+      setState(() {
+        _saving = false;
+        _notice = 'Audio export saved.';
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _saving = false;
+        _error = 'Could not save audio: $error';
+      });
+    }
+  }
+
+  Future<void> _playAgain() async {
     final bytes = _audioBytes;
     if (bytes == null) return;
     try {
