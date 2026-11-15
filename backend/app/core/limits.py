@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import datetime, timezone
 import time
 
 from fastapi import HTTPException
@@ -8,6 +8,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 FREE_DAILY_GENERATIONS = 50
 FREE_DAILY_CHARACTERS = 50000
+
+
+def utc_period_key() -> str:
+    return datetime.now(timezone.utc).date().isoformat()
 
 
 async def enforce_rate_limit(
@@ -28,18 +32,22 @@ async def enforce_rate_limit(
             RETURNING hit_count
             """
         ),
-        {"key": bucket_key, "window": window},
+        {"key": bucket_key[:180], "window": window},
     )
     count = result.scalar_one()
+    retry_after = window_seconds - (int(time.time()) % window_seconds)
     if count > limit:
+        # Persist the rejected hit too, so concurrent/repeated requests cannot
+        # roll the bucket back to the threshold when the dependency closes.
+        await session.commit()
         raise HTTPException(
             status_code=429,
             detail={
                 "code": "rate_limit_exceeded",
                 "message": "Too many requests. Please slow down and try again.",
-                "retry_after_seconds": window_seconds - (int(time.time()) % window_seconds),
+                "retry_after_seconds": retry_after,
             },
-            headers={"Retry-After": str(window_seconds - (int(time.time()) % window_seconds))},
+            headers={"Retry-After": str(retry_after)},
         )
     await session.commit()
     return count
@@ -51,8 +59,11 @@ async def consume_generation_quota(
     character_count: int,
 ) -> dict[str, int]:
     if character_count < 1 or character_count > 5000:
-        raise HTTPException(status_code=422, detail="Script must contain between 1 and 5,000 characters.")
-    period = date.today().isoformat()
+        raise HTTPException(
+            status_code=422,
+            detail="Script must contain between 1 and 5,000 characters.",
+        )
+    period = utc_period_key()
     result = await session.execute(
         text(
             """
@@ -90,3 +101,34 @@ async def consume_generation_quota(
         )
     await session.commit()
     return {"generations_today": row[0], "characters_today": row[1]}
+
+
+async def refund_generation_quota(
+    session: AsyncSession,
+    owner_id: str,
+    character_count: int,
+) -> None:
+    """Undo a reserved quota unit when the upstream voice provider fails."""
+    await session.execute(
+        text(
+            """
+            UPDATE usage_buckets
+            SET generation_count = CASE
+                    WHEN generation_count > 0 THEN generation_count - 1
+                    ELSE 0
+                END,
+                character_count = CASE
+                    WHEN character_count >= :characters
+                    THEN character_count - :characters
+                    ELSE 0
+                END
+            WHERE owner_id = :owner AND period_key = :period
+            """
+        ),
+        {
+            "owner": owner_id,
+            "period": utc_period_key(),
+            "characters": character_count,
+        },
+    )
+    await session.commit()
