@@ -57,13 +57,13 @@ async def generate_speech(
     session: SessionDep,
 ) -> Response:
     await enforce_rate_limit(session, f"tts:{user.id}", limit=10)
-    await consume_generation_quota(session, user.id, len(payload.text))
     provider = get_speech_provider()
     if not provider.is_ready:
         raise HTTPException(status_code=503, detail={
             "code": "speech_engine_not_configured",
             "message": "Configure a valid Cartesia API key on the backend.",
         })
+    await consume_generation_quota(session, user.id, len(payload.text))
     try:
         audio_bytes = await provider.synthesize(
             text=payload.text,
