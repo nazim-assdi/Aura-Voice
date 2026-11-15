@@ -264,3 +264,90 @@ audio { width: 100%; height: 41px; accent-color: var(--mint); margin-bottom: 10p
   .output-actions { align-items: flex-start; flex-direction: column; }
   .voice-grid { grid-template-columns: 1fr; }
 }
+
+
+/* Secure account gate and expanded production modules */
+.auth-gate {
+  position: fixed; inset: 0; z-index: 100; display: grid; place-items: center;
+  padding: 20px; background: rgba(5,10,17,.86); backdrop-filter: blur(18px);
+}
+.auth-gate.hidden { display: none; }
+.auth-card {
+  width: min(470px,100%); padding: clamp(23px,5vw,38px); border: 1px solid var(--line-strong);
+  border-radius: 23px; background: linear-gradient(145deg,#142235,#0e1826);
+  box-shadow: 0 30px 100px rgba(0,0,0,.5);
+}
+.auth-brand { display:flex; align-items:center; gap:12px; margin-bottom:32px; }
+.auth-card h1 { font-size:clamp(28px,7vw,36px); }
+.auth-card .page-subtitle { margin-bottom:24px; line-height:1.7; }
+.auth-card .text-input { margin:8px 0 0; }
+.auth-card .form-field { margin-bottom:17px; }
+.auth-card .full-button { width:100%; justify-content:center; margin-top:6px; min-height:44px; }
+.auth-switch-line { color:var(--muted); font-size:10px; text-align:center; margin:20px 0 0; }
+.auth-footnote { border-top:1px solid var(--line); padding-top:15px; color:var(--muted-2); font-size:9px; line-height:1.6; text-align:center; }
+.auth-service-warning { padding:12px; margin:16px 0; border:1px solid rgba(229,183,109,.28); border-radius:10px; background:rgba(229,183,109,.07); color:#e8c88e; font-size:10px; line-height:1.6; }
+.auth-service-warning:not(.hidden) { display:block; }
+.auth-service-warning.hidden { display:none; }
+.auth-card .notice-bar { margin-top:12px; text-align:center; }
+.block-label { margin:17px 0 8px; }
+.workflow-textarea { min-height:145px; resize:vertical; }
+.dubbing-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; align-items:start; }
+.workflow-panel { padding:20px; }
+.upload-zone { display:flex; min-height:145px; flex-direction:column; align-items:center; justify-content:center; gap:7px; border:1px dashed rgba(140,242,211,.3); border-radius:13px; background:rgba(140,242,211,.035); cursor:pointer; margin-bottom:19px; }
+.upload-zone:hover { background:rgba(140,242,211,.07); border-color:rgba(140,242,211,.5); }
+.upload-zone input { position:absolute; width:1px; height:1px; opacity:0; }
+.upload-icon { color:var(--mint); font-size:24px; }
+.upload-zone strong { font-size:11px; }
+.upload-zone small { color:var(--muted); font-size:9px; }
+.workflow-panel .full-button { width:100%; justify-content:center; }
+.dubbing-output { margin-top:17px; }
+.editor-panel { padding:20px; }
+.editor-toolbar { display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+.file-picker { position:relative; overflow:hidden; cursor:pointer; }
+.file-picker input { position:absolute; inset:0; opacity:0; cursor:pointer; }
+.editor-source { color:var(--muted); font-size:10px; flex:1; min-width:100px; }
+.editor-wave-wrap { position:relative; margin:18px 0 8px; min-height:145px; border:1px solid var(--line); border-radius:12px; overflow:hidden; background:linear-gradient(180deg,rgba(140,242,211,.035),rgba(140,242,211,.008)); }
+#waveCanvas { display:block; width:100%; height:145px; }
+.wave-empty { position:absolute; inset:0; display:grid; place-items:center; color:var(--muted); font-size:10px; pointer-events:none; }
+.wave-empty.hidden { display:none; }
+.editor-audio { display:block; margin:7px 0 18px; }
+.editor-controls { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:7px 22px; }
+.editor-actions { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; border-top:1px solid var(--line); padding-top:17px; margin-top:7px; }
+.editor-processing-note { color:var(--muted); font-size:9px; flex:1; text-align:center; }
+.editor-output { margin-top:16px; }
+.realtime-layout { display:grid; grid-template-columns:minmax(0,1.5fr) minmax(260px,.7fr); gap:16px; align-items:start; }
+.realtime-panel { padding:20px; }
+.realtime-status { display:flex; align-items:center; gap:13px; padding-bottom:17px; border-bottom:1px solid var(--line); }
+.realtime-orb { display:grid; place-items:center; width:42px; height:42px; border-radius:50%; color:var(--mint); background:rgba(140,242,211,.09); border:1px solid rgba(140,242,211,.2); font-size:18px; }
+.realtime-orb.active { box-shadow:0 0 0 7px rgba(140,242,211,.07),0 0 35px rgba(140,242,211,.18); }
+.realtime-status strong { display:block; font-size:12px; }
+.realtime-status small { display:block; color:var(--muted); font-size:9px; margin-top:4px; }
+.conversation-log { min-height:260px; max-height:460px; overflow:auto; display:flex; flex-direction:column; gap:12px; padding:16px 2px; }
+.conversation-empty { margin:auto; max-width:260px; text-align:center; color:var(--muted); font-size:10px; line-height:1.7; }
+.chat-bubble { max-width:86%; padding:11px 13px; border-radius:13px; font-size:10px; line-height:1.65; white-space:pre-wrap; overflow-wrap:anywhere; }
+.chat-bubble.user { align-self:flex-end; color:#10202a; background:var(--mint); border-bottom-right-radius:4px; }
+.chat-bubble.assistant { align-self:flex-start; color:var(--text); background:#1a2a3e; border:1px solid var(--line-strong); border-bottom-left-radius:4px; }
+.chat-bubble small { display:block; opacity:.65; margin-bottom:4px; font-size:8px; font-weight:800; letter-spacing:.1em; }
+.realtime-controls { display:flex; gap:9px; flex-wrap:wrap; border-top:1px solid var(--line); padding-top:15px; }
+.realtime-controls .primary-button { flex:1; justify-content:center; }
+.realtime-side { padding:20px; }
+.realtime-info { border-top:1px solid var(--line); padding-top:14px; margin-top:18px; }
+.realtime-info strong { font-size:10px; }
+.realtime-info p { color:var(--muted); font-size:9px; line-height:1.7; margin:7px 0 0; }
+.realtime-text-fallback { border-top:1px solid var(--line); padding-top:15px; margin-top:16px; }
+.text-send-row { display:flex; gap:8px; align-items:center; }
+.text-send-row .text-input { flex:1; min-width:0; margin:8px 0 0; }
+.text-send-row .secondary-button { margin-top:8px; }
+.full-button { justify-content:center; }
+.settings-info-panel .privacy-list li { margin-bottom:5px; }
+@media(max-width:1000px) {
+  .dubbing-grid { grid-template-columns:1fr; }
+  .realtime-layout { grid-template-columns:1fr; }
+}
+@media(max-width:680px) {
+  .auth-card { padding:23px; }
+  .editor-controls { grid-template-columns:1fr; }
+  .editor-processing-note { order:3; text-align:left; flex-basis:100%; }
+  .editor-actions .primary-button { width:100%; justify-content:center; }
+  .workflow-panel { padding:16px; }
+}
