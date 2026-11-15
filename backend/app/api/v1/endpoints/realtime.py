@@ -1,10 +1,11 @@
 import httpx
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
+from typing import Literal
 
 from app.api.deps import CurrentUser, SessionDep
 from app.core.config import settings
-from app.core.limits import enforce_rate_limit
+from app.core.limits import consume_feature_quota, enforce_rate_limit, refund_feature_quota
 from app.services.llm import complete_chat
 
 router = APIRouter(prefix="/realtime")
@@ -52,9 +53,14 @@ async def create_realtime_access_token(
     return response_data
 
 
+class ConversationTurn(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str = Field(min_length=1, max_length=1200)
+
+
 class ConversationRequest(BaseModel):
     transcript: str = Field(min_length=1, max_length=6000)
-    history: list[dict[str, str]] = Field(default_factory=list, max_length=12)
+    history: list[ConversationTurn] = Field(default_factory=list, max_length=10)
 
 
 @router.post("/respond")
@@ -67,10 +73,11 @@ async def conversation_response(
     await enforce_rate_limit(session, f"conversation:{user.id}", limit=30)
     host = request.client.host if request.client else "unknown"
     await enforce_rate_limit(session, f"conversation-ip:{host[:64]}", limit=90)
+    await consume_feature_quota(
+        session, user.id, "conversation", units=len(payload.transcript)
+    )
     history_text = "\n".join(
-        f"{item.get('role', 'user')}: {item.get('content', '')[:1000]}"
-        for item in payload.history[-10:]
-        if item.get("role") in {"user", "assistant"}
+        f"{item.role}: {item.content}" for item in payload.history[-10:]
     )
     prompt = (
         "You are Aura Voice, a concise, helpful voice conversation assistant. "
@@ -84,5 +91,11 @@ async def conversation_response(
             max_tokens=500,
         )
     except RuntimeError as exc:
-        raise HTTPException(status_code=503, detail={"code": "conversation_llm_not_configured", "message": str(exc)}) from exc
+        await refund_feature_quota(
+            session, user.id, "conversation", units=len(payload.transcript)
+        )
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "conversation_llm_not_configured", "message": str(exc)},
+        ) from exc
     return {"reply": answer}
