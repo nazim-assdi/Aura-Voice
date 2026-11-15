@@ -930,9 +930,9 @@
     $('renderDubButton').disabled = true;
     $('renderDubButton').textContent = 'Rendering voice…';
     try {
-      const result = await request('/api/v1/dubbing/render', {
+      const response = await authenticatedRawRequest('/api/v1/dubbing/render', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', Accept: 'audio/wav' },
         body: JSON.stringify({
           translated_text: text,
           target_language: $('dubTargetLanguage').value,
@@ -940,20 +940,25 @@
           audio_format: 'wav'
         })
       });
-      const binary = atob(result.audio_base64);
-      const bytes = new Uint8Array(binary.length);
-      for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
-      const blob = new Blob([bytes], { type: result.media_type || 'audio/wav' });
+      if (!response.ok) {
+        let errorData = {};
+        try { errorData = await response.json(); } catch (_) {}
+        throw new Error(explainError(errorData, 'Dubbing render failed (' + response.status + ').'));
+      }
+      const blob = await response.blob();
+      if (!blob.size) throw new Error('The dubbing provider returned an empty audio file.');
+      const mediaType = response.headers.get('content-type') || 'audio/wav';
+      const format = mediaType.indexOf('mpeg') >= 0 ? 'mp3' : 'wav';
       if (state.dubbing.url) URL.revokeObjectURL(state.dubbing.url);
       state.dubbing.blob = blob;
       state.dubbing.url = URL.createObjectURL(blob);
       $('dubAudioPlayer').src = state.dubbing.url;
       $('dubFileInfo').textContent = (blob.size / 1024).toFixed(0) + ' KB';
-      $('dubOutputMeta').textContent = formatLanguageLabel($('dubTargetLanguage').value) + ' · Cartesia Sonic · ' + result.format.toUpperCase();
+      $('dubOutputMeta').textContent = formatLanguageLabel($('dubTargetLanguage').value) + ' · Cartesia Sonic · ' + format.toUpperCase();
       $('dubOutputEmpty').classList.add('hidden');
       $('dubOutputContent').classList.remove('hidden');
-      const project = await ensureProject();
-      await saveAssetToProject(blob, 'dubbed-track.' + result.format, result.media_type);
+      await ensureProject();
+      await saveAssetToProject(blob, 'dubbed-track.' + format, mediaType);
       setModuleNotice('dubNotice', 'Dubbing rendered and saved to your private project.', 'success');
       $('dubAudioPlayer').play().catch(() => {});
       await loadUsage();
@@ -1371,12 +1376,13 @@
       const source = rt.audioContext.createMediaStreamSource(stream);
       rt.processor = rt.audioContext.createScriptProcessor(4096, 1, 1);
       rt.pendingAudio = new Float32Array(0);
-      const sampleRate = rt.audioContext.sampleRate;
-      const chunkSamples = Math.round(sampleRate / 10);
+      const inputSampleRate = rt.audioContext.sampleRate;
+      const sttSampleRate = 16000;
+      const chunkSamples = 1600; // 100 ms at 16 kHz, signed 16-bit PCM
       rt.sttSocket = client.stt.autoFinalize.websocket({
         model: tokenData.stt_model_id || 'ink-2',
-        encoding: 'pcm_f32le',
-        sample_rate: sampleRate,
+        encoding: 'pcm_s16le',
+        sample_rate: sttSampleRate,
         language: liveLanguage
       });
       rt.sttSocket.on('error', (error) => {
@@ -1390,13 +1396,14 @@
         }
         if (!rt.active || rt.busy || !rt.sttSocket) return;
         const incoming = event.inputBuffer.getChannelData(0);
-        const combined = new Float32Array(rt.pendingAudio.length + incoming.length);
+        const resampled = downsampleTo16k(incoming, inputSampleRate);
+        const combined = new Float32Array(rt.pendingAudio.length + resampled.length);
         combined.set(rt.pendingAudio, 0);
-        combined.set(incoming, rt.pendingAudio.length);
+        combined.set(resampled, rt.pendingAudio.length);
         let offset = 0;
         while (combined.length - offset >= chunkSamples) {
-          const chunk = new Float32Array(combined.subarray(offset, offset + chunkSamples));
-          rt.sttSocket.sendRaw(chunk.buffer);
+          const chunk = combined.subarray(offset, offset + chunkSamples);
+          rt.sttSocket.sendRaw(floatTo16BitPCM(chunk));
           offset += chunkSamples;
         }
         rt.pendingAudio = combined.slice(offset);
@@ -1406,7 +1413,7 @@
       rt.processor.connect(rt.audioContext.destination);
       $('realtimeOrb').classList.add('active');
       $('realtimeStatusTitle').textContent = 'Listening';
-      $('realtimeStatusNote').textContent = 'Speak naturally in English; Ink-2 will detect when your turn ends.';
+      $('realtimeStatusNote').textContent = 'Speak naturally in ' + formatLanguageLabel(liveLanguage) + '; Ink-2 will detect when your turn ends.';
       $('stopConversationButton').disabled = false;
       $('startConversationButton').disabled = true;
 
