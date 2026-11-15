@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.gzip import GZipMiddleware
 
@@ -32,14 +33,14 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Content-Type", "Authorization", "X-Client-Type"],
-    expose_headers=["X-Aura-Access-Token"],
+    expose_headers=["X-Aura-Access-Token", "X-Aura-Refresh-Token"],
 )
 app.add_middleware(GZipMiddleware, minimum_size=1200)
 
 
 @app.middleware("http")
 async def security_headers(request, call_next):
-    if request.method in {"POST", "PATCH", "DELETE"} and request.cookies.get("aura_session"):
+    if request.method in {"POST", "PATCH", "DELETE"} and (request.cookies.get("aura_session") or request.cookies.get("aura_refresh")):
         origin = request.headers.get("origin")
         if origin and origin not in settings.parsed_cors_origins:
             return JSONResponse(
