@@ -96,6 +96,46 @@ class CartesiaSpeechProvider:
             raise RuntimeError("Cartesia returned an empty audio response.")
         return response.content
 
+    async def transcribe(
+        self,
+        *,
+        audio: bytes,
+        filename: str,
+        media_type: str,
+        language: str,
+    ) -> dict[str, object]:
+        if not self.is_ready:
+            raise RuntimeError("Cartesia is not configured. Add AURA_CARTESIA_API_KEY.")
+        if len(audio) > 25 * 1024 * 1024:
+            raise ValueError("Audio uploads are limited to 25 MB.")
+        try:
+            async with httpx.AsyncClient(timeout=settings.cartesia_timeout_seconds * 4) as client:
+                response = await client.post(
+                    f"{self.BASE_URL}/stt",
+                    headers={
+                        "Authorization": f"Bearer {settings.cartesia_api_key}",
+                        "Cartesia-Version": settings.cartesia_version,
+                    },
+                    data={"model": settings.cartesia_stt_model_id, "language": language},
+                    files={"file": (filename, audio, media_type)},
+                )
+        except httpx.TimeoutException as exc:
+            raise RuntimeError("Cartesia transcription timed out.") from exc
+        except httpx.RequestError as exc:
+            raise RuntimeError("Could not connect to Cartesia STT.") from exc
+        if not response.is_success:
+            raise RuntimeError(f"Cartesia STT returned HTTP {response.status_code}.")
+        try:
+            payload = response.json()
+        except ValueError as exc:
+            raise RuntimeError("Cartesia returned an invalid transcription response.") from exc
+        return {
+            "text": payload.get("text", ""),
+            "language": payload.get("language", language),
+            "duration": payload.get("duration"),
+            "words": payload.get("words", []),
+        }
+
     async def list_voices(
         self,
         *,
