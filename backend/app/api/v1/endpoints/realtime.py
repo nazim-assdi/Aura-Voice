@@ -44,8 +44,8 @@ async def create_realtime_access_token(
         "tts_websocket": "wss://api.cartesia.ai/tts/websocket",
         "stt_websocket": "wss://api.cartesia.ai/stt/turns/websocket",
         "model_id": settings.cartesia_model_id,
-        "stt_model_id": "ink-2",
-        "note": "Realtime auto turn-detection STT is currently English-only in Cartesia's documented API.",
+        "stt_model_id": settings.cartesia_realtime_stt_model_id,
+        "note": "Cartesia Ink-2 realtime STT currently supports English, Spanish, French, Hindi and Japanese. File transcription uses Ink-Whisper for broader language coverage.",
     }
     return response_data
 
