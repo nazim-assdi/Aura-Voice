@@ -126,7 +126,7 @@ class _CartesiaStudioPageState extends State<CartesiaStudioPage> {
     final safeName = rawName
         .toLowerCase()
         .replaceAll(RegExp('[^a-z0-9]+'), '-')
-        .replaceAll(RegExp('^-+|-+$'), '');
+        .replaceAll(RegExp(r'(^-+|-+$)'), '');
 
     setState(() {
       _saving = true;
