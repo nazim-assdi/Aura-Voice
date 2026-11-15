@@ -4,7 +4,8 @@ from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException, Request, Response, status
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import func, or_, select, update
+from sqlalchemy import delete, func, or_, select, update
+from sqlalchemy.exc import IntegrityError
 
 from app.api.deps import CurrentUser, SessionDep
 from app.core.config import settings
@@ -19,7 +20,15 @@ from app.core.security import (
     new_refresh_token,
     verify_password,
 )
-from app.models import AuthSession, User, UsageBucket
+from app.models import (
+    AudioAsset,
+    AuthSession,
+    FeatureUsageBucket,
+    Project,
+    UsageBucket,
+    User,
+    VoiceFavorite,
+)
 
 router = APIRouter(prefix="/auth")
 SESSION_REFRESH_DAYS = 30
@@ -41,6 +50,15 @@ class LoginRequest(BaseModel):
 
 class RefreshRequest(BaseModel):
     refresh_token: str | None = Field(default=None, min_length=20, max_length=256)
+
+
+class PasswordChangeRequest(BaseModel):
+    current_password: str = Field(min_length=1, max_length=128)
+    new_password: str = Field(min_length=10, max_length=128)
+
+
+class AccountDeleteRequest(BaseModel):
+    password: str = Field(min_length=1, max_length=128)
 
 
 class UserResponse(BaseModel):
@@ -156,7 +174,14 @@ async def register(
         password_hash=hash_password(payload.password),
     )
     session.add(user)
-    await session.commit()
+    try:
+        await session.commit()
+    except IntegrityError as exc:
+        await session.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "email_in_use", "message": "An account with this email already exists."},
+        ) from exc
     await session.refresh(user)
     await create_user_session(user=user, request=request, response=response, session=session)
     return user
@@ -376,4 +401,95 @@ async def revoke_session(
     await session.commit()
     if target.id == getattr(request.state, "auth_session_id", None):
         clear_session_cookies(response)
+    return {"ok": True}
+
+
+
+@router.post("/password/change")
+async def change_password(
+    payload: PasswordChangeRequest,
+    request: Request,
+    response: Response,
+    user: CurrentUser,
+    session: SessionDep,
+) -> dict[str, bool]:
+    await enforce_rate_limit(
+        session,
+        f"password-change:{user.id}",
+        limit=5,
+        window_seconds=3600,
+    )
+    if not verify_password(payload.current_password, user.password_hash):
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "current_password_incorrect", "message": "Current password is incorrect."},
+        )
+
+    user.password_hash = hash_password(payload.new_password)
+    now = datetime.now(timezone.utc)
+    current_session_id = getattr(request.state, "auth_session_id", None)
+    await session.execute(
+        update(AuthSession)
+        .where(
+            AuthSession.user_id == user.id,
+            AuthSession.id != current_session_id,
+            AuthSession.revoked_at.is_(None),
+        )
+        .values(revoked_at=now)
+    )
+
+    current_session = await session.scalar(
+        select(AuthSession).where(
+            AuthSession.id == current_session_id,
+            AuthSession.user_id == user.id,
+            AuthSession.revoked_at.is_(None),
+        )
+    )
+    if not current_session:
+        await session.rollback()
+        raise HTTPException(status_code=401, detail="Your session expired. Please sign in again.")
+
+    next_jti = str(uuid4())
+    next_refresh = new_refresh_token()
+    access_token = create_access_token(user.id, jti=next_jti)
+    current_session.jti = next_jti
+    current_session.refresh_token_hash = hash_refresh_token(next_refresh)
+    current_session.access_expires_at = now + timedelta(minutes=settings.access_token_minutes)
+    current_session.refresh_expires_at = now + timedelta(days=SESSION_REFRESH_DAYS)
+    current_session.last_used_at = now
+    await session.commit()
+    set_session_cookies(response, access_token, next_refresh)
+    set_mobile_session_headers(response, request, access_token, next_refresh)
+    return {"ok": True, "other_sessions_revoked": True}
+
+
+@router.delete("/account")
+async def delete_account(
+    payload: AccountDeleteRequest,
+    user: CurrentUser,
+    response: Response,
+    session: SessionDep,
+) -> dict[str, bool]:
+    await enforce_rate_limit(
+        session,
+        f"account-delete:{user.id}",
+        limit=3,
+        window_seconds=3600,
+    )
+    if not verify_password(payload.password, user.password_hash):
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "password_incorrect", "message": "Password is incorrect."},
+        )
+
+    # Delete private content explicitly as well as relying on database FK cascades.
+    await session.execute(delete(AudioAsset).where(AudioAsset.owner_id == user.id))
+    await session.execute(delete(Project).where(Project.owner_id == user.id))
+    await session.execute(delete(VoiceFavorite).where(VoiceFavorite.owner_id == user.id))
+    await session.execute(delete(UsageBucket).where(UsageBucket.owner_id == user.id))
+    await session.execute(delete(FeatureUsageBucket).where(FeatureUsageBucket.owner_id == user.id))
+    await session.execute(delete(AuthSession).where(AuthSession.user_id == user.id))
+    await session.delete(user)
+    await session.commit()
+    clear_session_cookies(response)
     return {"ok": True}
