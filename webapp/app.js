@@ -1110,7 +1110,7 @@
 
   async function loadCartesiaSdk() {
     if (!state.cartesiaModulePromise) {
-      state.cartesiaModulePromise = import('https://esm.sh/@cartesia/cartesia-js');
+      state.cartesiaModulePromise = import('https://esm.sh/@cartesia/cartesia-js@4.2.0?target=es2022');
     }
     const module = await state.cartesiaModulePromise;
     return module.default || module.Cartesia || module;
@@ -1129,7 +1129,7 @@
       model_id: rt.modelId || 'sonic-3.6',
       voice: { mode: 'id', id: voiceId },
       output_format: { container: 'raw', encoding: 'pcm_f32le', sample_rate: sampleRate },
-      language: 'en'
+      language: $('realtimeLanguage').value
     });
     await ctx.push({ transcript: text });
     await ctx.no_more_inputs();
@@ -1280,8 +1280,9 @@
 
   async function startRealtime() {
     if (state.realtime.active) return;
-    if ($('realtimeLanguage').value !== 'en') {
-      setModuleNotice('realtimeNotice', 'Cartesia Ink-2 automatic turn-detection currently supports English for this live flow. Use multilingual TTS and dubbing for other languages.', 'error');
+    const liveLanguage = $('realtimeLanguage').value;
+    if (!['en', 'es', 'fr', 'hi', 'ja'].includes(liveLanguage)) {
+      setModuleNotice('realtimeNotice', 'Live Ink-2 recognition currently supports English, Spanish, French, Hindi and Japanese. Choose one of these languages.', 'error');
       return;
     }
     $('startConversationButton').disabled = true;
@@ -1309,7 +1310,8 @@
       rt.sttSocket = client.stt.autoFinalize.websocket({
         model: tokenData.stt_model_id || 'ink-2',
         encoding: 'pcm_f32le',
-        sample_rate: sampleRate
+        sample_rate: sampleRate,
+        language: liveLanguage
       });
       rt.sttSocket.on('error', (error) => {
         setModuleNotice('realtimeNotice', error.message || 'Cartesia STT stream error.', 'error');
