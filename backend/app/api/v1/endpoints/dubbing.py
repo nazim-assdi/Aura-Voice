@@ -24,6 +24,14 @@ async def transcribe_audio(
     await enforce_rate_limit(session, f"stt-ip:{host[:64]}", limit=40)
     if not settings.cartesia_api_key.strip():
         raise HTTPException(status_code=503, detail={"code": "stt_not_configured", "message": "Configure the Cartesia API key first."})
+    media_type = (file.content_type or "").lower().split(";", 1)[0].strip()
+    allowed_media_types = {
+        "audio/wav", "audio/x-wav", "audio/mpeg", "audio/mp4",
+        "audio/aac", "audio/ogg", "audio/webm", "audio/flac",
+        "audio/x-flac", "application/ogg",
+    }
+    if media_type not in allowed_media_types:
+        raise HTTPException(status_code=415, detail="Unsupported audio format.")
     content = await file.read(MAX_UPLOAD_BYTES + 1)
     if not content or len(content) > MAX_UPLOAD_BYTES:
         raise HTTPException(status_code=413, detail="Audio upload limit is 25 MB.")
@@ -34,7 +42,7 @@ async def transcribe_audio(
         result = await provider.transcribe(
             audio=content,
             filename=(file.filename or "recording.wav"),
-            media_type=file.content_type or "application/octet-stream",
+            media_type=media_type,
             language=language,
         )
     except ValueError as exc:
