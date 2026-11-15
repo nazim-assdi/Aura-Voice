@@ -39,8 +39,8 @@ class CartesiaSpeechProvider:
     ) -> bytes:
         if not self.is_ready:
             raise RuntimeError("Cartesia is not configured. Add AURA_CARTESIA_API_KEY to the backend environment.")
-        if audio_format != "wav":
-            raise ValueError("Cartesia output is currently configured for WAV audio only.")
+        if audio_format not in {"wav", "mp3"}:
+            raise ValueError("Cartesia output must be WAV or MP3.")
 
         voice_id = (voice_profile_id or settings.cartesia_voice_id).strip()
         if not voice_id:
@@ -51,11 +51,19 @@ class CartesiaSpeechProvider:
             "transcript": text,
             "voice": {"id": voice_id},
             "language": language,
-            "output_format": {
-                "container": "wav",
-                "encoding": "pcm_s16le",
-                "sample_rate": 44100,
-            },
+            "output_format": (
+                {
+                    "container": "mp3",
+                    "sample_rate": 44100,
+                    "bit_rate": 128000,
+                }
+                if audio_format == "mp3"
+                else {
+                    "container": "wav",
+                    "encoding": "pcm_s16le",
+                    "sample_rate": 44100,
+                }
+            ),
             "normalization": "auto",
             "generation_config": {
                 "speed": speed,
