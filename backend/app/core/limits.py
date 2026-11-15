@@ -132,3 +132,98 @@ async def refund_generation_quota(
         },
     )
     await session.commit()
+
+
+
+FEATURE_DAILY_LIMITS = {
+    "transcription": 20,
+    "translation": 30,
+    "conversation": 60,
+}
+
+
+async def consume_feature_quota(
+    session: AsyncSession,
+    owner_id: str,
+    feature: str,
+    *,
+    units: int = 1,
+) -> dict[str, int]:
+    """Atomically reserve a daily feature request before calling a paid upstream API."""
+    if feature not in FEATURE_DAILY_LIMITS:
+        raise ValueError("Unknown usage feature.")
+    if units < 1:
+        raise ValueError("Usage units must be positive.")
+
+    period = utc_period_key()
+    limit = FEATURE_DAILY_LIMITS[feature]
+    result = await session.execute(
+        text(
+            """
+            INSERT INTO feature_usage_buckets
+                (owner_id, period_key, feature, request_count, units)
+            VALUES (:owner, :period, :feature, 1, :units)
+            ON CONFLICT (owner_id, period_key, feature)
+            DO UPDATE SET
+                request_count = feature_usage_buckets.request_count + 1,
+                units = feature_usage_buckets.units + :units
+            WHERE feature_usage_buckets.request_count < :daily_limit
+            RETURNING request_count, units
+            """
+        ),
+        {
+            "owner": owner_id,
+            "period": period,
+            "feature": feature,
+            "units": units,
+            "daily_limit": limit,
+        },
+    )
+    row = result.first()
+    if row is None:
+        await session.rollback()
+        raise HTTPException(
+            status_code=429,
+            detail={
+                "code": "daily_feature_quota_reached",
+                "message": f"Your free daily {feature} limit is {limit} requests. Try again tomorrow.",
+                "feature": feature,
+                "daily_limit": limit,
+            },
+        )
+    await session.commit()
+    return {"requests_today": row[0], "units_today": row[1]}
+
+
+async def refund_feature_quota(
+    session: AsyncSession,
+    owner_id: str,
+    feature: str,
+    *,
+    units: int = 1,
+) -> None:
+    """Refund a reserved feature request if the upstream provider fails."""
+    if feature not in FEATURE_DAILY_LIMITS:
+        return
+    await session.execute(
+        text(
+            """
+            UPDATE feature_usage_buckets
+            SET request_count = CASE
+                    WHEN request_count > 0 THEN request_count - 1
+                    ELSE 0
+                END,
+                units = CASE WHEN units >= :units THEN units - :units ELSE 0 END
+            WHERE owner_id = :owner
+              AND period_key = :period
+              AND feature = :feature
+            """
+        ),
+        {
+            "owner": owner_id,
+            "period": utc_period_key(),
+            "feature": feature,
+            "units": units,
+        },
+    )
+    await session.commit()
