@@ -8,6 +8,14 @@ from app.engines.registry import get_speech_provider
 
 router = APIRouter()
 
+Emotion = Literal[
+    "neutral", "happy", "excited", "enthusiastic", "content", "peaceful",
+    "calm", "grateful", "affectionate", "sympathetic", "curious",
+    "angry", "frustrated", "sad", "melancholic", "disappointed",
+    "apologetic", "hesitant", "confused", "anxious", "scared",
+    "proud", "confident", "skeptical", "contemplative", "determined",
+]
+
 
 class SpeechGenerateRequest(BaseModel):
     text: str = Field(min_length=1, max_length=5000)
@@ -15,6 +23,8 @@ class SpeechGenerateRequest(BaseModel):
     audio_format: Literal["wav"] = "wav"
     voice_profile_id: str | None = Field(default=None, max_length=128)
     speed: float = Field(default=1.0, ge=0.6, le=1.5)
+    volume: float = Field(default=1.0, ge=0.5, le=2.0)
+    emotion: Emotion | None = None
 
 
 @router.get("/voices")
@@ -60,6 +70,8 @@ async def generate_speech(payload: SpeechGenerateRequest) -> Response:
             audio_format=payload.audio_format,
             voice_profile_id=payload.voice_profile_id,
             speed=payload.speed,
+            volume=payload.volume,
+            emotion=payload.emotion,
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
