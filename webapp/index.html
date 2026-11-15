@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#0b111b">
+  <meta name="description" content="Aura Voice Studio — create polished multilingual speech with Cartesia Sonic.">
+  <title>Aura Voice Studio</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar">
+      <a class="brand" href="/" aria-label="Aura Voice Studio home">
+        <span class="brand-mark"><span></span><span></span><span></span><span></span></span>
+        <span class="brand-copy"><strong>AURA</strong><small>VOICE STUDIO</small></span>
+      </a>
+
+      <div class="workspace-switcher">
+        <span class="workspace-avatar">A</span>
+        <span class="workspace-copy"><strong>Personal workspace</strong><small>Creator edition</small></span>
+        <span class="chevron">⌄</span>
+      </div>
+
+      <p class="nav-label">WORKSPACE</p>
+      <nav class="primary-nav" aria-label="Main navigation">
+        <button class="nav-item active" data-page="studio"><span class="nav-icon">✦</span><span>Studio</span><kbd>1</kbd></button>
+        <button class="nav-item" data-page="voices"><span class="nav-icon">◉</span><span>Voice library</span></button>
+        <button class="nav-item" data-page="history"><span class="nav-icon">◷</span><span>Projects</span></button>
+      </nav>
+
+      <p class="nav-label nav-label-spaced">PREFERENCES</p>
+      <nav class="primary-nav" aria-label="Preferences">
+        <button class="nav-item" data-page="settings"><span class="nav-icon">⚙</span><span>Settings</span></button>
+      </nav>
+
+      <div class="sidebar-bottom">
+        <div class="engine-card">
+          <div class="engine-top"><span class="engine-dot" id="engineDot"></span><span>ENGINE STATUS</span></div>
+          <strong id="sidebarEngine">Checking connection</strong>
+          <small id="sidebarEngineNote">Connecting to Aura API</small>
+          <button class="text-button" id="retryHealth">Refresh status <span>↗</span></button>
+        </div>
+        <div class="sidebar-footer">
+          <span class="avatar">N</span>
+          <span class="user-copy"><strong>Creator</strong><small>Personal account</small></span>
+          <button class="icon-button" data-page="settings" aria-label="Open settings">•••</button>
+        </div>
+      </div>
+    </aside>
+
+    <main class="main-area">
+      <header class="topbar">
+        <button class="mobile-menu icon-button" id="mobileMenu" aria-label="Open menu">☰</button>
+        <div class="breadcrumbs"><span>Workspace</span><b>/</b><strong id="breadcrumbCurrent">Studio</strong></div>
+        <div class="topbar-actions">
+          <span class="topbar-status"><span class="status-pulse" id="topStatusDot"></span><span id="topStatusText">Checking API</span></span>
+          <span class="topbar-divider"></span>
+          <button class="icon-button help-button" id="openApiDocs" aria-label="Open API documentation">?</button>
+          <span class="top-avatar">N</span>
+        </div>
+      </header>
+
+      <section class="page active" id="page-studio">
+        <div class="page-heading">
+          <div>
+            <p class="eyebrow">AUDIO CREATION WORKSPACE</p>
+            <h1>Voice Studio<span class="heading-period">.</span></h1>
+            <p class="page-subtitle">Turn your words into expressive, studio-quality speech.</p>
+          </div>
+          <div class="heading-badges">
+            <span class="soft-badge"><span class="badge-dot"></span> CARTESIA SONIC</span>
+            <span class="soft-badge muted-badge">BETA WORKSPACE</span>
+          </div>
+        </div>
+
+        <div class="studio-grid">
+          <section class="panel script-panel">
+            <div class="panel-heading">
+              <div><span class="step-index">01</span><div><h2>Your script</h2><p>Write, paste or start with a template.</p></div></div>
+              <button class="quiet-button" id="clearScript">Clear script</button>
+            </div>
+            <label class="field-label" for="projectName">PROJECT NAME</label>
+            <input class="text-input project-input" id="projectName" maxlength="64" value="Untitled voice project" autocomplete="off">
+            <div class="script-toolbar">
+              <span class="field-label">SCRIPT CONTENT</span>
+              <div class="toolbar-right">
+                <span class="language-inline" id="scriptLanguageLabel">English</span>
+                <span class="toolbar-separator"></span>
+                <span class="character-count"><strong id="charCount">0</strong> / 5,000</span>
+              </div>
+            </div>
+            <textarea id="scriptText" maxlength="5000" spellcheck="true" placeholder="Type the words you want to bring to life...">Welcome to Aura Voice Studio. Shape your message with a natural voice, thoughtful pacing and a little personality.</textarea>
+            <div class="script-bottom">
+              <span class="script-hint"><span class="hint-icon">✧</span> Tip: punctuation helps create natural pauses.</span>
+              <button class="quiet-button" id="pasteScript">Paste text</button>
+            </div>
+            <div class="template-row">
+              <span class="field-label">QUICK START</span>
+              <button class="template-chip" data-template="welcome">Welcome intro</button>
+              <button class="template-chip" data-template="narration">Narration</button>
+              <button class="template-chip" data-template="promo">Product promo</button>
+              <button class="template-chip" data-template="bangla">বাংলা বক্তব্য</button>
+            </div>
+          </section>
+
+          <section class="panel settings-panel">
+            <div class="panel-heading">
+              <div><span class="step-index">02</span><div><h2>Voice settings</h2><p>Choose a voice and direct the delivery.</p></div></div>
+              <span class="settings-glyph">◈</span>
+            </div>
+
+            <div class="form-field">
+              <label class="field-label" for="languageSelect">LANGUAGE</label>
+              <div class="select-wrap"><select class="select-input" id="languageSelect">
+                <option value="en">English</option>
+                <option value="bn">বাংলা · Bangla</option>
+                <option value="ar">العربية · Arabic</option>
+                <option value="hi">हिन्दी · Hindi</option>
+              </select><span class="select-chevron">⌄</span></div>
+            </div>
+
+            <div class="form-field">
+              <div class="field-label-row"><label class="field-label" for="voiceSelect">VOICE</label><button class="inline-link" id="refreshVoices">Refresh list ↻</button></div>
+              <div class="select-wrap"><select class="select-input" id="voiceSelect"><option value="">Loading voices…</option></select><span class="select-chevron">⌄</span></div>
+              <p class="field-note" id="voiceNote">Voices are loaded from your Cartesia account.</p>
+            </div>
+
+            <div class="form-field">
+              <div class="slider-heading"><label class="field-label" for="speedRange">SPEAKING SPEED</label><output id="speedValue">1.0×</output></div>
+              <input class="range-slider" id="speedRange" type="range" min="0.6" max="1.5" step="0.1" value="1">
+              <div class="range-ends"><span>Slower</span><span>Natural</span><span>Faster</span></div>
+            </div>
+
+            <div class="form-field">
+              <div class="slider-heading"><label class="field-label" for="volumeRange">VOLUME</label><output id="volumeValue">1.0×</output></div>
+              <input class="range-slider" id="volumeRange" type="range" min="0.5" max="2" step="0.1" value="1">
+              <div class="range-ends"><span>Soft</span><span>Balanced</span><span>Strong</span></div>
+            </div>
+
+            <div class="form-field compact-field">
+              <label class="field-label" for="emotionSelect">EMOTIONAL DIRECTION</label>
+              <div class="select-wrap"><select class="select-input" id="emotionSelect">
+                <option value="">Auto · Natural delivery</option>
+                <option value="calm">Calm</option>
+                <option value="happy">Happy</option>
+                <option value="excited">Excited</option>
+                <option value="confident">Confident</option>
+                <option value="curious">Curious</option>
+                <option value="grateful">Grateful</option>
+                <option value="apologetic">Apologetic</option>
+                <option value="sad">Sad</option>
+              </select><span class="select-chevron">⌄</span></div>
+            </div>
+
+            <div class="form-field compact-field">
+              <label class="field-label" for="formatSelect">EXPORT FORMAT</label>
+              <div class="format-options">
+                <label class="format-option selected"><input type="radio" name="format" value="wav" checked><span class="format-icon">W</span><span><strong>WAV</strong><small>Lossless</small></span></label>
+                <label class="format-option"><input type="radio" name="format" value="mp3"><span class="format-icon">M</span><span><strong>MP3</strong><small>Compact</small></span></label>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <div class="generate-row">
+          <div class="generation-note"><span class="secure-icon">⬡</span><span>Your API key stays securely on the server.</span></div>
+          <button class="primary-button" id="generateButton"><span class="button-sparkle">✦</span><span id="generateLabel">Generate voice</span><span class="button-arrow">→</span></button>
+        </div>
+
+        <section class="panel output-panel" id="outputPanel">
+          <div class="output-empty" id="outputEmpty">
+            <div class="output-orb"><span>♫</span></div>
+            <h2>Your audio will appear here</h2>
+            <p>Once your script is ready, generate a voice preview to listen and export.</p>
+          </div>
+          <div class="output-content hidden" id="outputContent">
+            <div class="output-title-row">
+              <div><p class="eyebrow">YOUR LATEST CREATION</p><h2 id="outputName">Untitled voice project</h2><p class="output-meta" id="outputMeta">WAV · Cartesia Sonic</p></div>
+              <span class="ready-badge"><span></span> READY</span>
+            </div>
+            <audio id="audioPlayer" controls preload="metadata"></audio>
+            <div class="output-actions"><span class="output-file-info" id="outputFileInfo">Audio generated successfully</span><button class="secondary-button" id="downloadButton">↓ Download audio</button></div>
+          </div>
+        </section>
+        <div class="notice-bar" id="noticeBar" role="status" aria-live="polite"></div>
+      </section>
+
+      <section class="page" id="page-voices">
+        <div class="page-heading">
+          <div><p class="eyebrow">DISCOVER YOUR SOUND</p><h1>Voice library<span class="heading-period">.</span></h1><p class="page-subtitle">Browse the voices available to your connected Cartesia account.</p></div>
+          <button class="secondary-button" id="voicesRefreshPage">↻ Refresh voices</button>
+        </div>
+        <div class="library-toolbar panel">
+          <div class="search-box"><span>⌕</span><input id="voiceSearch" type="search" placeholder="Search voices by name or style…"></div>
+          <div class="select-wrap library-language"><select class="select-input" id="voiceLanguageFilter">
+            <option value="en">English voices</option><option value="bn">Bangla voices</option><option value="ar">Arabic voices</option><option value="hi">Hindi voices</option>
+          </select><span class="select-chevron">⌄</span></div>
+        </div>
+        <div class="voice-grid" id="voiceGrid"><div class="library-loading">Loading voice catalogue…</div></div>
+      </section>
+
+      <section class="page" id="page-history">
+        <div class="page-heading"><div><p class="eyebrow">YOUR CREATIVE WORK</p><h1>Projects<span class="heading-period">.</span></h1><p class="page-subtitle">Reopen recent scripts and continue where you left off.</p></div><button class="secondary-button" id="clearHistory">Clear history</button></div>
+        <div class="panel history-panel"><div class="panel-heading simple-heading"><div><h2>Recent projects</h2><p>Saved in this browser on this device.</p></div><span class="local-badge">LOCAL HISTORY</span></div><div id="historyList" class="history-list"><div class="empty-history">Your recent projects will appear here after your first generation.</div></div></div>
+      </section>
+
+      <section class="page" id="page-settings">
+        <div class="page-heading"><div><p class="eyebrow">WORKSPACE PREFERENCES</p><h1>Settings<span class="heading-period">.</span></h1><p class="page-subtitle">Connection details and service information.</p></div></div>
+        <div class="settings-layout">
+          <section class="panel settings-info-panel"><div class="panel-heading simple-heading"><div><h2>API connection</h2><p>Secure connection to your Aura Voice backend.</p></div><span class="status-pulse" id="settingsStatusDot"></span></div>
+            <div class="setting-row"><span>API endpoint</span><code id="apiEndpoint">https://aura-voice-api.onrender.com</code></div>
+            <div class="setting-row"><span>Backend status</span><strong id="settingsApiStatus">Checking…</strong></div>
+            <div class="setting-row"><span>Speech provider</span><strong id="settingsProvider">Checking…</strong></div>
+            <div class="setting-row"><span>API version</span><strong id="settingsVersion">—</strong></div>
+            <button class="secondary-button full-button" id="settingsReconnect">Check connection again</button>
+          </section>
+          <section class="panel settings-info-panel"><div class="panel-heading simple-heading"><div><h2>Privacy & security</h2><p>How this web workspace handles your data.</p></div><span class="privacy-icon">⬡</span></div>
+            <ul class="privacy-list"><li>Your Cartesia API key is stored on the backend, never in this browser.</li><li>Voice generation sends your script to Cartesia for synthesis.</li><li>Project history is saved locally in this browser only.</li><li>Do not upload or clone a voice unless you have the voice owner's permission.</li></ul>
+          </section>
+        </div>
+      </section>
+
+      <footer class="app-footer"><span>© 2026 Aura Voice AI</span><span>Crafted for creators <b>✦</b></span><a href="https://github.com/nazim-assdi/Aura-Voice" target="_blank" rel="noopener">GitHub ↗</a></footer>
+    </main>
+  </div>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+</body>
+</html>
