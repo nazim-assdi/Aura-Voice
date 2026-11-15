@@ -292,6 +292,24 @@ async def usage(user: CurrentUser, session: SessionDep) -> dict[str, int | str]:
             UsageBucket.period_key == period,
         )
     )
+    feature_rows = await session.scalars(
+        select(FeatureUsageBucket).where(
+            FeatureUsageBucket.owner_id == user.id,
+            FeatureUsageBucket.period_key == period,
+        )
+    )
+    feature_usage = {item.feature: item.request_count for item in feature_rows}
+    audio_storage = await session.scalar(
+        select(func.coalesce(func.sum(AudioAsset.size_bytes), 0)).where(
+            AudioAsset.owner_id == user.id
+        )
+    )
+    project_count = await session.scalar(
+        select(func.count(Project.id)).where(
+            Project.owner_id == user.id,
+            Project.is_archived.is_(False),
+        )
+    )
     return {
         "plan": user.plan,
         "period": period,
@@ -299,6 +317,16 @@ async def usage(user: CurrentUser, session: SessionDep) -> dict[str, int | str]:
         "characters_today": bucket.character_count if bucket else 0,
         "daily_generation_limit": 50,
         "daily_character_limit": 50000,
+        "transcriptions_today": feature_usage.get("transcription", 0),
+        "daily_transcription_limit": 20,
+        "translations_today": feature_usage.get("translation", 0),
+        "daily_translation_limit": 30,
+        "conversations_today": feature_usage.get("conversation", 0),
+        "daily_conversation_limit": 60,
+        "audio_storage_bytes": int(audio_storage or 0),
+        "audio_storage_limit_bytes": 100 * 1024 * 1024,
+        "active_projects": int(project_count or 0),
+        "active_project_limit": 50,
     }
 
 
