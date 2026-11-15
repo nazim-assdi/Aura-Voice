@@ -143,7 +143,7 @@
     return fallback;
   }
 
-  async function request(pathname, options, retried) {
+  async function authenticatedRawRequest(pathname, options, retried) {
     const opts = options || {};
     let response;
     try {
@@ -162,8 +162,14 @@
         });
         refreshed = refreshResponse.ok;
       } catch (_) {}
-      if (refreshed) return request(pathname, opts, true);
+      if (refreshed) return authenticatedRawRequest(pathname, opts, true);
     }
+    return response;
+  }
+
+  async function request(pathname, options, retried) {
+    const opts = options || {};
+    const response = await authenticatedRawRequest(pathname, opts, retried);
     return parseResponse(response, opts.responseType);
   }
 
@@ -709,7 +715,7 @@
 
     try {
       await saveCurrentProject(false);
-      const response = await rawRequest('/api/v1/speech/generate', {
+      const response = await authenticatedRawRequest('/api/v1/speech/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Accept: format === 'mp3' ? 'audio/mpeg' : 'audio/wav' },
         body: JSON.stringify(payload)
@@ -1118,8 +1124,9 @@
 
   async function streamAssistantSpeech(text) {
     const rt = state.realtime;
+    const tokenData = await request('/api/v1/realtime/token', { method: 'POST' });
     const Client = await loadCartesiaSdk();
-    const client = new Client({ token: rt.accessToken });
+    const client = new Client({ token: tokenData.token });
     const ws = await client.tts.websocket();
     rt.ttsSocket = ws;
     ws.on('error', (error) => setModuleNotice('realtimeNotice', error.message || 'Cartesia TTS stream error.', 'error'));
