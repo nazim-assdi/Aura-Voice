@@ -17,6 +17,8 @@ async def create_realtime_access_token(
     session: SessionDep,
 ) -> dict[str, object]:
     await enforce_rate_limit(session, f"realtime-token:{user.id}", limit=10, window_seconds=60)
+    host = request.client.host if request.client else "unknown"
+    await enforce_rate_limit(session, f"realtime-token-ip:{host[:64]}", limit=30, window_seconds=60)
     if not settings.cartesia_api_key.strip():
         raise HTTPException(status_code=503, detail={"code": "cartesia_not_configured", "message": "Configure the Cartesia API key on the backend."})
     try:
@@ -58,10 +60,13 @@ class ConversationRequest(BaseModel):
 @router.post("/respond")
 async def conversation_response(
     payload: ConversationRequest,
+    request: Request,
     user: CurrentUser,
     session: SessionDep,
 ) -> dict[str, str]:
     await enforce_rate_limit(session, f"conversation:{user.id}", limit=30)
+    host = request.client.host if request.client else "unknown"
+    await enforce_rate_limit(session, f"conversation-ip:{host[:64]}", limit=90)
     history_text = "\n".join(
         f"{item.get('role', 'user')}: {item.get('content', '')[:1000]}"
         for item in payload.history[-10:]
