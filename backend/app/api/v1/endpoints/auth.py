@@ -14,6 +14,9 @@ from app.core.security import (
     hash_password,
     verify_password,
 )
+
+# A startup-generated dummy hash keeps unknown-account login attempts expensive too.
+DUMMY_PASSWORD_HASH = hash_password("aura-voice-dummy-password-never-used")
 from app.models import User, UsageBucket
 
 router = APIRouter(prefix="/auth")
@@ -105,8 +108,10 @@ async def login(
     )
     email = normalize_email(payload.email)
     user = await session.scalar(select(User).where(func.lower(User.email) == email))
-    # A fixed-cost dummy hash verification reduces account-enumeration timing leakage.
-    if not user or not verify_password(payload.password, user.password_hash) or not user.is_active:
+    # Verify against a dummy Argon2 hash when the email is unknown.
+    candidate_hash = user.password_hash if user else DUMMY_PASSWORD_HASH
+    valid_password = verify_password(payload.password, candidate_hash)
+    if not user or not valid_password or not user.is_active:
         raise HTTPException(status_code=401, detail={"code": "invalid_credentials", "message": "Email or password is incorrect."})
     token = create_access_token(user.id)
     set_session_cookie(response, token)
