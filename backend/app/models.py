@@ -124,3 +124,17 @@ class UsageBucket(Base):
     period_key: Mapped[str] = mapped_column(String(10))
     generation_count: Mapped[int] = mapped_column(Integer, default=0)
     character_count: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class FeatureUsageBucket(Base):
+    __tablename__ = "feature_usage_buckets"
+    __table_args__ = (
+        UniqueConstraint("owner_id", "period_key", "feature", name="uq_feature_usage_period"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    owner_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    period_key: Mapped[str] = mapped_column(String(10))
+    feature: Mapped[str] = mapped_column(String(24))
+    request_count: Mapped[int] = mapped_column(Integer, default=0)
+    units: Mapped[int] = mapped_column(Integer, default=0)
