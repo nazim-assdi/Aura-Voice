@@ -1,25 +1,30 @@
+from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, HTTPException, Request, Response, status
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import func, select
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import func, or_, select, update
 
-from app.api.deps import SessionDep, CurrentUser
+from app.api.deps import CurrentUser, SessionDep
 from app.core.config import settings
 from app.core.limits import enforce_rate_limit
 from app.core.security import (
     auth_not_ready,
+    bearer_or_cookie,
     create_access_token,
+    decode_access_claims,
     hash_password,
+    hash_refresh_token,
+    new_refresh_token,
     verify_password,
 )
+from app.models import AuthSession, User, UsageBucket
+
+router = APIRouter(prefix="/auth")
+SESSION_REFRESH_DAYS = 30
 
 # A startup-generated dummy hash keeps unknown-account login attempts expensive too.
 DUMMY_PASSWORD_HASH = hash_password("aura-voice-dummy-password-never-used")
-from app.models import User, UsageBucket
-
-router = APIRouter(prefix="/auth")
 
 
 class RegisterRequest(BaseModel):
@@ -33,6 +38,10 @@ class LoginRequest(BaseModel):
     password: str = Field(min_length=1, max_length=128)
 
 
+class RefreshRequest(BaseModel):
+    refresh_token: str | None = Field(default=None, min_length=20, max_length=256)
+
+
 class UserResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: str
@@ -43,21 +52,78 @@ class UserResponse(BaseModel):
 
 def normalize_email(value: str) -> str:
     value = value.strip().lower()
-    if value.count("@") != 1 or "." not in value.rsplit("@", 1)[-1]:
+    if len(value) > 320 or value.count("@") != 1:
+        raise HTTPException(status_code=422, detail="Enter a valid email address.")
+    local, domain = value.rsplit("@", 1)
+    if not local or "." not in domain or domain.startswith(".") or domain.endswith("."):
         raise HTTPException(status_code=422, detail="Enter a valid email address.")
     return value
 
 
-def set_session_cookie(response: Response, token: str) -> None:
+def _cookie_options() -> dict[str, object]:
+    return {
+        "httponly": True,
+        "secure": settings.secure_cookies,
+        "samesite": "none" if settings.secure_cookies else "lax",
+        "path": "/",
+    }
+
+
+def set_session_cookies(response: Response, access_token: str, refresh_token: str) -> None:
+    options = _cookie_options()
     response.set_cookie(
         key="aura_session",
-        value=token,
+        value=access_token,
         max_age=settings.access_token_minutes * 60,
-        httponly=True,
-        secure=settings.secure_cookies,
-        samesite="none" if settings.secure_cookies else "lax",
-        path="/",
+        **options,
     )
+    response.set_cookie(
+        key="aura_refresh",
+        value=refresh_token,
+        max_age=SESSION_REFRESH_DAYS * 24 * 60 * 60,
+        **options,
+    )
+
+
+def set_mobile_session_headers(response: Response, request: Request, access_token: str, refresh_token: str) -> None:
+    if request.headers.get("x-client-type", "").lower() == "mobile":
+        response.headers["X-Aura-Access-Token"] = access_token
+        response.headers["X-Aura-Refresh-Token"] = refresh_token
+
+
+async def create_user_session(
+    *,
+    user: User,
+    request: Request,
+    response: Response,
+    session: SessionDep,
+) -> None:
+    now = datetime.now(timezone.utc)
+    jti = str(uuid4())
+    refresh_token = new_refresh_token()
+    access_token = create_access_token(user.id, jti=jti)
+    auth_session = AuthSession(
+        id=str(uuid4()),
+        user_id=user.id,
+        jti=jti,
+        refresh_token_hash=hash_refresh_token(refresh_token),
+        access_expires_at=now + timedelta(minutes=settings.access_token_minutes),
+        refresh_expires_at=now + timedelta(days=SESSION_REFRESH_DAYS),
+        ip_address=request.client.host[:64] if request.client else None,
+        user_agent=request.headers.get("user-agent", "")[:300],
+        created_at=now,
+        last_used_at=now,
+    )
+    session.add(auth_session)
+    await session.commit()
+    set_session_cookies(response, access_token, refresh_token)
+    set_mobile_session_headers(response, request, access_token, refresh_token)
+
+
+def clear_session_cookies(response: Response) -> None:
+    options = _cookie_options()
+    response.delete_cookie("aura_session", **options)
+    response.delete_cookie("aura_refresh", **options)
 
 
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
@@ -70,13 +136,18 @@ async def register(
     if not settings.auth_ready:
         raise auth_not_ready()
     await enforce_rate_limit(
-        session, f"register:{request.client.host if request.client else 'unknown'}",
-        limit=5, window_seconds=3600,
+        session,
+        f"register:{request.client.host if request.client else 'unknown'}",
+        limit=5,
+        window_seconds=3600,
     )
     email = normalize_email(payload.email)
     existing = await session.scalar(select(User).where(func.lower(User.email) == email))
     if existing:
-        raise HTTPException(status_code=409, detail={"code": "email_in_use", "message": "An account with this email already exists."})
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "email_in_use", "message": "An account with this email already exists."},
+        )
     user = User(
         id=str(uuid4()),
         email=email,
@@ -86,10 +157,7 @@ async def register(
     session.add(user)
     await session.commit()
     await session.refresh(user)
-    token = create_access_token(user.id)
-    set_session_cookie(response, token)
-    if request.headers.get("x-client-type") == "mobile":
-        response.headers["X-Aura-Access-Token"] = token
+    await create_user_session(user=user, request=request, response=response, session=session)
     return user
 
 
@@ -103,21 +171,72 @@ async def login(
     if not settings.auth_ready:
         raise auth_not_ready()
     await enforce_rate_limit(
-        session, f"login:{request.client.host if request.client else 'unknown'}",
-        limit=12, window_seconds=300,
+        session,
+        f"login:{request.client.host if request.client else 'unknown'}",
+        limit=12,
+        window_seconds=300,
     )
     email = normalize_email(payload.email)
     user = await session.scalar(select(User).where(func.lower(User.email) == email))
-    # Verify against a dummy Argon2 hash when the email is unknown.
     candidate_hash = user.password_hash if user else DUMMY_PASSWORD_HASH
     valid_password = verify_password(payload.password, candidate_hash)
     if not user or not valid_password or not user.is_active:
-        raise HTTPException(status_code=401, detail={"code": "invalid_credentials", "message": "Email or password is incorrect."})
-    token = create_access_token(user.id)
-    set_session_cookie(response, token)
-    if request.headers.get("x-client-type") == "mobile":
-        response.headers["X-Aura-Access-Token"] = token
+        raise HTTPException(
+            status_code=401,
+            detail={"code": "invalid_credentials", "message": "Email or password is incorrect."},
+        )
+    await create_user_session(user=user, request=request, response=response, session=session)
     return user
+
+
+@router.post("/refresh")
+async def refresh_session(
+    payload: RefreshRequest,
+    request: Request,
+    response: Response,
+    session: SessionDep,
+) -> dict[str, bool]:
+    if not settings.auth_ready:
+        raise auth_not_ready()
+    refresh_token = request.cookies.get("aura_refresh") or payload.refresh_token
+    if not refresh_token:
+        clear_session_cookies(response)
+        raise HTTPException(status_code=401, detail={"code": "refresh_required", "message": "Please sign in again."})
+
+    now = datetime.now(timezone.utc)
+    stored_hash = hash_refresh_token(refresh_token)
+    auth_session = await session.scalar(
+        select(AuthSession).where(
+            AuthSession.refresh_token_hash == stored_hash,
+            AuthSession.revoked_at.is_(None),
+            AuthSession.refresh_expires_at > now,
+        )
+    )
+    if not auth_session:
+        clear_session_cookies(response)
+        raise HTTPException(status_code=401, detail={"code": "refresh_invalid", "message": "Your session has expired. Please sign in again."})
+
+    user = await session.scalar(
+        select(User).where(User.id == auth_session.user_id, User.is_active.is_(True))
+    )
+    if not user:
+        auth_session.revoked_at = now
+        await session.commit()
+        clear_session_cookies(response)
+        raise HTTPException(status_code=401, detail={"code": "account_inactive", "message": "This account is no longer active."})
+
+    next_jti = str(uuid4())
+    next_refresh = new_refresh_token()
+    access_token = create_access_token(user.id, jti=next_jti)
+    auth_session.jti = next_jti
+    auth_session.refresh_token_hash = hash_refresh_token(next_refresh)
+    auth_session.access_expires_at = now + timedelta(minutes=settings.access_token_minutes)
+    auth_session.refresh_expires_at = now + timedelta(days=SESSION_REFRESH_DAYS)
+    auth_session.last_used_at = now
+    await session.commit()
+    set_session_cookies(response, access_token, next_refresh)
+    set_mobile_session_headers(response, request, access_token, next_refresh)
+    return {"ok": True}
 
 
 @router.get("/me", response_model=UserResponse)
@@ -127,17 +246,16 @@ async def me(user: CurrentUser) -> User:
 
 @router.get("/usage")
 async def usage(user: CurrentUser, session: SessionDep) -> dict[str, int | str]:
-    from datetime import date
-
+    period = datetime.now(timezone.utc).date().isoformat()
     bucket = await session.scalar(
         select(UsageBucket).where(
             UsageBucket.owner_id == user.id,
-            UsageBucket.period_key == date.today().isoformat(),
+            UsageBucket.period_key == period,
         )
     )
     return {
         "plan": user.plan,
-        "period": date.today().isoformat(),
+        "period": period,
         "generations_today": bucket.generation_count if bucket else 0,
         "characters_today": bucket.character_count if bucket else 0,
         "daily_generation_limit": 50,
@@ -146,12 +264,43 @@ async def usage(user: CurrentUser, session: SessionDep) -> dict[str, int | str]:
 
 
 @router.post("/logout")
-async def logout(response: Response) -> dict[str, bool]:
-    response.delete_cookie(
-        "aura_session",
-        path="/",
-        httponly=True,
-        secure=settings.secure_cookies,
-        samesite="none" if settings.secure_cookies else "lax",
+async def logout(
+    request: Request,
+    response: Response,
+    session: SessionDep,
+) -> dict[str, bool]:
+    now = datetime.now(timezone.utc)
+    access_token = bearer_or_cookie(request)
+    claims = decode_access_claims(access_token) if access_token else None
+    refresh_token = request.cookies.get("aura_refresh")
+
+    conditions = []
+    if claims:
+        conditions.append(AuthSession.jti == claims["jti"])
+    if refresh_token:
+        conditions.append(AuthSession.refresh_token_hash == hash_refresh_token(refresh_token))
+    if conditions:
+        await session.execute(
+            update(AuthSession)
+            .where(or_(*conditions), AuthSession.revoked_at.is_(None))
+            .values(revoked_at=now)
+        )
+        await session.commit()
+    clear_session_cookies(response)
+    return {"ok": True}
+
+
+@router.post("/logout-all")
+async def logout_all(
+    user: CurrentUser,
+    response: Response,
+    session: SessionDep,
+) -> dict[str, bool]:
+    await session.execute(
+        update(AuthSession)
+        .where(AuthSession.user_id == user.id, AuthSession.revoked_at.is_(None))
+        .values(revoked_at=datetime.now(timezone.utc))
     )
+    await session.commit()
+    clear_session_cookies(response)
     return {"ok": True}
