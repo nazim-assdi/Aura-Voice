@@ -1193,7 +1193,7 @@
     const voiceId = $('realtimeVoice').value || $('voiceSelect').value;
     const ctx = ws.context({
       model_id: rt.modelId || 'sonic-3.6',
-      voice: { mode: 'id', id: voiceId },
+      voice: voiceId,
       output_format: { container: 'raw', encoding: 'pcm_f32le', sample_rate: sampleRate },
       language: $('realtimeLanguage').value
     });
@@ -1239,7 +1239,7 @@
       const data = await request('/api/v1/realtime/respond', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ transcript: value, history: state.realtime.history.slice(-10) })
+        body: JSON.stringify({ transcript: value, history: state.realtime.history.slice(0, -1).slice(-10) })
       });
       const reply = data.reply || '';
       appendChat('assistant', reply);
