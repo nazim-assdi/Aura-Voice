@@ -319,7 +319,8 @@
       loadVoices($('languageSelect').value, true),
       loadFavorites(),
       loadProjects(),
-      loadUsage()
+      loadUsage(),
+      loadUserSessions()
     ]);
     const language = $('languageSelect').value;
     $('voiceLanguageFilter').value = language;
@@ -515,6 +516,64 @@
       $('settingsUsage').textContent = 'Unavailable';
     }
   }
+
+  async function loadUserSessions() {
+    const list = $('sessionList');
+    if (!list || !state.user) return;
+    list.replaceChildren();
+    const loading = document.createElement('div');
+    loading.className = 'empty-history';
+    loading.textContent = 'Loading active sessions…';
+    list.append(loading);
+    try {
+      const data = await request('/api/v1/auth/sessions');
+      list.replaceChildren();
+      const sessions = data.sessions || [];
+      if (!sessions.length) {
+        const empty = document.createElement('div');
+        empty.className = 'empty-history';
+        empty.textContent = 'No active sessions were found.';
+        list.append(empty);
+        return;
+      }
+      sessions.forEach((item) => {
+        const row = document.createElement('div');
+        row.className = 'session-item';
+        const details = document.createElement('div');
+        details.className = 'session-details';
+        const title = document.createElement('strong');
+        title.textContent = item.current ? 'This browser' : 'Signed-in device';
+        const sub = document.createElement('small');
+        sub.textContent = (item.user_agent || 'Unknown browser') + ' · ' + (item.ip_address || 'IP not available');
+        const time = document.createElement('small');
+        time.textContent = 'Last active: ' + (item.last_used_at ? new Date(item.last_used_at).toLocaleString() : 'Unknown');
+        details.append(title, sub, time);
+        const action = document.createElement('button');
+        action.className = 'history-delete';
+        action.textContent = item.current ? 'Current' : 'Revoke';
+        action.disabled = Boolean(item.current);
+        action.addEventListener('click', async () => {
+          if (!window.confirm('Sign out this device?')) return;
+          try {
+            await request('/api/v1/auth/sessions/' + encodeURIComponent(item.id), { method: 'DELETE' });
+            await loadUserSessions();
+            showToast('Session revoked');
+          } catch (error) {
+            showToast(error.message, true);
+          }
+        });
+        row.append(details, action);
+        list.append(row);
+      });
+    } catch (error) {
+      list.replaceChildren();
+      const empty = document.createElement('div');
+      empty.className = 'empty-history';
+      empty.textContent = error.message || 'Could not load sessions.';
+      list.append(empty);
+    }
+  }
+
 
   async function ensureProject() {
     if (state.projectId) {
@@ -1393,6 +1452,7 @@
     $('saveProjectButton').addEventListener('click', () => saveCurrentProject(true).catch((error) => showToast(error.message, true)));
     $('logoutButton').addEventListener('click', () => logout(false));
     $('logoutAllButton').addEventListener('click', () => logout(true));
+    $('refreshSessions').addEventListener('click', loadUserSessions);
     $('authForm').addEventListener('submit', submitAuth);
     $('authSwitch').addEventListener('click', () => showAuthGate(state.authMode === 'login' ? 'register' : 'login'));
     $('scriptText').addEventListener('input', updateCharacterCount);
