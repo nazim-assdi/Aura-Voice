@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     speech_provider: str = "none"
     cartesia_api_key: str = ""
     cartesia_model_id: str = "sonic-3.6"
-    cartesia_stt_model_id: str = "ink-whisper"
+    cartesia_stt_model_id: str = "ink-2"
     cartesia_voice_id: str = ""
     cartesia_version: str = "2026-08-14"
     cartesia_timeout_seconds: float = 45.0
