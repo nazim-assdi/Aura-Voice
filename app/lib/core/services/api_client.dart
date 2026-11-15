@@ -47,6 +47,8 @@ class ApiClient {
     required String text,
     required String language,
     required double speed,
+    required double volume,
+    String? emotion,
     String? voiceId,
   }) async {
     final response = await http
@@ -61,6 +63,8 @@ class ApiClient {
             'language': language,
             'audio_format': 'wav',
             'speed': speed,
+            'volume': volume,
+            if (emotion != null && emotion.isNotEmpty) 'emotion': emotion,
             if (voiceId != null && voiceId.isNotEmpty)
               'voice_profile_id': voiceId,
           }),
