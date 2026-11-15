@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
 from app.api.deps import CurrentUser, SessionDep
+from app.core.limits import enforce_rate_limit
 from app.engines.registry import get_speech_provider
 from app.models import VoiceFavorite
 
@@ -21,8 +22,10 @@ class FavoriteRequest(BaseModel):
 @router.get("")
 async def list_voices(
     user: CurrentUser,
+    session: SessionDep,
     language: str | None = None,
 ) -> dict[str, object]:
+    await enforce_rate_limit(session, f"voice-library:{user.id}", limit=30)
     provider = get_speech_provider()
     if not provider.is_ready:
         raise HTTPException(
@@ -38,6 +41,7 @@ async def list_voices(
 
 @router.get("/favorites")
 async def favorites(user: CurrentUser, session: SessionDep) -> dict[str, object]:
+    await enforce_rate_limit(session, f"voice-favorites:{user.id}", limit=120)
     rows = await session.scalars(
         select(VoiceFavorite)
         .where(VoiceFavorite.owner_id == user.id)
@@ -57,6 +61,7 @@ async def add_favorite(
     user: CurrentUser,
     session: SessionDep,
 ) -> dict[str, object]:
+    await enforce_rate_limit(session, f"voice-favorite-write:{user.id}", limit=60)
     existing = await session.scalar(
         select(VoiceFavorite).where(
             VoiceFavorite.owner_id == user.id,
@@ -85,6 +90,7 @@ async def remove_favorite(
     user: CurrentUser,
     session: SessionDep,
 ) -> dict[str, bool]:
+    await enforce_rate_limit(session, f"voice-favorite-write:{user.id}", limit=60)
     favorite = await session.scalar(
         select(VoiceFavorite).where(
             VoiceFavorite.owner_id == user.id,
