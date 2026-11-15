@@ -4,17 +4,11 @@ from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
+from app.api.deps import CurrentUser, SessionDep
+from app.core.limits import consume_generation_quota, enforce_rate_limit
 from app.engines.registry import get_speech_provider
 
 router = APIRouter()
-
-Emotion = Literal[
-    "neutral", "happy", "excited", "enthusiastic", "content", "peaceful",
-    "calm", "grateful", "affectionate", "sympathetic", "curious",
-    "angry", "frustrated", "sad", "melancholic", "disappointed",
-    "apologetic", "hesitant", "confused", "anxious", "scared",
-    "proud", "confident", "skeptical", "contemplative", "determined",
-]
 
 
 class SpeechGenerateRequest(BaseModel):
@@ -24,45 +18,52 @@ class SpeechGenerateRequest(BaseModel):
     voice_profile_id: str | None = Field(default=None, max_length=128)
     speed: float = Field(default=1.0, ge=0.6, le=1.5)
     volume: float = Field(default=1.0, ge=0.5, le=2.0)
-    emotion: Emotion | None = None
+    emotion: Literal[
+        "neutral", "happy", "excited", "enthusiastic", "content", "peaceful",
+        "calm", "grateful", "affectionate", "sympathetic", "curious",
+        "angry", "frustrated", "sad", "melancholic", "disappointed",
+        "apologetic", "hesitant", "confused", "anxious", "scared",
+        "proud", "confident", "skeptical", "contemplative", "determined",
+    ] | None = None
 
 
 @router.get("/voices")
 async def list_voices(
+    user: CurrentUser,
+    session: SessionDep,
     language: str | None = Query(default=None, min_length=2, max_length=16),
     limit: int = Query(default=100, ge=1, le=100),
 ) -> dict[str, object]:
+    await enforce_rate_limit(session, f"voices:{user.id}", limit=30)
     provider = get_speech_provider()
     if not provider.is_ready:
-        raise HTTPException(
-            status_code=503,
-            detail={
-                "code": "speech_engine_not_configured",
-                "message": "Cartesia is not configured. Add the API key to the backend environment.",
-            },
-        )
+        raise HTTPException(status_code=503, detail={
+            "code": "speech_engine_not_configured",
+            "message": "Cartesia is not configured. Add the backend API key.",
+        })
     try:
         voices = await provider.list_voices(language=language, limit=limit)
     except RuntimeError as exc:
-        raise HTTPException(
-            status_code=502,
-            detail={"code": "voice_catalogue_unavailable", "message": str(exc)},
-        ) from exc
+        raise HTTPException(status_code=502, detail={
+            "code": "voice_catalogue_unavailable", "message": str(exc)
+        }) from exc
     return {"provider": provider.name, "voices": voices}
 
 
 @router.post("/generate")
-async def generate_speech(payload: SpeechGenerateRequest) -> Response:
+async def generate_speech(
+    payload: SpeechGenerateRequest,
+    user: CurrentUser,
+    session: SessionDep,
+) -> Response:
+    await enforce_rate_limit(session, f"tts:{user.id}", limit=10)
+    await consume_generation_quota(session, user.id, len(payload.text))
     provider = get_speech_provider()
     if not provider.is_ready:
-        raise HTTPException(
-            status_code=503,
-            detail={
-                "code": "speech_engine_not_configured",
-                "message": "No speech model is configured. Add a valid Cartesia API key to the backend environment.",
-            },
-        )
-
+        raise HTTPException(status_code=503, detail={
+            "code": "speech_engine_not_configured",
+            "message": "Configure a valid Cartesia API key on the backend.",
+        })
     try:
         audio_bytes = await provider.synthesize(
             text=payload.text,
@@ -76,14 +77,15 @@ async def generate_speech(payload: SpeechGenerateRequest) -> Response:
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except RuntimeError as exc:
-        raise HTTPException(
-            status_code=502,
-            detail={"code": "speech_generation_failed", "message": str(exc)},
-        ) from exc
-
+        raise HTTPException(status_code=502, detail={
+            "code": "speech_generation_failed", "message": str(exc)
+        }) from exc
     media_type = "audio/mpeg" if payload.audio_format == "mp3" else "audio/wav"
     return Response(
         content=audio_bytes,
         media_type=media_type,
-        headers={"Cache-Control": "no-store"},
+        headers={
+            "Cache-Control": "private, no-store",
+            "X-Content-Type-Options": "nosniff",
+        },
     )
