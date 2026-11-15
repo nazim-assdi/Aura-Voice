@@ -20,7 +20,7 @@ Emotion = Literal[
 class SpeechGenerateRequest(BaseModel):
     text: str = Field(min_length=1, max_length=5000)
     language: str = Field(default="en", min_length=2, max_length=16)
-    audio_format: Literal["wav"] = "wav"
+    audio_format: Literal["wav", "mp3"] = "wav"
     voice_profile_id: str | None = Field(default=None, max_length=128)
     speed: float = Field(default=1.0, ge=0.6, le=1.5)
     volume: float = Field(default=1.0, ge=0.5, le=2.0)
@@ -81,8 +81,9 @@ async def generate_speech(payload: SpeechGenerateRequest) -> Response:
             detail={"code": "speech_generation_failed", "message": str(exc)},
         ) from exc
 
+    media_type = "audio/mpeg" if payload.audio_format == "mp3" else "audio/wav"
     return Response(
         content=audio_bytes,
-        media_type="audio/wav",
+        media_type=media_type,
         headers={"Cache-Control": "no-store"},
     )
