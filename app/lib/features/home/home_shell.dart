@@ -5,7 +5,9 @@ import '../../core/theme/aura_theme.dart';
 import '../studio/cartesia_studio_page.dart';
 
 class HomeShell extends StatefulWidget {
-  const HomeShell({super.key});
+  const HomeShell({required this.onSignOut, super.key});
+
+  final VoidCallback onSignOut;
 
   @override
   State<HomeShell> createState() => _HomeShellState();
@@ -17,7 +19,10 @@ class _HomeShellState extends State<HomeShell> {
   @override
   Widget build(BuildContext context) {
     final pages = <Widget>[
-      DashboardPage(onOpenStudio: () => setState(() => _index = 1)),
+      DashboardPage(
+        onOpenStudio: () => setState(() => _index = 1),
+        onSignOut: widget.onSignOut,
+      ),
       const StudioPage(),
       const LibraryPage(),
     ];
@@ -37,8 +42,13 @@ class _HomeShellState extends State<HomeShell> {
 }
 
 class DashboardPage extends StatelessWidget {
-  const DashboardPage({required this.onOpenStudio, super.key});
+  const DashboardPage({
+    required this.onOpenStudio,
+    required this.onSignOut,
+    super.key,
+  });
   final VoidCallback onOpenStudio;
+  final VoidCallback onSignOut;
 
   @override
   Widget build(BuildContext context) {
@@ -48,7 +58,7 @@ class DashboardPage extends StatelessWidget {
           padding: const EdgeInsets.fromLTRB(22, 18, 22, 28),
           sliver: SliverList(
             delegate: SliverChildListDelegate([
-              const _TopBar(),
+              _TopBar(onSignOut: onSignOut),
               const SizedBox(height: 34),
               Text('YOUR CREATIVE AUDIO SPACE',
                   style: Theme.of(context).textTheme.labelSmall?.copyWith(
@@ -154,7 +164,9 @@ class _CapabilityStat extends StatelessWidget {
 }
 
 class _TopBar extends StatelessWidget {
-  const _TopBar();
+  const _TopBar({required this.onSignOut});
+  final VoidCallback onSignOut;
+
   @override
   Widget build(BuildContext context) => Row(children: [
     Container(
@@ -175,8 +187,11 @@ class _TopBar extends StatelessWidget {
     const Spacer(),
     const _StatusChip(label: 'HYBRID'),
     const SizedBox(width: 8),
-    const CircleAvatar(radius: 19, backgroundColor: AuraTheme.panelLight,
-      child: Icon(Icons.person_outline_rounded, color: Colors.white70)),
+    IconButton(
+      tooltip: 'Sign out',
+      onPressed: onSignOut,
+      icon: const Icon(Icons.logout_rounded, color: Colors.white70),
+    ),
   ]);
 }
 
