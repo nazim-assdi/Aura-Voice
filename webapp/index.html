@@ -49,7 +49,7 @@
         <div class="sidebar-footer">
           <span class="avatar">N</span>
           <span class="user-copy"><strong>Creator</strong><small>Personal account</small></span>
-          <button class="icon-button" data-page="settings" aria-label="Open settings">•••</button>
+          <button class="icon-button" id="logoutButton" aria-label="Sign out">⇥</button>
         </div>
       </div>
     </aside>
@@ -83,7 +83,7 @@
           <section class="panel script-panel">
             <div class="panel-heading">
               <div><span class="step-index">01</span><div><h2>Your script</h2><p>Write, paste or start with a template.</p></div></div>
-              <button class="quiet-button" id="clearScript">Clear script</button>
+              <div class="script-heading-actions"><button class="quiet-button" id="clearScript">Clear script</button><button class="inline-link" id="saveProjectButton">Save project ↗</button></div>
             </div>
             <label class="field-label" for="projectName">PROJECT NAME</label>
             <input class="text-input project-input" id="projectName" maxlength="64" value="Untitled voice project" autocomplete="off">
@@ -207,7 +207,7 @@
 
       <section class="page" id="page-history">
         <div class="page-heading"><div><p class="eyebrow">YOUR CREATIVE WORK</p><h1>Projects<span class="heading-period">.</span></h1><p class="page-subtitle">Reopen recent scripts and continue where you left off.</p></div><button class="secondary-button" id="clearHistory">Clear history</button></div>
-        <div class="panel history-panel"><div class="panel-heading simple-heading"><div><h2>Recent projects</h2><p>Saved in this browser on this device.</p></div><span class="local-badge">LOCAL HISTORY</span></div><div id="historyList" class="history-list"><div class="empty-history">Your recent projects will appear here after your first generation.</div></div></div>
+        <div class="panel history-panel"><div class="panel-heading simple-heading"><div><h2>Cloud projects</h2><p>Private projects stored against your signed-in account.</p></div><span class="local-badge">PRIVATE CLOUD</span></div><div id="historyList" class="history-list"><div class="empty-history">Your recent projects will appear here after your first generation.</div></div></div>
       </section>
 
       <section class="page" id="page-dubbing">
@@ -289,6 +289,9 @@
             <div class="setting-row"><span>Speech provider</span><strong id="settingsProvider">Checking…</strong></div>
             <div class="setting-row"><span>API version</span><strong id="settingsVersion">—</strong></div>
             <button class="secondary-button full-button" id="settingsReconnect">Check connection again</button>
+            <div class="setting-row"><span>Account plan</span><strong id="settingsPlan">Checking…</strong></div>
+            <div class="setting-row"><span>Daily generations</span><strong id="settingsUsage">Checking…</strong></div>
+            <button class="secondary-button full-button" id="logoutAllButton">Sign out from all sessions</button>
           </section>
           <section class="panel settings-info-panel"><div class="panel-heading simple-heading"><div><h2>Privacy & security</h2><p>How this web workspace handles your data.</p></div><span class="privacy-icon">⬡</span></div>
             <ul class="privacy-list"><li>Your Cartesia API key is stored on the backend, never in this browser.</li><li>Voice generation sends your script to Cartesia for synthesis.</li><li>Project history is saved locally in this browser only.</li><li>Do not upload or clone a voice unless you have the voice owner's permission.</li></ul>
