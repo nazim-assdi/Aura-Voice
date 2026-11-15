@@ -84,6 +84,7 @@ async def get_project(
     user: CurrentUser,
     session: SessionDep,
 ) -> dict[str, object]:
+    await enforce_rate_limit(session, f"project-read:{user.id}", limit=120)
     project = await session.scalar(
         select(Project).where(Project.id == project_id, Project.owner_id == user.id)
     )
@@ -115,12 +116,19 @@ async def update_project(
     user: CurrentUser,
     session: SessionDep,
 ) -> dict[str, object]:
+    await enforce_rate_limit(session, f"project-update:{user.id}", limit=60)
     project = await session.scalar(
         select(Project).where(Project.id == project_id, Project.owner_id == user.id)
     )
     if not project:
         raise HTTPException(status_code=404, detail="Project not found.")
     values = payload.model_dump(exclude_unset=True)
+    if "name" in values and values["name"] is not None:
+        values["name"] = values["name"].strip()
+        if not values["name"]:
+            raise HTTPException(status_code=422, detail="Project name cannot be blank.")
+    if "settings" in values and len(json.dumps(values["settings"] or {}, ensure_ascii=False)) > 5000:
+        raise HTTPException(status_code=413, detail="Project settings are limited to 5 KB.")
     for key, value in values.items():
         if key == "settings":
             project.settings_json = json.dumps(value or {}, ensure_ascii=False)
@@ -137,6 +145,7 @@ async def delete_project(
     user: CurrentUser,
     session: SessionDep,
 ) -> Response:
+    await enforce_rate_limit(session, f"project-delete:{user.id}", limit=20)
     project = await session.scalar(
         select(Project).where(Project.id == project_id, Project.owner_id == user.id)
     )
