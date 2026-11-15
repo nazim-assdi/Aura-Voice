@@ -9,6 +9,7 @@ from sqlalchemy.exc import IntegrityError
 
 from app.api.deps import CurrentUser, SessionDep
 from app.core.config import settings
+from app.core.client_ip import get_client_ip
 from app.core.limits import enforce_rate_limit
 from app.core.security import (
     auth_not_ready,
@@ -128,7 +129,7 @@ async def create_user_session(
         refresh_token_hash=hash_refresh_token(refresh_token),
         access_expires_at=now + timedelta(minutes=settings.access_token_minutes),
         refresh_expires_at=now + timedelta(days=SESSION_REFRESH_DAYS),
-        ip_address=request.client.host[:64] if request.client else None,
+        ip_address=get_client_ip(request)[:64],
         user_agent=request.headers.get("user-agent", "")[:300],
         created_at=now,
         last_used_at=now,
@@ -156,7 +157,7 @@ async def register(
         raise auth_not_ready()
     await enforce_rate_limit(
         session,
-        f"register:{request.client.host if request.client else 'unknown'}",
+        f"register:{get_client_ip(request)}",
         limit=5,
         window_seconds=3600,
     )
@@ -198,7 +199,7 @@ async def login(
         raise auth_not_ready()
     await enforce_rate_limit(
         session,
-        f"login:{request.client.host if request.client else 'unknown'}",
+        f"login:{get_client_ip(request)}",
         limit=12,
         window_seconds=300,
     )
@@ -233,7 +234,7 @@ async def refresh_session(
         raise auth_not_ready()
     await enforce_rate_limit(
         session,
-        f"refresh:{request.client.host if request.client else 'unknown'}",
+        f"refresh:{get_client_ip(request)}",
         limit=30,
         window_seconds=300,
     )
