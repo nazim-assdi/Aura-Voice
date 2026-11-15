@@ -53,11 +53,17 @@ async def transcribe_audio(
             language=language,
         )
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-    except (ValueError, RuntimeError) as exc:
         await refund_feature_quota(session, user.id, "transcription", units=len(content))
-        status_code = 422 if isinstance(exc, ValueError) else 502
-        raise HTTPException(status_code=status_code, detail={"code": "transcription_failed", "message": str(exc)}) from exc
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "transcription_invalid", "message": str(exc)},
+        ) from exc
+    except RuntimeError as exc:
+        await refund_feature_quota(session, user.id, "transcription", units=len(content))
+        raise HTTPException(
+            status_code=502,
+            detail={"code": "transcription_failed", "message": str(exc)},
+        ) from exc
     return result
 
 
