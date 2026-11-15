@@ -23,6 +23,8 @@ class _CartesiaStudioPageState extends State<CartesiaStudioPage> {
   String _language = 'bn';
   String? _selectedVoiceId;
   double _speed = 1.0;
+  double _volume = 1.0;
+  String? _emotion;
   List<Map<String, dynamic>> _voices = [];
   bool _loadingVoices = false;
   bool _generating = false;
@@ -88,6 +90,8 @@ class _CartesiaStudioPageState extends State<CartesiaStudioPage> {
         text: text,
         language: _language,
         speed: _speed,
+        volume: _volume,
+        emotion: _emotion,
         voiceId: _selectedVoiceId,
       );
       if (!mounted) return;
@@ -261,6 +265,50 @@ class _CartesiaStudioPageState extends State<CartesiaStudioPage> {
                         Text('Natural', style: theme.textTheme.bodySmall?.copyWith(color: AuraTheme.muted)),
                         Text('Faster', style: theme.textTheme.bodySmall?.copyWith(color: AuraTheme.muted)),
                       ],
+                    ),
+                    const SizedBox(height: 20),
+                    Row(
+                      children: [
+                        Text('Output volume',
+                            style: theme.textTheme.titleSmall?.copyWith(
+                              fontWeight: FontWeight.w700,
+                            )),
+                        const Spacer(),
+                        Text('${_volume.toStringAsFixed(1)}×',
+                            style: theme.textTheme.titleMedium?.copyWith(
+                              color: AuraTheme.mint,
+                              fontWeight: FontWeight.w800,
+                            )),
+                      ],
+                    ),
+                    Slider(
+                      value: _volume,
+                      min: 0.5,
+                      max: 2.0,
+                      divisions: 15,
+                      activeColor: AuraTheme.mint,
+                      onChanged: (value) => setState(() => _volume = value),
+                    ),
+                    const SizedBox(height: 12),
+                    DropdownButtonFormField<String?>(
+                      initialValue: _emotion,
+                      decoration: const InputDecoration(
+                        labelText: 'Voice emotion',
+                        helperText: 'Auto lets Sonic interpret the script naturally.',
+                        filled: true,
+                      ),
+                      items: const [
+                        DropdownMenuItem<String?>(value: null, child: Text('Auto · Natural delivery')),
+                        DropdownMenuItem<String?>(value: 'calm', child: Text('Calm')),
+                        DropdownMenuItem<String?>(value: 'happy', child: Text('Happy')),
+                        DropdownMenuItem<String?>(value: 'excited', child: Text('Excited')),
+                        DropdownMenuItem<String?>(value: 'confident', child: Text('Confident')),
+                        DropdownMenuItem<String?>(value: 'sad', child: Text('Sad')),
+                        DropdownMenuItem<String?>(value: 'curious', child: Text('Curious')),
+                        DropdownMenuItem<String?>(value: 'grateful', child: Text('Grateful')),
+                        DropdownMenuItem<String?>(value: 'apologetic', child: Text('Apologetic')),
+                      ],
+                      onChanged: (value) => setState(() => _emotion = value),
                     ),
                   ],
                 ),
