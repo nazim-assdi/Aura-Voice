@@ -198,6 +198,12 @@ async def refresh_session(
 ) -> dict[str, bool]:
     if not settings.auth_ready:
         raise auth_not_ready()
+    await enforce_rate_limit(
+        session,
+        f"refresh:{request.client.host if request.client else 'unknown'}",
+        limit=30,
+        window_seconds=300,
+    )
     refresh_token = request.cookies.get("aura_refresh") or payload.refresh_token
     if not refresh_token:
         clear_session_cookies(response)
