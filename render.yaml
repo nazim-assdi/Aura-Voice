@@ -1,3 +1,8 @@
+databases:
+  - name: aura-voice-db
+    plan: basic-256mb
+    region: singapore
+
 services:
   - type: web
     name: aura-voice-api
@@ -13,7 +18,9 @@ services:
       - key: AURA_ENVIRONMENT
         value: production
       - key: AURA_DATABASE_URL
-        sync: false
+        fromDatabase:
+          name: aura-voice-db
+          property: connectionString
       - key: AURA_AUTH_JWT_SECRET
         generateValue: true
       - key: AURA_LLM_API_KEY
