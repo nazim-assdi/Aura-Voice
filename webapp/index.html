@@ -29,6 +29,9 @@
         <button class="nav-item active" data-page="studio"><span class="nav-icon">✦</span><span>Studio</span><kbd>1</kbd></button>
         <button class="nav-item" data-page="voices"><span class="nav-icon">◉</span><span>Voice library</span></button>
         <button class="nav-item" data-page="history"><span class="nav-icon">◷</span><span>Projects</span></button>
+        <button class="nav-item" data-page="dubbing"><span class="nav-icon">⇄</span><span>AI dubbing</span></button>
+        <button class="nav-item" data-page="editor"><span class="nav-icon">〽</span><span>Audio editor</span></button>
+        <button class="nav-item" data-page="realtime"><span class="nav-icon">◉</span><span>Live conversation</span></button>
       </nav>
 
       <p class="nav-label nav-label-spaced">PREFERENCES</p>
@@ -207,6 +210,76 @@
         <div class="panel history-panel"><div class="panel-heading simple-heading"><div><h2>Recent projects</h2><p>Saved in this browser on this device.</p></div><span class="local-badge">LOCAL HISTORY</span></div><div id="historyList" class="history-list"><div class="empty-history">Your recent projects will appear here after your first generation.</div></div></div>
       </section>
 
+      <section class="page" id="page-dubbing">
+        <div class="page-heading">
+          <div><p class="eyebrow">MULTILINGUAL CONTENT PIPELINE</p><h1>AI dubbing<span class="heading-period">.</span></h1><p class="page-subtitle">Transcribe, translate and render a new-language voice track.</p></div>
+          <span class="soft-badge"><span class="badge-dot"></span> CARTESIA + LLM</span>
+        </div>
+        <div class="dubbing-grid">
+          <section class="panel workflow-panel">
+            <div class="panel-heading"><div><span class="step-index">01</span><div><h2>Source audio</h2><p>Upload a recording to transcribe.</p></div></div></div>
+            <label class="upload-zone" for="dubFile"><span class="upload-icon">↑</span><strong>Choose an audio file</strong><small>WAV, MP3, M4A, WebM · up to 25 MB</small><input id="dubFile" type="file" accept="audio/*"></label>
+            <div class="form-field"><label class="field-label" for="dubSourceLanguage">SOURCE LANGUAGE</label><div class="select-wrap"><select class="select-input" id="dubSourceLanguage"><option value="en">English</option><option value="bn">বাংলা</option><option value="ar">العربية</option><option value="hi">हिन्दी</option><option value="auto">Auto detect (supported API languages only)</option></select><span class="select-chevron">⌄</span></div></div>
+            <button class="secondary-button full-button" id="transcribeButton">Transcribe audio</button>
+            <label class="field-label block-label" for="dubTranscript">TRANSCRIPT</label>
+            <textarea id="dubTranscript" class="workflow-textarea" maxlength="20000" placeholder="The recognised speech will appear here. You can edit it before translating."></textarea>
+          </section>
+          <section class="panel workflow-panel">
+            <div class="panel-heading"><div><span class="step-index">02</span><div><h2>Translation & voice</h2><p>Prepare the script for your target audience.</p></div></div></div>
+            <div class="form-field"><label class="field-label" for="dubTargetLanguage">TARGET LANGUAGE</label><div class="select-wrap"><select class="select-input" id="dubTargetLanguage"><option value="bn">বাংলা · Bangla</option><option value="en">English</option><option value="ar">العربية · Arabic</option><option value="hi">हिन्दी · Hindi</option></select><span class="select-chevron">⌄</span></div></div>
+            <button class="secondary-button full-button" id="translateButton">Translate transcript</button>
+            <label class="field-label block-label" for="dubTranslation">TRANSLATED SCRIPT</label>
+            <textarea id="dubTranslation" class="workflow-textarea" maxlength="5000" placeholder="Review and refine the translated script before rendering."></textarea>
+            <div class="form-field"><label class="field-label" for="dubVoice">OUTPUT VOICE</label><div class="select-wrap"><select class="select-input" id="dubVoice"><option value="">Load voices for target language</option></select><span class="select-chevron">⌄</span></div></div>
+            <button class="primary-button full-button" id="renderDubButton"><span>✦</span> Render dubbed audio</button>
+          </section>
+        </div>
+        <section class="panel output-panel dubbing-output">
+          <div class="output-empty" id="dubOutputEmpty"><div class="output-orb">♫</div><h2>Your dubbed track will appear here</h2><p>Complete transcription and translation before rendering.</p></div>
+          <div class="output-content hidden" id="dubOutputContent"><div class="output-title-row"><div><p class="eyebrow">DUBBED AUDIO</p><h2>Translated voice track</h2><p class="output-meta" id="dubOutputMeta">Cartesia Sonic</p></div><span class="ready-badge"><span></span> READY</span></div><audio id="dubAudioPlayer" controls></audio><div class="output-actions"><span class="output-file-info" id="dubFileInfo"></span><button class="secondary-button" id="downloadDubButton">↓ Download dub</button></div></div>
+        </section>
+        <div class="notice-bar" id="dubNotice" role="status" aria-live="polite"></div>
+      </section>
+
+      <section class="page" id="page-editor">
+        <div class="page-heading"><div><p class="eyebrow">PRECISION AUDIO WORKSPACE</p><h1>Audio editor<span class="heading-period">.</span></h1><p class="page-subtitle">Trim, shape volume, add fades and export a WAV master in your browser.</p></div><span class="soft-badge muted-badge">LOCAL PROCESSING</span></div>
+        <section class="panel editor-panel">
+          <div class="editor-toolbar"><label class="secondary-button file-picker" for="editorFile">↑ Open audio<input id="editorFile" type="file" accept="audio/*"></label><span class="editor-source" id="editorSourceName">No audio loaded</span><button class="quiet-button" id="editorUseGenerated">Use latest generated audio</button></div>
+          <div class="editor-wave-wrap"><canvas id="waveCanvas" width="1200" height="180"></canvas><div class="wave-empty" id="waveEmpty">Open an audio file to begin editing.</div></div>
+          <audio id="editorAudioPreview" controls class="editor-audio"></audio>
+          <div class="editor-controls">
+            <div class="form-field"><div class="slider-heading"><label class="field-label" for="trimStart">TRIM START</label><output id="trimStartValue">0.00 s</output></div><input class="range-slider" id="trimStart" type="range" min="0" max="1" step="0.01" value="0"></div>
+            <div class="form-field"><div class="slider-heading"><label class="field-label" for="trimEnd">TRIM END</label><output id="trimEndValue">0.00 s</output></div><input class="range-slider" id="trimEnd" type="range" min="0" max="1" step="0.01" value="1"></div>
+            <div class="form-field"><div class="slider-heading"><label class="field-label" for="editorGain">GAIN</label><output id="editorGainValue">100%</output></div><input class="range-slider" id="editorGain" type="range" min="0" max="2" step="0.05" value="1"></div>
+            <div class="form-field"><div class="slider-heading"><label class="field-label" for="fadeIn">FADE IN</label><output id="fadeInValue">0.0 s</output></div><input class="range-slider" id="fadeIn" type="range" min="0" max="5" step="0.1" value="0"></div>
+            <div class="form-field"><div class="slider-heading"><label class="field-label" for="fadeOut">FADE OUT</label><output id="fadeOutValue">0.0 s</output></div><input class="range-slider" id="fadeOut" type="range" min="0" max="5" step="0.1" value="0"></div>
+          </div>
+          <div class="editor-actions"><button class="quiet-button" id="resetEditor">Reset edits</button><span class="editor-processing-note" id="editorNote">Audio is processed locally in this browser.</span><button class="primary-button" id="applyEditsButton">Apply edits & export WAV →</button></div>
+        </section>
+        <section class="panel output-panel editor-output"><div class="output-empty" id="editorOutputEmpty"><div class="output-orb">〽</div><h2>Your edited master will appear here</h2><p>The edited WAV file can be previewed, downloaded and saved to a project.</p></div><div class="output-content hidden" id="editorOutputContent"><div class="output-title-row"><div><p class="eyebrow">EDITED MASTER</p><h2>Audio export</h2><p class="output-meta" id="editorOutputMeta">WAV · 16-bit PCM</p></div><span class="ready-badge"><span></span> READY</span></div><audio id="editorOutputPlayer" controls></audio><div class="output-actions"><span class="output-file-info" id="editorFileInfo"></span><button class="secondary-button" id="downloadEditedButton">↓ Download WAV</button></div></div></section>
+        <div class="notice-bar" id="editorNotice" role="status" aria-live="polite"></div>
+      </section>
+
+      <section class="page" id="page-realtime">
+        <div class="page-heading"><div><p class="eyebrow">LOW-LATENCY VOICE EXPERIENCE</p><h1>Live conversation<span class="heading-period">.</span></h1><p class="page-subtitle">Speak naturally, see live transcripts and hear AI responses.</p></div><span class="soft-badge"><span class="badge-dot"></span> CARTESIA INK + SONIC</span></div>
+        <div class="realtime-layout">
+          <section class="panel realtime-panel">
+            <div class="realtime-status"><span class="realtime-orb" id="realtimeOrb">◉</span><div><strong id="realtimeStatusTitle">Ready when you are</strong><small id="realtimeStatusNote">Microphone access is requested only when you start.</small></div></div>
+            <div class="conversation-log" id="conversationLog"><div class="conversation-empty">Your conversation will appear here. Start a session and say hello.</div></div>
+            <div class="realtime-controls"><button class="primary-button" id="startConversationButton">◉ Start conversation</button><button class="secondary-button" id="stopConversationButton" disabled>End session</button></div>
+            <div class="realtime-text-fallback"><label class="field-label" for="realtimeTextInput">TEXT INPUT FALLBACK</label><div class="text-send-row"><input id="realtimeTextInput" class="text-input" placeholder="Type a message if microphone is unavailable…"><button class="secondary-button" id="sendRealtimeText">Send</button></div></div>
+            <div class="notice-bar" id="realtimeNotice" role="status" aria-live="polite"></div>
+          </section>
+          <aside class="panel realtime-side">
+            <p class="eyebrow">SESSION SETTINGS</p>
+            <div class="form-field"><label class="field-label" for="realtimeLanguage">SPEAKING LANGUAGE</label><div class="select-wrap"><select class="select-input" id="realtimeLanguage"><option value="en">English</option><option value="bn">বাংলা</option><option value="ar">العربية</option><option value="hi">हिन्दी</option></select><span class="select-chevron">⌄</span></div></div>
+            <div class="form-field"><label class="field-label" for="realtimeVoice">ASSISTANT VOICE</label><div class="select-wrap"><select class="select-input" id="realtimeVoice"><option value="">Use selected studio voice</option></select><span class="select-chevron">⌄</span></div></div>
+            <div class="realtime-info"><strong>Privacy notice</strong><p>Microphone audio is streamed to Cartesia only while a live session is active. The short-lived provider token is requested from the authenticated Aura backend and is never stored in browser storage.</p></div>
+            <div class="realtime-info"><strong>Requirements</strong><p>HTTPS, microphone permission, configured Cartesia credentials and an OpenAI-compatible LLM key are required for spoken AI replies.</p></div>
+          </aside>
+        </div>
+      </section>
+
       <section class="page" id="page-settings">
         <div class="page-heading"><div><p class="eyebrow">WORKSPACE PREFERENCES</p><h1>Settings<span class="heading-period">.</span></h1><p class="page-subtitle">Connection details and service information.</p></div></div>
         <div class="settings-layout">
@@ -225,6 +298,24 @@
 
       <footer class="app-footer"><span>© 2026 Aura Voice AI</span><span>Crafted for creators <b>✦</b></span><a href="https://github.com/nazim-assdi/Aura-Voice" target="_blank" rel="noopener">GitHub ↗</a></footer>
     </main>
+  </div>
+  <div class="auth-gate hidden" id="authGate" role="dialog" aria-modal="true" aria-labelledby="authTitle">
+    <div class="auth-card">
+      <div class="auth-brand"><span class="brand-mark"><span></span><span></span><span></span><span></span></span><div class="brand-copy"><strong>AURA</strong><small>SECURE CREATOR WORKSPACE</small></div></div>
+      <p class="eyebrow" id="authEyebrow">YOUR PRIVATE AUDIO SPACE</p>
+      <h1 id="authTitle">Welcome back<span class="heading-period">.</span></h1>
+      <p class="page-subtitle" id="authSubtitle">Sign in to access your projects, voice tools and private audio library.</p>
+      <div class="auth-service-warning hidden" id="authServiceWarning"></div>
+      <form id="authForm" autocomplete="on">
+        <div class="form-field hidden" id="authNameField"><label class="field-label" for="authName">DISPLAY NAME</label><input id="authName" class="text-input" maxlength="80" autocomplete="name" placeholder="Your name"></div>
+        <div class="form-field"><label class="field-label" for="authEmail">EMAIL ADDRESS</label><input id="authEmail" class="text-input" type="email" required maxlength="320" autocomplete="email" placeholder="you@example.com"></div>
+        <div class="form-field"><label class="field-label" for="authPassword">PASSWORD</label><input id="authPassword" class="text-input" type="password" required minlength="10" maxlength="128" autocomplete="current-password" placeholder="At least 10 characters"></div>
+        <button class="primary-button full-button" type="submit" id="authSubmit">Sign in securely →</button>
+      </form>
+      <p class="auth-switch-line"><span id="authSwitchText">New to Aura Voice?</span> <button class="inline-link" id="authSwitch" type="button">Create an account</button></p>
+      <p class="auth-footnote">Protected by server-side sessions, Argon2 password hashing and daily usage limits.</p>
+      <div class="notice-bar" id="authNotice" role="status" aria-live="polite"></div>
+    </div>
   </div>
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 </body>
