@@ -587,7 +587,15 @@
     try {
       const usage = await request('/api/v1/auth/usage');
       $('settingsPlan').textContent = String(usage.plan || 'free').toUpperCase();
-      $('settingsUsage').textContent = usage.generations_today + ' / ' + usage.daily_generation_limit + ' · ' + usage.characters_today + ' / ' + usage.daily_character_limit + ' chars';
+      const storageMb = (Number(usage.audio_storage_bytes || 0) / (1024 * 1024)).toFixed(1);
+      $('settingsUsage').textContent = [
+        'TTS ' + usage.generations_today + '/' + usage.daily_generation_limit,
+        'STT ' + usage.transcriptions_today + '/' + usage.daily_transcription_limit,
+        'Translate ' + usage.translations_today + '/' + usage.daily_translation_limit,
+        'Live ' + usage.conversations_today + '/' + usage.daily_conversation_limit,
+        storageMb + '/100 MB audio',
+        usage.active_projects + '/50 projects'
+      ].join(' · ');
     } catch (error) {
       $('settingsPlan').textContent = state.user ? String(state.user.plan || 'free').toUpperCase() : 'Sign in required';
       $('settingsUsage').textContent = 'Unavailable';
@@ -1321,7 +1329,16 @@
       const data = await request('/api/v1/realtime/respond', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ transcript: value, history: state.realtime.history.slice(0, -1).slice(-10) })
+        body: JSON.stringify({
+          transcript: value.slice(0, 6000),
+          history: state.realtime.history
+            .slice(0, -1)
+            .slice(-10)
+            .map((item) => ({
+              role: item.role === 'assistant' ? 'assistant' : 'user',
+              content: String(item.content || '').slice(-1200)
+            }))
+        })
       });
       const reply = data.reply || '';
       appendChat('assistant', reply);
