@@ -1194,7 +1194,7 @@
         }
       } else {
         const voice = $('realtimeVoice').value || $('voiceSelect').value;
-        const response = await rawRequest('/api/v1/speech/generate', {
+        const response = await authenticatedRawRequest('/api/v1/speech/generate', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Accept: 'audio/wav' },
           body: JSON.stringify({
