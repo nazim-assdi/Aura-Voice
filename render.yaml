@@ -21,6 +21,8 @@ services:
       - key: AURA_LLM_MODEL
         sync: false
       - key: AURA_CARTESIA_STT_MODEL_ID
+        value: ink-whisper
+      - key: AURA_CARTESIA_REALTIME_STT_MODEL_ID
         value: ink-2
       - key: AURA_SPEECH_PROVIDER
         value: cartesia
