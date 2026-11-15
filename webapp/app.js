@@ -20,6 +20,7 @@
     dubbing: { blob: null, url: null },
     realtime: { active: false, stream: null, audioContext: null, processor: null, sttSocket: null, ttsSocket: null, history: [], busy: false },
     generating: false,
+    cartesiaModulePromise: null,
     authMode: 'login',
     toastTimer: null
   };
@@ -1107,6 +1108,61 @@
     state.realtime.history = state.realtime.history.slice(-10);
   }
 
+  async function loadCartesiaSdk() {
+    if (!state.cartesiaModulePromise) {
+      state.cartesiaModulePromise = import('https://esm.sh/@cartesia/cartesia-js');
+    }
+    const module = await state.cartesiaModulePromise;
+    return module.default || module.Cartesia || module;
+  }
+
+  async function streamAssistantSpeech(text) {
+    const rt = state.realtime;
+    const Client = await loadCartesiaSdk();
+    const client = new Client({ token: rt.accessToken });
+    const ws = await client.tts.websocket();
+    rt.ttsSocket = ws;
+    ws.on('error', (error) => setModuleNotice('realtimeNotice', error.message || 'Cartesia TTS stream error.', 'error'));
+    const sampleRate = 44100;
+    const voiceId = $('realtimeVoice').value || $('voiceSelect').value;
+    const ctx = ws.context({
+      model_id: rt.modelId || 'sonic-3.6',
+      voice: { mode: 'id', id: voiceId },
+      output_format: { container: 'raw', encoding: 'pcm_f32le', sample_rate: sampleRate },
+      language: 'en'
+    });
+    await ctx.push({ transcript: text });
+    await ctx.no_more_inputs();
+    if (rt.audioContext && rt.audioContext.state === 'suspended') await rt.audioContext.resume();
+    let nextStartTime = rt.audioContext ? rt.audioContext.currentTime : 0;
+    try {
+      for await (const event of ctx.receive()) {
+        if (!rt.active) break;
+        if (event.type === 'chunk' && event.audio) {
+          const floats = new Float32Array(
+            event.audio.buffer,
+            event.audio.byteOffset,
+            event.audio.byteLength / 4
+          );
+          const audioContext = rt.audioContext || new AudioContext({ sampleRate });
+          const audioBuffer = audioContext.createBuffer(1, floats.length, sampleRate);
+          audioBuffer.getChannelData(0).set(floats);
+          const source = audioContext.createBufferSource();
+          source.buffer = audioBuffer;
+          source.connect(audioContext.destination);
+          const startAt = Math.max(nextStartTime, audioContext.currentTime + 0.015);
+          source.start(startAt);
+          nextStartTime = startAt + audioBuffer.duration;
+        } else if (event.type === 'error') {
+          throw new Error(event.message || event.title || 'Cartesia TTS stream failed.');
+        }
+      }
+    } finally {
+      try { ws.close(); } catch (_) {}
+      if (rt.ttsSocket === ws) rt.ttsSocket = null;
+    }
+  }
+
   async function sendConversationMessage(text) {
     const value = (text || '').trim();
     if (!value || state.realtime.busy) return;
@@ -1119,26 +1175,37 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ transcript: value, history: state.realtime.history.slice(-10) })
       });
-      appendChat('assistant', data.reply || '');
-      const voice = $('realtimeVoice').value || $('voiceSelect').value;
-      const response = await rawRequest('/api/v1/speech/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Accept: 'audio/wav' },
-        body: JSON.stringify({
-          text: data.reply || '',
-          language: 'en',
-          audio_format: 'wav',
-          voice_profile_id: voice || null,
-          speed: 1,
-          volume: 1
-        })
-      });
-      if (!response.ok) throw new Error(explainError(await response.json(), 'Could not synthesize assistant voice.'));
-      const blob = await response.blob();
-      const url = URL.createObjectURL(blob);
-      const audio = new Audio(url);
-      await audio.play().catch(() => {});
-      audio.addEventListener('ended', () => URL.revokeObjectURL(url), { once: true });
+      const reply = data.reply || '';
+      appendChat('assistant', reply);
+      if (state.realtime.active) {
+        $('realtimeStatusTitle').textContent = 'Aura is speaking';
+        $('realtimeStatusNote').textContent = 'Streaming Sonic audio in short chunks.';
+        await streamAssistantSpeech(reply);
+        if (state.realtime.active) {
+          $('realtimeStatusTitle').textContent = 'Listening';
+          $('realtimeStatusNote').textContent = 'Speak when Aura has finished.';
+        }
+      } else {
+        const voice = $('realtimeVoice').value || $('voiceSelect').value;
+        const response = await rawRequest('/api/v1/speech/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Accept: 'audio/wav' },
+          body: JSON.stringify({
+            text: reply,
+            language: 'en',
+            audio_format: 'wav',
+            voice_profile_id: voice || null,
+            speed: 1,
+            volume: 1
+          })
+        });
+        if (!response.ok) throw new Error(explainError(await response.json(), 'Could not synthesize assistant voice.'));
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        const audio = new Audio(url);
+        await audio.play().catch(() => {});
+        audio.addEventListener('ended', () => URL.revokeObjectURL(url), { once: true });
+      }
       setModuleNotice('realtimeNotice', 'Reply ready.', 'success');
     } catch (error) {
       setModuleNotice('realtimeNotice', error.message, 'error');
@@ -1203,6 +1270,7 @@
       rt.audioContext.close().catch(() => {});
       rt.audioContext = null;
     }
+    rt.pendingAudio = new Float32Array(0);
     $('realtimeOrb').classList.remove('active');
     $('realtimeStatusTitle').textContent = 'Session ended';
     $('realtimeStatusNote').textContent = 'Your microphone has been released.';
@@ -1213,80 +1281,99 @@
   async function startRealtime() {
     if (state.realtime.active) return;
     if ($('realtimeLanguage').value !== 'en') {
-      setModuleNotice('realtimeNotice', 'Cartesia documented real-time turn-detection STT is currently English-only. Choose English for voice conversation; other languages remain available in TTS and dubbing.', 'error');
+      setModuleNotice('realtimeNotice', 'Cartesia Ink-2 automatic turn-detection currently supports English for this live flow. Use multilingual TTS and dubbing for other languages.', 'error');
       return;
     }
     $('startConversationButton').disabled = true;
-    setModuleNotice('realtimeNotice', 'Requesting a short-lived secure voice token…');
+    setModuleNotice('realtimeNotice', 'Requesting a short-lived Cartesia access token…');
     try {
       const tokenData = await request('/api/v1/realtime/token', { method: 'POST' });
+      const Client = await loadCartesiaSdk();
+      const client = new Client({ token: tokenData.token });
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
       });
       const rt = state.realtime;
       rt.active = true;
+      rt.accessToken = tokenData.token;
+      rt.modelId = tokenData.model_id || 'sonic-3.6';
       rt.stream = stream;
-      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-      rt.audioContext = new AudioContextClass();
+      rt.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      if (rt.audioContext.state === 'suspended') await rt.audioContext.resume();
+
       const source = rt.audioContext.createMediaStreamSource(stream);
       rt.processor = rt.audioContext.createScriptProcessor(4096, 1, 1);
-      const socketUrl = tokenData.stt_websocket +
-        '?model=' + encodeURIComponent(tokenData.stt_model_id || 'ink-2') +
-        '&encoding=pcm_s16le&sample_rate=16000' +
-        '&cartesia_version=' + encodeURIComponent(tokenData.cartesia_version) +
-        '&access_token=' + encodeURIComponent(tokenData.token);
-      rt.sttSocket = new WebSocket(socketUrl);
-      rt.sttSocket.binaryType = 'arraybuffer';
-      rt.sttSocket.onopen = () => {
-        if (!rt.active) return;
-        source.connect(rt.processor);
-        rt.processor.connect(rt.audioContext.destination);
-        rt.processor.onaudioprocess = (event) => {
-          if (!rt.active || rt.busy || rt.sttSocket.readyState !== WebSocket.OPEN) return;
-          const audio = event.inputBuffer.getChannelData(0);
-          const downsampled = downsampleTo16k(audio, rt.audioContext.sampleRate);
-          rt.sttSocket.send(floatTo16BitPCM(downsampled));
-        };
-        $('realtimeOrb').classList.add('active');
-        $('realtimeStatusTitle').textContent = 'Listening';
-        $('realtimeStatusNote').textContent = 'Speak clearly in English. Pause briefly when you finish a turn.';
-        $('stopConversationButton').disabled = false;
-        $('startConversationButton').disabled = true;
-        setModuleNotice('realtimeNotice', 'Live microphone session is active.', 'success');
+      rt.pendingAudio = new Float32Array(0);
+      const sampleRate = rt.audioContext.sampleRate;
+      const chunkSamples = Math.round(sampleRate / 10);
+      rt.sttSocket = client.stt.autoFinalize.websocket({
+        model: tokenData.stt_model_id || 'ink-2',
+        encoding: 'pcm_f32le',
+        sample_rate: sampleRate
+      });
+      rt.sttSocket.on('error', (error) => {
+        setModuleNotice('realtimeNotice', error.message || 'Cartesia STT stream error.', 'error');
+      });
+
+      rt.processor.onaudioprocess = (event) => {
+        const output = event.outputBuffer;
+        for (let channel = 0; channel < output.numberOfChannels; channel += 1) {
+          output.getChannelData(channel).fill(0);
+        }
+        if (!rt.active || rt.busy || !rt.sttSocket) return;
+        const incoming = event.inputBuffer.getChannelData(0);
+        const combined = new Float32Array(rt.pendingAudio.length + incoming.length);
+        combined.set(rt.pendingAudio, 0);
+        combined.set(incoming, rt.pendingAudio.length);
+        let offset = 0;
+        while (combined.length - offset >= chunkSamples) {
+          const chunk = new Float32Array(combined.subarray(offset, offset + chunkSamples));
+          rt.sttSocket.sendRaw(chunk.buffer);
+          offset += chunkSamples;
+        }
+        rt.pendingAudio = combined.slice(offset);
       };
-      rt.sttSocket.onmessage = async (event) => {
-        let message;
-        try { message = JSON.parse(event.data); } catch (_) { return; }
-        const type = message.type || message.event || '';
-        const transcript = message.text || message.transcript || (message.data && message.data.text) || '';
-        if (type === 'turn.end' || type === 'end_of_turn' || type === 'turn_end') {
-          if (transcript) {
-            rt.busy = true;
-            if (rt.processor) rt.processor.disconnect();
-            await sendConversationMessage(transcript);
-            rt.busy = false;
-            if (rt.active && rt.processor && rt.audioContext) {
-              try { rt.processor.connect(rt.audioContext.destination); } catch (_) {}
+
+      source.connect(rt.processor);
+      rt.processor.connect(rt.audioContext.destination);
+      $('realtimeOrb').classList.add('active');
+      $('realtimeStatusTitle').textContent = 'Listening';
+      $('realtimeStatusNote').textContent = 'Speak naturally in English; Ink-2 will detect when your turn ends.';
+      $('stopConversationButton').disabled = false;
+      $('startConversationButton').disabled = true;
+
+      rt.sttStreamTask = (async () => {
+        try {
+          for await (const event of rt.sttSocket.stream()) {
+            if (!rt.active) break;
+            if (event.type === 'error') {
+              setModuleNotice('realtimeNotice', event.error && event.error.message ? event.error.message : 'Speech recognition stream failed.', 'error');
+              continue;
+            }
+            if (event.type !== 'message') continue;
+            const message = event.message || {};
+            if (message.type === 'turn.start') {
+              $('realtimeStatusTitle').textContent = 'Hearing you';
+            } else if (message.type === 'turn.update' || message.type === 'turn.eager_end') {
+              $('realtimeStatusNote').textContent = message.transcript || 'Listening…';
+            } else if (message.type === 'turn.end') {
+              const transcript = (message.transcript || '').trim();
+              if (transcript && !rt.busy) {
+                await sendConversationMessage(transcript);
+              }
             }
           }
-        } else if (type === 'transcript' || type === 'turn.update' || type === 'partial_transcript') {
-          $('realtimeStatusNote').textContent = transcript ? 'Hearing: ' + transcript.slice(0, 100) : 'Listening…';
+        } catch (error) {
+          if (rt.active) setModuleNotice('realtimeNotice', error.message || 'The live speech stream stopped.', 'error');
         }
-      };
-      rt.sttSocket.onerror = () => setModuleNotice('realtimeNotice', 'The Cartesia STT socket reported an error.', 'error');
-      rt.sttSocket.onclose = (event) => {
-        if (rt.active && event.code !== 1000) {
-          setModuleNotice('realtimeNotice', 'Voice stream closed. Start a new session to reconnect.', 'error');
-          stopRealtime();
-        }
-      };
+      })();
+      setModuleNotice('realtimeNotice', 'Live microphone session is active. Your key remains on the backend.', 'success');
     } catch (error) {
       stopRealtime();
       setModuleNotice('realtimeNotice', error.message || 'Could not start the live voice session.', 'error');
       $('startConversationButton').disabled = false;
     }
   }
-
   function bindEvents() {
     document.querySelectorAll('.nav-item').forEach((button) => {
       button.addEventListener('click', () => navigate(button.dataset.page));
