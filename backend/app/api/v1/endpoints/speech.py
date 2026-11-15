@@ -5,6 +5,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
 from app.api.deps import CurrentUser, SessionDep
+from app.core.client_ip import get_client_ip
 from app.core.limits import (
     consume_generation_quota,
     enforce_rate_limit,
@@ -32,7 +33,7 @@ class SpeechGenerateRequest(BaseModel):
 
 
 def client_bucket(request: Request) -> str:
-    host = request.client.host if request.client else "unknown"
+    host = get_client_ip(request)
     return host[:64]
 
 
