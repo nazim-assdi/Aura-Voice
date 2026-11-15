@@ -10,6 +10,18 @@ services:
     healthCheckPath: /health
     autoDeployTrigger: checksPass
     envVars:
+      - key: AURA_ENVIRONMENT
+        value: production
+      - key: AURA_DATABASE_URL
+        sync: false
+      - key: AURA_AUTH_JWT_SECRET
+        generateValue: true
+      - key: AURA_LLM_API_KEY
+        sync: false
+      - key: AURA_LLM_MODEL
+        sync: false
+      - key: AURA_CARTESIA_STT_MODEL_ID
+        value: ink-2
       - key: AURA_SPEECH_PROVIDER
         value: cartesia
       - key: AURA_CARTESIA_API_KEY
