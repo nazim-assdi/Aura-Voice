@@ -340,6 +340,83 @@
     showToast(all ? 'All sessions signed out.' : 'Signed out.');
   }
 
+  async function changeAccountPassword() {
+    const currentPassword = $('currentPassword').value;
+    const newPassword = $('newPassword').value;
+    const notice = $('accountSecurityNotice');
+    if (!currentPassword || newPassword.length < 10) {
+      setModuleNotice(
+        'accountSecurityNotice',
+        'Enter your current password and a new password of at least 10 characters.',
+        'error'
+      );
+      return;
+    }
+    $('changePasswordButton').disabled = true;
+    $('changePasswordButton').textContent = 'Updating password…';
+    try {
+      await request('/api/v1/auth/password/change', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          current_password: currentPassword,
+          new_password: newPassword
+        })
+      });
+      $('currentPassword').value = '';
+      $('newPassword').value = '';
+      setModuleNotice(
+        'accountSecurityNotice',
+        'Password changed. Other active sessions have been signed out.',
+        'success'
+      );
+      await loadUserSessions();
+      showToast('Password updated securely');
+    } catch (error) {
+      setModuleNotice('accountSecurityNotice', error.message, 'error');
+    } finally {
+      $('changePasswordButton').disabled = false;
+      $('changePasswordButton').textContent = 'Change password';
+    }
+  }
+
+  async function permanentlyDeleteAccount() {
+    const password = $('deleteAccountPassword').value;
+    if (!password) {
+      setModuleNotice('accountSecurityNotice', 'Enter your password to confirm account deletion.', 'error');
+      return;
+    }
+    const confirmed = window.confirm(
+      'Permanently delete your Aura Voice account, projects and saved audio? This cannot be undone.'
+    );
+    if (!confirmed) return;
+
+    $('deleteAccountButton').disabled = true;
+    $('deleteAccountButton').textContent = 'Deleting account…';
+    try {
+      await request('/api/v1/auth/account', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password })
+      });
+      stopRealtime();
+      state.user = null;
+      state.projectId = null;
+      state.projects = [];
+      state.favorites.clear();
+      $('deleteAccountPassword').value = '';
+      renderProjects();
+      showAuthGate('register');
+      setModuleNotice('accountSecurityNotice', 'Your account and private workspace have been deleted.', 'success');
+      showToast('Account deleted');
+    } catch (error) {
+      setModuleNotice('accountSecurityNotice', error.message, 'error');
+    } finally {
+      $('deleteAccountButton').disabled = false;
+      $('deleteAccountButton').textContent = 'Permanently delete account';
+    }
+  }
+
   function makeVoiceOption(voice) {
     const option = document.createElement('option');
     option.value = voice.id;
@@ -1460,6 +1537,8 @@
     $('logoutButton').addEventListener('click', () => logout(false));
     $('logoutAllButton').addEventListener('click', () => logout(true));
     $('refreshSessions').addEventListener('click', loadUserSessions);
+    $('changePasswordButton').addEventListener('click', changeAccountPassword);
+    $('deleteAccountButton').addEventListener('click', permanentlyDeleteAccount);
     $('authForm').addEventListener('submit', submitAuth);
     $('authSwitch').addEventListener('click', () => showAuthGate(state.authMode === 'login' ? 'register' : 'login'));
     $('scriptText').addEventListener('input', updateCharacterCount);
