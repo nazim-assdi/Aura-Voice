@@ -26,7 +26,7 @@ async def create_realtime_access_token(
             response = await client.post(
                 "https://api.cartesia.ai/access-token",
                 headers={
-                    "Authorization": f"Bearer {settings.cartesia_api_key}",
+                    "X-API-Key": settings.cartesia_api_key,
                     "Cartesia-Version": settings.cartesia_version,
                     "Content-Type": "application/json",
                 },
