@@ -1,8 +1,14 @@
-from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, Request, Response, UploadFile
 from pydantic import BaseModel, Field
 
 from app.api.deps import CurrentUser, SessionDep
-from app.core.limits import consume_generation_quota, enforce_rate_limit, refund_generation_quota
+from app.core.limits import (
+    consume_feature_quota,
+    consume_generation_quota,
+    enforce_rate_limit,
+    refund_feature_quota,
+    refund_generation_quota,
+)
 from app.core.config import settings
 from app.engines.registry import get_speech_provider
 from app.services.llm import complete_chat
@@ -38,6 +44,7 @@ async def transcribe_audio(
     provider = get_speech_provider()
     if not hasattr(provider, "transcribe"):
         raise HTTPException(status_code=503, detail="Speech-to-text provider is unavailable.")
+    await consume_feature_quota(session, user.id, "transcription", units=len(content))
     try:
         result = await provider.transcribe(
             audio=content,
@@ -47,8 +54,10 @@ async def transcribe_audio(
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    except RuntimeError as exc:
-        raise HTTPException(status_code=502, detail={"code": "transcription_failed", "message": str(exc)}) from exc
+    except (ValueError, RuntimeError) as exc:
+        await refund_feature_quota(session, user.id, "transcription", units=len(content))
+        status_code = 422 if isinstance(exc, ValueError) else 502
+        raise HTTPException(status_code=status_code, detail={"code": "transcription_failed", "message": str(exc)}) from exc
     return result
 
 
@@ -68,6 +77,7 @@ async def translate_text(
     await enforce_rate_limit(session, f"translate:{user.id}", limit=10)
     host = request.client.host if request.client else "unknown"
     await enforce_rate_limit(session, f"translate-ip:{host[:64]}", limit=40)
+    await consume_feature_quota(session, user.id, "translation", units=len(payload.text))
     prompt = (
         f"Translate the supplied script from {payload.source_language} into "
         f"{payload.target_language}. Preserve names, numbers, meaning, tone and paragraph structure. "
@@ -76,6 +86,7 @@ async def translate_text(
     try:
         translated = await complete_chat(system=prompt, user=payload.text, max_tokens=3000)
     except RuntimeError as exc:
+        await refund_feature_quota(session, user.id, "translation", units=len(payload.text))
         raise HTTPException(status_code=503, detail={"code": "translation_unavailable", "message": str(exc)}) from exc
     return {"translated_text": translated, "target_language": payload.target_language}
 
@@ -93,7 +104,7 @@ async def render_dub(
     request: Request,
     user: CurrentUser,
     session: SessionDep,
-) -> dict[str, object]:
+) -> Response:
     await enforce_rate_limit(session, f"dub:{user.id}", limit=10)
     host = request.client.host if request.client else "unknown"
     await enforce_rate_limit(session, f"dub-ip:{host[:64]}", limit=40)
@@ -110,13 +121,19 @@ async def render_dub(
             speed=1.0,
             volume=1.0,
         )
-    except (ValueError, RuntimeError) as exc:
+    except ValueError as exc:
+        await refund_generation_quota(session, user.id, len(payload.translated_text))
+        raise HTTPException(status_code=422, detail={"code": "dub_render_invalid", "message": str(exc)}) from exc
+    except RuntimeError as exc:
         await refund_generation_quota(session, user.id, len(payload.translated_text))
         raise HTTPException(status_code=502, detail={"code": "dub_render_failed", "message": str(exc)}) from exc
-    # The caller stores the returned bytes in its owner-scoped project asset endpoint.
-    import base64
-    return {
-        "audio_base64": base64.b64encode(audio).decode("ascii"),
-        "media_type": "audio/mpeg" if payload.audio_format == "mp3" else "audio/wav",
-        "format": payload.audio_format,
-    }
+
+    media_type = "audio/mpeg" if payload.audio_format == "mp3" else "audio/wav"
+    return Response(
+        content=audio,
+        media_type=media_type,
+        headers={
+            "Cache-Control": "private, no-store",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
