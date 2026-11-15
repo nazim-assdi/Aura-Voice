@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+import hashlib
 from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException, Request, Response, status
@@ -177,6 +178,13 @@ async def login(
         window_seconds=300,
     )
     email = normalize_email(payload.email)
+    email_digest = hashlib.sha256(email.encode("utf-8")).hexdigest()
+    await enforce_rate_limit(
+        session,
+        f"login-email:{email_digest}",
+        limit=10,
+        window_seconds=900,
+    )
     user = await session.scalar(select(User).where(func.lower(User.email) == email))
     candidate_hash = user.password_hash if user else DUMMY_PASSWORD_HASH
     valid_password = verify_password(payload.password, candidate_hash)
@@ -309,4 +317,63 @@ async def logout_all(
     )
     await session.commit()
     clear_session_cookies(response)
+    return {"ok": True}
+
+
+
+@router.get("/sessions")
+async def list_sessions(
+    request: Request,
+    user: CurrentUser,
+    session: SessionDep,
+) -> dict[str, object]:
+    await enforce_rate_limit(session, f"session-list:{user.id}", limit=30)
+    rows = await session.scalars(
+        select(AuthSession)
+        .where(
+            AuthSession.user_id == user.id,
+            AuthSession.revoked_at.is_(None),
+            AuthSession.refresh_expires_at > datetime.now(timezone.utc),
+        )
+        .order_by(AuthSession.last_used_at.desc())
+    )
+    current_id = getattr(request.state, "auth_session_id", None)
+    return {
+        "sessions": [
+            {
+                "id": item.id,
+                "current": item.id == current_id,
+                "ip_address": item.ip_address,
+                "user_agent": item.user_agent,
+                "created_at": item.created_at.isoformat() if item.created_at else None,
+                "last_used_at": item.last_used_at.isoformat() if item.last_used_at else None,
+                "expires_at": item.refresh_expires_at.isoformat() if item.refresh_expires_at else None,
+            }
+            for item in rows
+        ]
+    }
+
+
+@router.delete("/sessions/{session_id}")
+async def revoke_session(
+    session_id: str,
+    request: Request,
+    response: Response,
+    user: CurrentUser,
+    session: SessionDep,
+) -> dict[str, bool]:
+    await enforce_rate_limit(session, f"session-revoke:{user.id}", limit=30)
+    target = await session.scalar(
+        select(AuthSession).where(
+            AuthSession.id == session_id,
+            AuthSession.user_id == user.id,
+            AuthSession.revoked_at.is_(None),
+        )
+    )
+    if not target:
+        raise HTTPException(status_code=404, detail="Session not found.")
+    target.revoked_at = datetime.now(timezone.utc)
+    await session.commit()
+    if target.id == getattr(request.state, "auth_session_id", None):
+        clear_session_cookies(response)
     return {"ok": True}
