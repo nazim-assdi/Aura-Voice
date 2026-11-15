@@ -206,7 +206,7 @@
       </section>
 
       <section class="page" id="page-history">
-        <div class="page-heading"><div><p class="eyebrow">YOUR CREATIVE WORK</p><h1>Projects<span class="heading-period">.</span></h1><p class="page-subtitle">Reopen recent scripts and continue where you left off.</p></div><button class="secondary-button" id="clearHistory">Clear history</button></div>
+        <div class="page-heading"><div><p class="eyebrow">YOUR CREATIVE WORK</p><h1>Projects<span class="heading-period">.</span></h1><p class="page-subtitle">Reopen recent scripts and continue where you left off.</p></div><button class="secondary-button" id="clearHistory">Refresh projects</button></div>
         <div class="panel history-panel"><div class="panel-heading simple-heading"><div><h2>Cloud projects</h2><p>Private projects stored against your signed-in account.</p></div><span class="local-badge">PRIVATE CLOUD</span></div><div id="historyList" class="history-list"><div class="empty-history">Your recent projects will appear here after your first generation.</div></div></div>
       </section>
 
@@ -294,8 +294,9 @@
             <button class="secondary-button full-button" id="logoutAllButton">Sign out from all sessions</button>
           </section>
           <section class="panel settings-info-panel"><div class="panel-heading simple-heading"><div><h2>Privacy & security</h2><p>How this web workspace handles your data.</p></div><span class="privacy-icon">⬡</span></div>
-            <ul class="privacy-list"><li>Your Cartesia API key is stored on the backend, never in this browser.</li><li>Voice generation sends your script to Cartesia for synthesis.</li><li>Project history is saved locally in this browser only.</li><li>Do not upload or clone a voice unless you have the voice owner's permission.</li></ul>
+            <ul class="privacy-list"><li>Your Cartesia API key is stored on the backend, never in this browser.</li><li>Voice generation sends your script to Cartesia for synthesis.</li><li>Project scripts and audio assets are stored in your private account workspace.</li><li>Do not upload or clone a voice unless you have the voice owner's permission.</li></ul>
           </section>
+          <section class="panel settings-info-panel session-panel"><div class="panel-heading simple-heading"><div><h2>Active sessions</h2><p>Review browsers and sign out devices you no longer use.</p></div><button class="inline-link" id="refreshSessions">Refresh ↻</button></div><div id="sessionList" class="session-list"><div class="empty-history">Loading active sessions…</div></div></section>
         </div>
       </section>
 
