@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:aura_voice_ai/core/services/audio_engine_contract.dart';
 import 'package:aura_voice_ai/core/services/audio_engine_stub.dart';
@@ -21,6 +23,13 @@ void main() {
     test('explains that input enumeration is unavailable', () async {
       await expectLater(
         service.listInputDevices(),
+        throwsA(isA<AudioEngineUnavailable>()),
+      );
+    });
+
+    test('does not pretend to start output playback', () async {
+      await expectLater(
+        service.startPlayback(wavBytes: Uint8List(44)),
         throwsA(isA<AudioEngineUnavailable>()),
       );
     });
