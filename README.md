@@ -47,13 +47,15 @@ A feature is only advertised as ready after its real engine is integrated and te
 - Versioned C ABI and public header for offline rendering, microphone input capture and system-output WAV playback.
 - Flutter FFI adapter with ABI-version check, worker-isolate rendering, native-library discovery, microphone capture and playback sessions, plus explicit web/unsupported-platform fallbacks.
 - Studio single-take Record Booth: selectable microphone, live Peak/RMS meters, local 24-bit PCM WAV save, dropped-frame warning and Play/Stop audition with progress.
-- Local Audio Library: scans WAV metadata without loading audio payloads, search/sort, saved-take playback, rename and confirmed delete limited to the app's recordings directory.
+- Local Audio Library: scans RIFF metadata without loading audio payloads, search/sort, saved-take playback, sample-derived waveform preview, rename and confirmed delete. Recordings referenced by saved sessions are protected from rename/delete.
+- Local session projects: sample-frame JSON manifests in Documents/Aura Voice Studio/Projects, project listing/reopen, save recovery from backup and source WAV reference checks.
+- Early multitrack editor foundation: horizontal sample-time ruler, track rows, real WAV waveform clips, add clips to tracks, Mute/Solo, clip selection, one-second nudge, clip gain/mute/remove, session save/reopen and offline rendered mix preview.
 - Rust unit tests for sample-accurate placement, mixing, panning, fades, clipping, format conversion and invalid media. Native CI is configured; check the latest workflow run for its result.
 - Backend tests, Docker development setup and CI workflows for the configured platform targets.
 
 ## What is not implemented yet
 
-- Multitrack session recording, in-app waveform/timeline editing, clip audition, session asset registration, seek/pause/loop transport and live input-to-output monitoring. Current playback auditions saved WAV files through the default output device; preview currently loads files up to 256 MiB into memory and requires a supported output sample rate.
+- Full multitrack production workflow remains in development: drag/drop clip movement, trim/split, fades/crossfades controls, undo/redo, autosave, waveform cache persistence, media relinking, seek/pause/loop transport, true real-time multitrack playback and input-to-output monitoring. The current editor arranges sample-frame clips and uses offline render-then-play preview. Saved WAV preview loads files up to 256 MiB into memory and requires a supported output sample rate.
 - Production audio DSP, noise restoration, effects graph or mastering.
 - Production TTS inference, voice profile enrollment or voice cloning.
 - Speech recognition, translation/dubbing alignment and subtitle export.
