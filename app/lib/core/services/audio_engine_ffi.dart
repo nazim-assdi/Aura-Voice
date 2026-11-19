@@ -308,6 +308,7 @@ class FfiAudioPlaybackSession implements AudioPlaybackSession {
   final _NativeApi _api;
   Pointer<Void> _handle;
   bool _stopped = false;
+  bool _paused = false;
 
   @override
   final int sampleRate;
@@ -328,11 +329,69 @@ class FfiAudioPlaybackSession implements AudioPlaybackSession {
       !_stopped && _api.playbackStatus(_handle) == 2;
 
   @override
+  bool get isPaused => _paused;
+
+  void _checkActive() {
+    if (_stopped) {
+      throw const AudioEngineUnavailable('The playback stream is stopped.');
+    }
+  }
+
+  @override
+  Future<void> pause() async {
+    _checkActive();
+    final status = _api.playbackPause(_handle);
+    if (status != 0) throw AudioEngineUnavailable(_api.lastError());
+    _paused = true;
+  }
+
+  @override
+  Future<void> resume() async {
+    _checkActive();
+    final status = _api.playbackResume(_handle);
+    if (status != 0) throw AudioEngineUnavailable(_api.lastError());
+    _paused = false;
+  }
+
+  @override
+  Future<void> seek(int frame) async {
+    _checkActive();
+    if (frame < 0 || frame > totalFrames) {
+      throw RangeError.range(frame, 0, totalFrames, 'frame');
+    }
+    final status = _api.playbackSeek(_handle, frame);
+    if (status != 0) throw AudioEngineUnavailable(_api.lastError());
+  }
+
+  @override
+  Future<void> setLoopRange({
+    required int startFrame,
+    required int endFrame,
+    required bool enabled,
+  }) async {
+    _checkActive();
+    if (enabled &&
+        (startFrame < 0 ||
+            startFrame >= endFrame ||
+            endFrame > totalFrames)) {
+      throw RangeError('Loop range must be a non-empty range inside playback.');
+    }
+    final status = _api.playbackSetLoop(
+      _handle,
+      startFrame,
+      endFrame,
+      enabled ? 1 : 0,
+    );
+    if (status != 0) throw AudioEngineUnavailable(_api.lastError());
+  }
+
+  @override
   Future<void> stop() async {
     if (!_stopped) {
       _api.playbackStop(_handle);
       _handle = nullptr;
       _stopped = true;
+      _paused = false;
     }
   }
 }
@@ -438,6 +497,26 @@ class _NativeApi {
             _PlaybackStatusDart>(
           'aura_audio_playback_status',
         ),
+        _playbackPause = library.lookupFunction<
+            _PlaybackPauseNative,
+            _PlaybackPauseDart>(
+          'aura_audio_playback_pause',
+        ),
+        _playbackResume = library.lookupFunction<
+            _PlaybackResumeNative,
+            _PlaybackResumeDart>(
+          'aura_audio_playback_resume',
+        ),
+        _playbackSeek = library.lookupFunction<
+            _PlaybackSeekNative,
+            _PlaybackSeekDart>(
+          'aura_audio_playback_seek',
+        ),
+        _playbackSetLoop = library.lookupFunction<
+            _PlaybackSetLoopNative,
+            _PlaybackSetLoopDart>(
+          'aura_audio_playback_set_loop',
+        ),
         _playbackStop =
             library.lookupFunction<_PlaybackStopNative, _PlaybackStopDart>(
           'aura_audio_playback_stop',
@@ -495,9 +574,9 @@ class _NativeApi {
           'aura_engine_last_error',
         ) {
     final abi = _abiVersion();
-    if (abi != 2) {
+    if (abi != 3) {
       throw AudioEngineUnavailable(
-        'Native audio ABI mismatch: expected 2, found $abi.',
+        'Native audio ABI mismatch: expected 3, found $abi.',
       );
     }
   }
@@ -518,6 +597,10 @@ class _NativeApi {
   ) _playbackStartWav;
   final int Function(Pointer<Void>) _playbackPositionFrames;
   final int Function(Pointer<Void>) _playbackStatus;
+  final int Function(Pointer<Void>) _playbackPause;
+  final int Function(Pointer<Void>) _playbackResume;
+  final int Function(Pointer<Void>, int) _playbackSeek;
+  final int Function(Pointer<Void>, int, int, int) _playbackSetLoop;
   final void Function(Pointer<Void>) _playbackStop;
   final int Function(Pointer<Void>) _capturePause;
   final int Function(Pointer<Void>, Pointer<Float>, int) _captureRead;
@@ -586,6 +669,17 @@ class _NativeApi {
   int playbackPositionFrames(Pointer<Void> handle) =>
       _playbackPositionFrames(handle);
   int playbackStatus(Pointer<Void> handle) => _playbackStatus(handle);
+  int playbackPause(Pointer<Void> handle) => _playbackPause(handle);
+  int playbackResume(Pointer<Void> handle) => _playbackResume(handle);
+  int playbackSeek(Pointer<Void> handle, int frame) =>
+      _playbackSeek(handle, frame);
+  int playbackSetLoop(
+    Pointer<Void> handle,
+    int startFrame,
+    int endFrame,
+    int enabled,
+  ) =>
+      _playbackSetLoop(handle, startFrame, endFrame, enabled);
   void playbackStop(Pointer<Void> handle) => _playbackStop(handle);
 
   int capturePause(Pointer<Void> handle) => _capturePause(handle);
@@ -739,6 +833,28 @@ typedef _PlaybackPositionFramesDart = int Function(Pointer<Void>);
 
 typedef _PlaybackStatusNative = Uint32 Function(Pointer<Void>);
 typedef _PlaybackStatusDart = int Function(Pointer<Void>);
+
+typedef _PlaybackPauseNative = Int32 Function(Pointer<Void>);
+typedef _PlaybackPauseDart = int Function(Pointer<Void>);
+
+typedef _PlaybackResumeNative = Int32 Function(Pointer<Void>);
+typedef _PlaybackResumeDart = int Function(Pointer<Void>);
+
+typedef _PlaybackSeekNative = Int32 Function(Pointer<Void>, Uint64);
+typedef _PlaybackSeekDart = int Function(Pointer<Void>, int);
+
+typedef _PlaybackSetLoopNative = Int32 Function(
+  Pointer<Void>,
+  Uint64,
+  Uint64,
+  Uint8,
+);
+typedef _PlaybackSetLoopDart = int Function(
+  Pointer<Void>,
+  int,
+  int,
+  int,
+);
 
 typedef _PlaybackStopNative = Void Function(Pointer<Void>);
 typedef _PlaybackStopDart = void Function(Pointer<Void>);
