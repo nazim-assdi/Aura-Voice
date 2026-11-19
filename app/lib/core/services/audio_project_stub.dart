@@ -32,6 +32,13 @@ class UnavailableAudioProjectStore implements AudioProjectStore {
   }
 
   @override
+  Future<List<AudioProjectSummary>> findProjectsUsingMedia(String mediaPath) async {
+    throw const AudioProjectStoreUnavailable(
+      'Local project reference checks are not available on this platform.',
+    );
+  }
+
+  @override
   Future<void> delete(String path) async {
     throw const AudioProjectStoreUnavailable(
       'Local project storage is not available on this platform.',
