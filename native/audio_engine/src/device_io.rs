@@ -128,10 +128,9 @@ impl FloatRing {
 
 /// Opaque live input stream. The caller must stop it exactly once.
 pub struct AuraAudioCaptureHandle {
-    stream: Stream,
+    _stream: Stream,
     ring: Arc<FloatRing>,
     channels: u16,
-    sample_rate: u32,
 }
 
 fn json_escape(value: &str) -> String {
@@ -198,7 +197,7 @@ fn build_capture_stream(
     input_channels: usize,
 ) -> Result<Stream, AudioError> {
     let error_ring = Arc::clone(&ring);
-    let on_error = move |_error: cpal::StreamError| {
+    let on_error = move |_error: cpal::Error| {
         error_ring.callback_error.store(1, Ordering::Release);
     };
     let timeout = None;
@@ -208,7 +207,7 @@ fn build_capture_stream(
             let callback_ring = Arc::clone(&ring);
             device
                 .build_input_stream::<$sample, _, _>(
-                    config,
+                    config.clone(),
                     move |data: &[$sample], _| {
                         // The conversion and copy path is bounded and allocation-free.
                         let mut frame = 0_usize;
@@ -365,10 +364,9 @@ pub unsafe extern "C" fn aura_audio_capture_start(
             *out_channels = channels as u16;
         }
         Ok::<_, AudioError>(Box::into_raw(Box::new(AuraAudioCaptureHandle {
-            stream,
+            _stream: stream,
             ring,
             channels: channels as u16,
-            sample_rate,
         })))
     }));
 
