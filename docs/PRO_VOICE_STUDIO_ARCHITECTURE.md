@@ -167,7 +167,7 @@ This repository is currently an early Flutter/FastAPI foundation. The UI shell, 
 - Desktop build workflow steps to compile and copy the native shared library beside Linux, Windows and macOS executables.
 
 ### Still not implemented
-- Flutter Record Booth controls, capture-to-WAV/session asset writing, continuous background ring draining and live input meters.
+- Capture-to-WAV/session asset writing, recording take management, pause/resume/punch-in and saved recording lifecycle.
 - Audio output streams, input-to-output monitoring, playback transport, device reconnect and end-to-end latency measurements.
 - Sample-rate conversion and additional microphone sample formats.
 - Android/iOS native audio library packaging and native app linking.
@@ -175,4 +175,4 @@ This repository is currently an early Flutter/FastAPI foundation. The UI shell, 
 - Sample-rate conversion, compressed MP3/AAC/FLAC decoders, realtime DSP and waveform cache.
 - Production TTS, voice cloning, transcription, translation, dubbing and mastering workflows.
 
-All code and build configuration are committed to `main`. CI still needs to pass before treating the CPAL capture module, C ABI, Dart FFI adapter and desktop bundling steps as verified end to end. Microphone capture is now exposed through native and Dart service APIs; the visible recording workflow, WAV file writing, monitoring and playback remain unavailable.
+All code and build configuration are committed to `main`. CI still needs to pass before treating the CPAL capture module, C ABI, Dart FFI adapter and desktop bundling steps as verified end to end. Microphone input selection and live peak/RMS meters are now available in the Studio UI when a compatible native library and microphone are present. The input-check mode intentionally discards samples; saved recording, WAV/session writing, playback and output monitoring remain unavailable.
