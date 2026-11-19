@@ -70,6 +70,7 @@ AuraAudioCaptureHandle *aura_audio_capture_start(
     uint32_t *out_sample_rate,
     uint16_t *out_channels
 );
+int32_t aura_audio_capture_pause(AuraAudioCaptureHandle *handle);
 uint32_t aura_audio_capture_read(
     AuraAudioCaptureHandle *handle,
     float *output,
