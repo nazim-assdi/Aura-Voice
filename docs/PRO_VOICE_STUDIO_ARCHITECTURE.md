@@ -153,6 +153,18 @@ This repository is currently an early Flutter/FastAPI foundation. The UI shell, 
 - Codec/license audit, accessibility, privacy review and release notes.
 - Gate: repeatable builds and tested workflows on each supported platform.
 
-## Current status
+## Implementation status (November 19, 2026)
 
-This document defines the product direction and acceptance criteria. The current codebase is still a scaffold: it does not yet contain working microphone recording, a multitrack audio engine, production DSP, real TTS inference, voice cloning, dubbing or mastering. Those must be implemented and verified in the phases above.
+### Implemented in source
+- Versioned Flutter session model with sample-frame clip positions, tracks, markers, validation and JSON round-trip tests.
+- Professional Voice Studio dashboard and navigation language.
+- Rust offline PCM WAV engine foundation: PCM 8/16/24/32 and IEEE float32 WAV import; mono/stereo buffers; exact sample-frame clip placement; multitrack mixing; track/clip/master gain; panning; mute/solo; linear clip fades; sample-peak and overload reporting; PCM 16/24/32 WAV export.
+- Dedicated Native Audio Engine GitHub Actions workflow.
+
+### Still not implemented
+- Device audio I/O, microphone recording, monitoring, realtime playback and low-latency callback scheduling.
+- Flutter FFI bridge to load and call the Rust library.
+- Sample-rate conversion, compressed MP3/AAC/FLAC decoders, realtime DSP and waveform cache.
+- Production TTS, voice cloning, transcription, translation, dubbing and mastering workflows.
+
+The engine code and automated tests have been committed to `main`; their CI result must be checked before treating the native renderer as build-verified. Preview playback and microphone capture are not available yet.
