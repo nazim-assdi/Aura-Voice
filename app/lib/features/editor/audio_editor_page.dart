@@ -1141,7 +1141,9 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
           setState(() {
             _playbackPosition = complete ? playback.totalFrames : position;
             _transportPaused = false;
-            if (failed) _message = 'The audio output device reported a playback error.';
+            if (failed) {
+              _message = 'The audio output device reported a playback error.';
+            }
           });
         }
       } else if (mounted) {
