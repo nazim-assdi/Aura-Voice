@@ -145,7 +145,6 @@ class FileAudioLibraryService implements AudioLibraryService {
         throw const FormatException('Unsupported or incomplete WAV metadata.');
       }
 
-      final byteRate = sampleRate! * blockAlign!;
       final frames = dataBytes! ~/ blockAlign!;
       final duration = Duration(
         microseconds: (frames * 1000000 / sampleRate!).round(),
@@ -225,16 +224,6 @@ class FileAudioLibraryService implements AudioLibraryService {
 
   String _fourCc(Uint8List bytes, int offset) =>
       String.fromCharCodes(bytes.sublist(offset, offset + 4));
-
-  String _defaultDirectoryPath() {
-    final environment = Platform.environment;
-    final home = environment['USERPROFILE'] ??
-        environment['HOME'] ??
-        Directory.current.path;
-    return '$home${Platform.pathSeparator}Documents'
-        '${Platform.pathSeparator}Aura Voice Studio'
-        '${Platform.pathSeparator}Recordings';
-  }
 
   static String _defaultDirectoryPath() {
     final environment = Platform.environment;
