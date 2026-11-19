@@ -150,6 +150,41 @@ void main() {
       await outside.delete();
     });
 
+    test('refuses to mutate a library symlink that points outside the folder', () async {
+      if (Platform.isWindows) return;
+      final folderToken = temporaryDirectory.path
+          .split(Platform.pathSeparator)
+          .last;
+      final outside = File(
+        '${temporaryDirectory.parent.path}${Platform.pathSeparator}linked-outside-$folderToken.wav',
+      );
+      await outside.writeAsBytes([1, 2, 3, 4]);
+      final link = Link(
+        '${temporaryDirectory.path}${Platform.pathSeparator}linked.wav',
+      );
+      await link.create(outside.path);
+      final recording = AudioLibraryRecording(
+        path: link.path,
+        name: 'linked',
+        modifiedAt: DateTime.now(),
+        sizeBytes: 4,
+        duration: Duration.zero,
+        frameCount: 0,
+        sampleRate: 48000,
+        channels: 1,
+        bitsPerSample: 24,
+      );
+
+      await expectLater(
+        library.deleteRecording(recording),
+        throwsA(isA<AudioLibraryUnavailable>()),
+      );
+      expect(await outside.exists(), isTrue);
+      expect(await link.exists(), isTrue);
+      await link.delete();
+      await outside.delete();
+    });
+
     test('ignores invalid WAV files instead of breaking the library', () async {
       await File(
         '${temporaryDirectory.path}${Platform.pathSeparator}broken.wav',
