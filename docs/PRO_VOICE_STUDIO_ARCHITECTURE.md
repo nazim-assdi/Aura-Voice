@@ -6,7 +6,7 @@
 
 The full production workspace is desktop-first (Windows, macOS and Linux). Android and iOS provide voice recording, script/TTS workflows, review, light edits and project handoff. A consistent project format keeps sessions portable across supported platforms.
 
-This repository is currently an early Flutter/FastAPI foundation. The UI shell, health endpoint and a safe unavailable speech provider exist; recording, production TTS, voice cloning, multitrack editing, DSP, dubbing and mastering are not yet implemented. Roadmap items below are requirements, not claims of completed functionality.
+This repository is an early Flutter/FastAPI/native-engine foundation. In addition to the UI and API shell, source now includes single-take microphone capture to a local 24-bit PCM WAV file and saved-WAV audition through the default output. Full session-based multitrack recording/editing, production TTS, voice cloning, DSP, dubbing and mastering are not yet implemented. Roadmap items below are requirements, not claims of completed functionality.
 
 ## Product principles
 
@@ -160,8 +160,7 @@ This repository is currently an early Flutter/FastAPI foundation. The UI shell, 
 - Professional Voice Studio dashboard with an honest native-library availability indicator.
 - Rust offline PCM WAV engine: PCM 8/16/24/32 and IEEE float32 WAV import; mono/stereo buffers; sample-frame clip placement; multitrack mixing; track/clip/master gain; panning; mute/solo; linear fades; sample-peak and overload reporting; PCM 16/24/32 WAV export.
 - CPAL microphone input enumeration with persistent device ids and default-input identification.
-- CPAL WAV playback through the default output device, using a compatible device-supported sample-rate configuration, common device format conversion, playback position, completion/error status and explicit stop.
-- CPAL PCM WAV playback through the default output device, including sample-rate compatibility negotiation, common PCM output format conversion, playback position, completion/error status and stop.
+- CPAL WAV playback through the default output device, using a compatible device-supported sample-rate configuration, common device format conversion, playback position, completion/error status, a 250 ms output-drain tail and explicit stop.
 - CPAL mono/stereo microphone capture stream with preallocated lock-free SPSC ring, dropped-frame counter and stream-error status.
 - C ABI functions for listing inputs, starting/pausing/reading/stopping capture, and starting/querying/stopping WAV playback; Dart FFI wrappers expose capture and playback session handles.
 - Flutter Studio UI for one-take local 24-bit PCM WAV recording, live Peak/RMS meters, a dropped-frame warning, and Play/Stop preview with progress.
