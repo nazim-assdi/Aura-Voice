@@ -935,9 +935,9 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
             icon: const Icon(Icons.add_box_outlined),
           ),
           IconButton(
-            tooltip: 'Save session',
-            onPressed: _saving ? null : _saveProject,
-            icon: _saving
+            tooltip: _autosaving ? 'Autosaving session' : 'Save session',
+            onPressed: _saving || _autosaving ? null : _saveProject,
+            icon: _saving || _autosaving
                 ? const SizedBox(
                     width: 18,
                     height: 18,
