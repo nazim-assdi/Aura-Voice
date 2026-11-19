@@ -10,14 +10,20 @@ router = APIRouter()
 async def capabilities() -> dict[str, object]:
     provider = get_speech_provider()
     return {
-        "product": "Aura Voice AI",
+        "product": "Aura Voice Studio",
         "api_version": settings.app_version,
         "engine_mode": "hybrid",
         "configured_provider": provider.name,
         "speech_generation_ready": provider.is_ready,
+        "recording_ready": False,
+        "multitrack_editing_ready": False,
+        "audio_processing_ready": False,
+        "transcription_ready": False,
+        "translation_ready": False,
+        "dubbing_ready": False,
+        "mastering_ready": False,
         "voice_cloning_ready": False,
         "offline_inference_ready": False,
         "live_audio_routing_ready": False,
-        "audio_formats": ["wav", "mp3", "ogg", "flac"],
-        "note": "Formats are planned targets, not available until a provider is installed and tested.",
+        "note": "Capabilities remain false until a real engine is integrated and passes its tests.",
     }
