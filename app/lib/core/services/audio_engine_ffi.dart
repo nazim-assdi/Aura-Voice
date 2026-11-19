@@ -90,6 +90,50 @@ class FfiAudioEngineService implements AudioEngineService {
   }
 
   @override
+  Future<AudioPlaybackSession> startPlayback({
+    required Uint8List wavBytes,
+  }) async {
+    final api = _api;
+    if (api == null) {
+      throw const AudioEngineUnavailable(
+        'Native Aura audio library is not available on this platform.',
+      );
+    }
+    if (wavBytes.length < 44 || wavBytes.length > 536870912) {
+      throw ArgumentError.value(
+        wavBytes.length,
+        'wavBytes',
+        'WAV must be between 44 bytes and 512 MiB.',
+      );
+    }
+    final data = calloc<Uint8>(wavBytes.length);
+    final sampleRate = calloc<Uint32>();
+    final totalFrames = calloc<Uint64>();
+    try {
+      data.asTypedList(wavBytes.length).setAll(0, wavBytes);
+      final handle = api.playbackStartWav(
+        data,
+        wavBytes.length,
+        sampleRate,
+        totalFrames,
+      );
+      if (handle == nullptr) {
+        throw AudioEngineUnavailable(api.lastError());
+      }
+      return FfiAudioPlaybackSession(
+        api: api,
+        handle: handle,
+        sampleRate: sampleRate.value,
+        totalFrames: totalFrames.value,
+      );
+    } finally {
+      calloc.free(data);
+      calloc.free(sampleRate);
+      calloc.free(totalFrames);
+    }
+  }
+
+  @override
   Future<AudioRenderResult> renderSession({
     required AudioSession session,
     required Map<String, Uint8List> assetWavs,
@@ -252,6 +296,47 @@ void _checkStatus(_NativeApi api, int status) {
   }
 }
 
+class FfiAudioPlaybackSession implements AudioPlaybackSession {
+  FfiAudioPlaybackSession({
+    required _NativeApi api,
+    required Pointer<Void> handle,
+    required this.sampleRate,
+    required this.totalFrames,
+  })  : _api = api,
+        _handle = handle;
+
+  final _NativeApi _api;
+  Pointer<Void> _handle;
+  bool _stopped = false;
+
+  @override
+  final int sampleRate;
+
+  @override
+  final int totalFrames;
+
+  @override
+  int get positionFrames =>
+      _stopped ? totalFrames : _api.playbackPositionFrames(_handle);
+
+  @override
+  bool get isComplete =>
+      _stopped || _api.playbackStatus(_handle) == 1;
+
+  @override
+  bool get hasError =>
+      !_stopped && _api.playbackStatus(_handle) == 2;
+
+  @override
+  Future<void> stop() async {
+    if (!_stopped) {
+      _api.playbackStop(_handle);
+      _handle = nullptr;
+      _stopped = true;
+    }
+  }
+}
+
 class FfiAudioCaptureSession implements AudioCaptureSession {
   FfiAudioCaptureSession({
     required _NativeApi api,
@@ -338,6 +423,25 @@ class _NativeApi {
             library.lookupFunction<_CaptureStartNative, _CaptureStartDart>(
           'aura_audio_capture_start',
         ),
+        _playbackStartWav = library.lookupFunction<
+            _PlaybackStartWavNative,
+            _PlaybackStartWavDart>(
+          'aura_audio_playback_start_wav',
+        ),
+        _playbackPositionFrames = library.lookupFunction<
+            _PlaybackPositionFramesNative,
+            _PlaybackPositionFramesDart>(
+          'aura_audio_playback_position_frames',
+        ),
+        _playbackStatus = library.lookupFunction<
+            _PlaybackStatusNative,
+            _PlaybackStatusDart>(
+          'aura_audio_playback_status',
+        ),
+        _playbackStop =
+            library.lookupFunction<_PlaybackStopNative, _PlaybackStopDart>(
+          'aura_audio_playback_stop',
+        ),
         _capturePause =
             library.lookupFunction<_CapturePauseNative, _CapturePauseDart>(
           'aura_audio_capture_pause',
@@ -406,6 +510,15 @@ class _NativeApi {
     Pointer<Uint32>,
     Pointer<Uint16>,
   ) _captureStart;
+  final Pointer<Void> Function(
+    Pointer<Uint8>,
+    int,
+    Pointer<Uint32>,
+    Pointer<Uint64>,
+  ) _playbackStartWav;
+  final int Function(Pointer<Void>) _playbackPositionFrames;
+  final int Function(Pointer<Void>) _playbackStatus;
+  final void Function(Pointer<Void>) _playbackStop;
   final int Function(Pointer<Void>) _capturePause;
   final int Function(Pointer<Void>, Pointer<Float>, int) _captureRead;
   final int Function(Pointer<Void>) _captureDroppedFrames;
@@ -463,6 +576,18 @@ class _NativeApi {
     Pointer<Uint16> channels,
   ) =>
       _captureStart(deviceId, bufferMilliseconds, sampleRate, channels);
+  Pointer<Void> playbackStartWav(
+    Pointer<Uint8> bytes,
+    int length,
+    Pointer<Uint32> sampleRate,
+    Pointer<Uint64> totalFrames,
+  ) =>
+      _playbackStartWav(bytes, length, sampleRate, totalFrames);
+  int playbackPositionFrames(Pointer<Void> handle) =>
+      _playbackPositionFrames(handle);
+  int playbackStatus(Pointer<Void> handle) => _playbackStatus(handle);
+  void playbackStop(Pointer<Void> handle) => _playbackStop(handle);
+
   int capturePause(Pointer<Void> handle) => _capturePause(handle);
   int captureRead(Pointer<Void> handle, Pointer<Float> output, int maxFrames) =>
       _captureRead(handle, output, maxFrames);
@@ -595,6 +720,28 @@ typedef _CaptureStartDart = Pointer<Void> Function(
   Pointer<Uint32>,
   Pointer<Uint16>,
 );
+
+typedef _PlaybackStartWavNative = Pointer<Void> Function(
+  Pointer<Uint8>,
+  IntPtr,
+  Pointer<Uint32>,
+  Pointer<Uint64>,
+);
+typedef _PlaybackStartWavDart = Pointer<Void> Function(
+  Pointer<Uint8>,
+  int,
+  Pointer<Uint32>,
+  Pointer<Uint64>,
+);
+
+typedef _PlaybackPositionFramesNative = Uint64 Function(Pointer<Void>);
+typedef _PlaybackPositionFramesDart = int Function(Pointer<Void>);
+
+typedef _PlaybackStatusNative = Uint32 Function(Pointer<Void>);
+typedef _PlaybackStatusDart = int Function(Pointer<Void>);
+
+typedef _PlaybackStopNative = Void Function(Pointer<Void>);
+typedef _PlaybackStopDart = void Function(Pointer<Void>);
 
 typedef _CapturePauseNative = Int32 Function(Pointer<Void>);
 typedef _CapturePauseDart = int Function(Pointer<Void>);
