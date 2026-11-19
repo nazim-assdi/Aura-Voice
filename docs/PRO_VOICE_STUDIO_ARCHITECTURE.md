@@ -167,7 +167,7 @@ This repository is currently an early Flutter/FastAPI foundation. The UI shell, 
 - Desktop build workflow steps to compile and copy the native shared library beside Linux, Windows and macOS executables.
 
 ### Still not implemented
-- Capture-to-WAV/session asset writing, recording take management, pause/resume/punch-in and saved recording lifecycle.
+- Recording take metadata and session asset registration, pause/resume/punch-in and playback/monitoring.
 - Audio output streams, input-to-output monitoring, playback transport, device reconnect and end-to-end latency measurements.
 - Sample-rate conversion and additional microphone sample formats.
 - Android/iOS native audio library packaging and native app linking.
