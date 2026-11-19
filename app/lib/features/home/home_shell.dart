@@ -11,6 +11,7 @@ import '../../core/services/audio_library_service.dart';
 import '../../core/services/audio_recording_service.dart';
 import '../../core/services/audio_waveform_service.dart';
 import '../../core/theme/aura_theme.dart';
+import '../editor/audio_editor_page.dart';
 
 class HomeShell extends StatefulWidget {
   const HomeShell({super.key});
@@ -1320,6 +1321,15 @@ class _LibraryPageState extends State<LibraryPage> {
     }
   }
 
+  Future<void> _openEditor(AudioLibraryRecording recording) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => AudioEditorPage(initialRecording: recording),
+      ),
+    );
+    if (mounted) await _refresh();
+  }
+
   Future<void> _delete(AudioLibraryRecording recording) async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -1555,6 +1565,7 @@ class _LibraryPageState extends State<LibraryPage> {
                       waveformLoading: _waveformLoadingPath == recording.path,
                       onPlay: () => _play(recording),
                       onWaveform: () => _showWaveform(recording),
+                      onEdit: () => _openEditor(recording),
                       onRename: () => _rename(recording),
                       onDelete: () => _delete(recording),
                     ),
@@ -1627,6 +1638,7 @@ class _RecordingCard extends StatelessWidget {
     required this.waveformLoading,
     required this.onPlay,
     required this.onWaveform,
+    required this.onEdit,
     required this.onRename,
     required this.onDelete,
   });
@@ -1640,6 +1652,7 @@ class _RecordingCard extends StatelessWidget {
   final bool waveformLoading;
   final VoidCallback onPlay;
   final VoidCallback onWaveform;
+  final VoidCallback onEdit;
   final VoidCallback onRename;
   final VoidCallback onDelete;
 
@@ -1734,10 +1747,19 @@ class _RecordingCard extends StatelessWidget {
             PopupMenuButton<String>(
               tooltip: 'Recording actions',
               onSelected: (value) {
+                if (value == 'editor') onEdit();
                 if (value == 'rename') onRename();
                 if (value == 'delete') onDelete();
               },
               itemBuilder: (context) => const [
+                PopupMenuItem(
+                  value: 'editor',
+                  child: ListTile(
+                    dense: true,
+                    leading: Icon(Icons.tune_rounded),
+                    title: Text('Open in editor'),
+                  ),
+                ),
                 PopupMenuItem(
                   value: 'rename',
                   child: ListTile(
