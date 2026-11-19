@@ -159,6 +159,7 @@ jobs:
         working-directory: app
         run: |
           flutter create --platforms=macos,ios .
+          /usr/libexec/PlistBuddy -c 'Print :NSMicrophoneUsageDescription' macos/Runner/Info.plist >/dev/null 2>&1 || /usr/libexec/PlistBuddy -c 'Add :NSMicrophoneUsageDescription string "Aura Voice Studio uses microphone access for live voice input and recording."' macos/Runner/Info.plist
           flutter pub get
           flutter build macos --release
           flutter build ios --release --no-codesign
