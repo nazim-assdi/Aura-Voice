@@ -93,6 +93,15 @@ impl AudioBuffer {
     pub fn from_wav(bytes: &[u8]) -> Result<Self, AudioError> {
         let (format, channels, sample_rate, bits_per_sample, data) = parse_wav(bytes)?;
         validate_audio_format(sample_rate, channels)?;
+        if !matches!(
+            (format, bits_per_sample),
+            (1, 8) | (1, 16) | (1, 24) | (1, 32) | (3, 32)
+        ) {
+            return Err(AudioError::UnsupportedWaveFormat {
+                format,
+                bits_per_sample,
+            });
+        }
 
         let bytes_per_sample = usize::from(bits_per_sample / 8);
         if data.len() % bytes_per_sample != 0 {
@@ -177,7 +186,8 @@ impl AudioBuffer {
             .checked_mul(u32::try_from(block_align).map_err(|_| AudioError::SizeOverflow)?)
             .ok_or(AudioError::SizeOverflow)?;
 
-        let mut output = Vec::with_capacity(data_size + 44);
+        let output_capacity = data_size.checked_add(44).ok_or(AudioError::SizeOverflow)?;
+        let mut output = Vec::with_capacity(output_capacity);
         output.extend_from_slice(b"RIFF");
         output.extend_from_slice(&riff_size.to_le_bytes());
         output.extend_from_slice(b"WAVE");
