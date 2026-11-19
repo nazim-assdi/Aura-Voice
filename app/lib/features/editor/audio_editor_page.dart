@@ -996,13 +996,12 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
   }
 
   String _formatTransportPosition(int frames) {
-    final seconds = frames / _session.sampleRate;
-    final minutes = (seconds ~/ 60).toString().padLeft(2, '0');
-    final wholeSeconds = (seconds.floor() % 60).toString().padLeft(2, '0');
-    final milliseconds = ((seconds - seconds.floor()) * 1000)
-        .round()
-        .toString()
-        .padLeft(3, '0');
+    final totalMilliseconds = frames * 1000 ~/ _session.sampleRate;
+    final minutes = (totalMilliseconds ~/ 60000).toString().padLeft(2, '0');
+    final wholeSeconds =
+        ((totalMilliseconds ~/ 1000) % 60).toString().padLeft(2, '0');
+    final milliseconds =
+        (totalMilliseconds % 1000).toString().padLeft(3, '0');
     return '$minutes:$wholeSeconds.$milliseconds';
   }
 
