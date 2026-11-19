@@ -703,9 +703,11 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
         ],
       ),
     );
+    final fadeMilliseconds =
+        (fadeFrames * 1000 / _session.sampleRate).round();
     setState(() {
       _selectedClipId = clip.id;
-      _message = 'Created a 250 ms crossfade with the next clip.';
+      _message = 'Created a $fadeMilliseconds ms crossfade with the next clip.';
     });
   }
 
@@ -1408,7 +1410,7 @@ class _SelectedClipPanel extends StatelessWidget {
                   icon: const Icon(Icons.content_cut_rounded),
                 ),
                 IconButton(
-                  tooltip: 'Crossfade with next clip (250 ms)',
+                  tooltip: 'Crossfade with next clip (up to 250 ms)',
                   onPressed: canCrossfade ? onCrossfade : null,
                   icon: const Icon(Icons.compare_arrows_rounded),
                 ),
@@ -1489,8 +1491,8 @@ class _ClipValueSlider extends StatelessWidget {
   final double max;
   final String valueLabel;
   final ValueChanged<double> onChanged;
-  final ValueChanged<double>? onChangeStart;
-  final ValueChanged<double>? onChangeEnd;
+  final VoidCallback? onChangeStart;
+  final VoidCallback? onChangeEnd;
 
   @override
   Widget build(BuildContext context) => Row(
@@ -1502,8 +1504,8 @@ class _ClipValueSlider extends StatelessWidget {
               max: max,
               value: value.clamp(min, max).toDouble(),
               onChanged: onChanged,
-              onChangeStart: onChangeStart,
-              onChangeEnd: onChangeEnd,
+              onChangeStart: onChangeStart == null ? null : (_) => onChangeStart!(),
+              onChangeEnd: onChangeEnd == null ? null : (_) => onChangeEnd!(),
             ),
           ),
           SizedBox(
