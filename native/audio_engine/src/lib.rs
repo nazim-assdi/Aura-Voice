@@ -984,6 +984,83 @@ mod tests {
     }
 
     #[test]
+    fn c_abi_can_create_mix_render_and_release_output() {
+        use std::ffi::CString;
+
+        let source = AudioBuffer::new(48_000, 1, vec![0.25, -0.5, 0.75])
+            .unwrap()
+            .to_wav_pcm(16)
+            .unwrap();
+        let asset_id = CString::new("voice").unwrap();
+        let track_id = CString::new("lead").unwrap();
+        let clip_id = CString::new("take-1").unwrap();
+
+        let handle = aura_engine_create(48_000, 1);
+        assert!(!handle.is_null());
+
+        // SAFETY: All strings, buffers and output slots live for the duration
+        // of the calls; the handle is created above and destroyed once below.
+        unsafe {
+            assert_eq!(
+                aura_engine_add_wav_asset(
+                    handle,
+                    asset_id.as_ptr(),
+                    source.as_ptr(),
+                    source.len(),
+                ),
+                0
+            );
+            assert_eq!(
+                aura_engine_add_track(handle, track_id.as_ptr(), 1.0, 0.0, 0, 0),
+                0
+            );
+            assert_eq!(
+                aura_engine_add_clip(
+                    handle,
+                    track_id.as_ptr(),
+                    clip_id.as_ptr(),
+                    asset_id.as_ptr(),
+                    1,
+                    0,
+                    3,
+                    0.5,
+                    0.0,
+                    0,
+                    0,
+                    0,
+                ),
+                0
+            );
+
+            let mut output = ptr::null_mut();
+            let mut output_len = 0_usize;
+            let mut peak = 0.0_f32;
+            let mut clipped = 0_usize;
+            assert_eq!(
+                aura_engine_render_wav(
+                    handle,
+                    16,
+                    &mut output,
+                    &mut output_len,
+                    &mut peak,
+                    &mut clipped,
+                ),
+                0
+            );
+            assert!(!output.is_null());
+            let rendered = slice::from_raw_parts(output, output_len);
+            let decoded = AudioBuffer::from_wav(rendered).unwrap();
+            assert_eq!(decoded.frame_count(), 4);
+            assert!((decoded.samples()[1] - 0.125).abs() < 0.0001);
+            assert!((decoded.samples()[2] + 0.25).abs() < 0.0001);
+            assert!(peak <= 1.0);
+            assert_eq!(clipped, 0);
+            aura_engine_free_buffer(output, output_len);
+            aura_engine_destroy(handle);
+        }
+    }
+
+    #[test]
     fn reads_and_writes_pcm_24_bit_and_rejects_bad_headers() {
         let input = AudioBuffer::new(48_000, 2, vec![-1.0, 0.0, 0.25, 1.0]).unwrap();
         let encoded = input.to_wav_pcm(24).unwrap();
