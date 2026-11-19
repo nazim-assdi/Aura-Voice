@@ -736,6 +736,7 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
                                 onLongPressMoveUpdate: (details) =>
                                     _dragClipToLocalX(details.localPosition.dx),
                                 onLongPressEnd: (_) => _endClipDrag(),
+                                onLongPressCancel: _endClipDrag,
                                 child: CustomPaint(
                                   size: Size(timelineWidth, 112),
                                   painter: _TrackWaveformPainter(
