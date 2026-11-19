@@ -9,6 +9,7 @@ import '../../core/services/audio_engine_service.dart';
 import '../../core/services/audio_file_service.dart';
 import '../../core/services/audio_library_service.dart';
 import '../../core/services/audio_recording_service.dart';
+import '../../core/services/audio_waveform_service.dart';
 import '../../core/theme/aura_theme.dart';
 
 class HomeShell extends StatefulWidget {
@@ -1047,12 +1048,14 @@ class LibraryPage extends StatefulWidget {
 class _LibraryPageState extends State<LibraryPage> {
   late final AudioLibraryService _library;
   late final AudioEngineService _engine;
+  late final AudioWaveformService _waveforms;
   final TextEditingController _searchController = TextEditingController();
   final List<AudioLibraryRecording> _recordings = [];
   AudioPlaybackSession? _playback;
   Timer? _playbackTimer;
   String? _playingPath;
   String? _loadingPath;
+  String? _waveformLoadingPath;
   String? _message;
   bool _loading = true;
   bool _pollingPlayback = false;
@@ -1063,6 +1066,7 @@ class _LibraryPageState extends State<LibraryPage> {
     super.initState();
     _library = createAudioLibraryService();
     _engine = createAudioEngineService();
+    _waveforms = createAudioWaveformService();
     unawaited(_refresh());
   }
 
@@ -1186,6 +1190,91 @@ class _LibraryPageState extends State<LibraryPage> {
     _playingPath = null;
     if (playback != null) await playback.stop();
     if (mounted) setState(() {});
+  }
+
+  Future<void> _showWaveform(AudioLibraryRecording recording) async {
+    if (_waveformLoadingPath != null) return;
+    setState(() {
+      _waveformLoadingPath = recording.path;
+      _message = null;
+    });
+    try {
+      final waveform = await _waveforms.analyze(
+        recording.path,
+        peakCount: 320,
+      );
+      if (!mounted) return;
+      setState(() => _waveformLoadingPath = null);
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: Text(
+            recording.name,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          content: SizedBox(
+            width: 420,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: double.infinity,
+                  height: 132,
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: AuraTheme.panel,
+                    borderRadius: BorderRadius.circular(13),
+                  ),
+                  child: CustomPaint(
+                    painter: _WaveformPainter(waveform.peaks),
+                    child: const SizedBox.expand(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  '${_durationLabel(waveform.duration)} · ${waveform.sampleRate} Hz · '
+                  '${waveform.channels == 1 ? 'Mono' : 'Stereo'} · '
+                  '${waveform.bitsPerSample}-bit PCM',
+                  style: Theme.of(dialogContext).textTheme.bodySmall?.copyWith(
+                        color: AuraTheme.muted,
+                      ),
+                ),
+                const SizedBox(height: 5),
+                Text(
+                  '${waveform.frameCount} sample frames · '
+                  '${waveform.peaks.length} peak buckets',
+                  style: Theme.of(dialogContext).textTheme.labelSmall?.copyWith(
+                        color: AuraTheme.muted,
+                      ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Close'),
+            ),
+            FilledButton.icon(
+              onPressed: () {
+                Navigator.of(dialogContext).pop();
+                unawaited(_play(recording));
+              },
+              icon: const Icon(Icons.play_arrow_rounded),
+              label: const Text('Play audio'),
+            ),
+          ],
+        ),
+      );
+    } catch (error) {
+      if (mounted) setState(() => _message = error.toString());
+    } finally {
+      if (mounted && _waveformLoadingPath == recording.path) {
+        setState(() => _waveformLoadingPath = null);
+      }
+    }
   }
 
   Future<void> _rename(AudioLibraryRecording recording) async {
@@ -1463,7 +1552,9 @@ class _LibraryPageState extends State<LibraryPage> {
                       dateLabel: _dateLabel(recording.modifiedAt),
                       playing: _playingPath == recording.path,
                       loading: _loadingPath == recording.path,
+                      waveformLoading: _waveformLoadingPath == recording.path,
                       onPlay: () => _play(recording),
+                      onWaveform: () => _showWaveform(recording),
                       onRename: () => _rename(recording),
                       onDelete: () => _delete(recording),
                     ),
@@ -1533,7 +1624,9 @@ class _RecordingCard extends StatelessWidget {
     required this.dateLabel,
     required this.playing,
     required this.loading,
+    required this.waveformLoading,
     required this.onPlay,
+    required this.onWaveform,
     required this.onRename,
     required this.onDelete,
   });
@@ -1544,7 +1637,9 @@ class _RecordingCard extends StatelessWidget {
   final String dateLabel;
   final bool playing;
   final bool loading;
+  final bool waveformLoading;
   final VoidCallback onPlay;
+  final VoidCallback onWaveform;
   final VoidCallback onRename;
   final VoidCallback onDelete;
 
@@ -1611,6 +1706,17 @@ class _RecordingCard extends StatelessWidget {
             ),
             const SizedBox(width: 4),
             IconButton(
+              tooltip: 'Show waveform',
+              onPressed: waveformLoading ? null : onWaveform,
+              icon: waveformLoading
+                  ? const SizedBox(
+                      width: 17,
+                      height: 17,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.graphic_eq_rounded, color: Colors.white70),
+            ),
+            IconButton(
               tooltip: playing ? 'Stop playback' : 'Play recording',
               onPressed: loading ? null : onPlay,
               icon: loading
@@ -1654,6 +1760,38 @@ class _RecordingCard extends StatelessWidget {
           ],
         ),
       );
+}
+
+class _WaveformPainter extends CustomPainter {
+  const _WaveformPainter(this.peaks);
+
+  final List<double> peaks;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (peaks.isEmpty || size.isEmpty) return;
+    final centerY = size.height / 2;
+    final slotWidth = size.width / peaks.length;
+    final paint = Paint()
+      ..color = AuraTheme.mint
+      ..strokeWidth = math.max(1.0, slotWidth * 0.64)
+      ..strokeCap = StrokeCap.round;
+
+    for (var index = 0; index < peaks.length; index++) {
+      final peak = peaks[index].clamp(0.0, 1.0).toDouble();
+      final halfHeight = math.max(1.0, peak * (size.height * 0.46));
+      final x = (index + 0.5) * slotWidth;
+      canvas.drawLine(
+        Offset(x, centerY - halfHeight),
+        Offset(x, centerY + halfHeight),
+        paint,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _WaveformPainter oldDelegate) =>
+      !identical(oldDelegate.peaks, peaks);
 }
 
 class _LibraryEmptyState extends StatelessWidget {
