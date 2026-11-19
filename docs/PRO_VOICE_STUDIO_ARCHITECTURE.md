@@ -159,15 +159,20 @@ This repository is currently an early Flutter/FastAPI foundation. The UI shell, 
 - Versioned Flutter session model with sample-frame clip positions, tracks, markers, per-clip fades, validation and JSON round-trip tests.
 - Professional Voice Studio dashboard with an honest native-library availability indicator.
 - Rust offline PCM WAV engine: PCM 8/16/24/32 and IEEE float32 WAV import; mono/stereo buffers; sample-frame clip placement; multitrack mixing; track/clip/master gain; panning; mute/solo; linear fades; sample-peak and overload reporting; PCM 16/24/32 WAV export.
+- CPAL microphone input enumeration with persistent device ids and default-input identification.
+- CPAL mono/stereo microphone capture stream with preallocated lock-free SPSC ring, dropped-frame counter and stream-error status.
+- C ABI functions for listing inputs and starting, reading, monitoring and stopping live capture; Dart FFI wrappers expose device listing and captured sample reads.
 - Versioned C ABI, public C header, engine error reporting and an end-to-end Rust FFI unit test.
 - Flutter FFI adapter with ABI checks, asset/track/clip marshaling, output-buffer ownership handling, worker-isolate rendering and a web/unsupported-platform fallback.
 - Desktop build workflow steps to compile and copy the native shared library beside Linux, Windows and macOS executables.
 
 ### Still not implemented
-- Microphone capture, input device selection, monitoring, realtime playback and low-latency callback scheduling.
+- Flutter Record Booth controls, capture-to-WAV/session asset writing, continuous background ring draining and live input meters.
+- Audio output streams, input-to-output monitoring, playback transport, device reconnect and end-to-end latency measurements.
+- Sample-rate conversion and additional microphone sample formats.
 - Android/iOS native audio library packaging and native app linking.
 - In-app media-file import UX, waveform display/editor and session-to-render controls.
 - Sample-rate conversion, compressed MP3/AAC/FLAC decoders, realtime DSP and waveform cache.
 - Production TTS, voice cloning, transcription, translation, dubbing and mastering workflows.
 
-All code and build configuration are committed to `main`. CI still needs to pass before treating the new C ABI, Dart FFI adapter and desktop bundling steps as verified end to end. Live recording and preview playback remain unavailable.
+All code and build configuration are committed to `main`. CI still needs to pass before treating the CPAL capture module, C ABI, Dart FFI adapter and desktop bundling steps as verified end to end. Microphone capture is now exposed through native and Dart service APIs; the visible recording workflow, WAV file writing, monitoring and playback remain unavailable.
