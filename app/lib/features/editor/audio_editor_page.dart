@@ -802,12 +802,12 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
     }
   }
 
-  Future<void> _renderAndPlay() async {
+  Future<void> _startRealtimePlayback() async {
     if (_rendering) return;
     await _stopPlayback();
     if (!mounted) return;
     if (_session.tracks.every((track) => track.clips.isEmpty)) {
-      setState(() => _message = 'Add at least one audio clip before rendering.');
+      setState(() => _message = 'Add at least one audio clip before playback.');
       return;
     }
     setState(() {
@@ -817,14 +817,14 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
     try {
       final assets = <String, Uint8List>{};
       var totalAssetBytes = 0;
-      const maximumRenderInputBytes = 536870912;
+      const maximumRealtimeInputBytes = 536870912;
       for (final track in _session.tracks) {
         for (final clip in track.clips) {
           if (!assets.containsKey(clip.mediaId)) {
             final bytes = await readAudioFile(clip.mediaId);
             if (bytes.length > maximumRenderInputBytes - totalAssetBytes) {
               throw const AudioEngineUnavailable(
-                'The current offline preview is limited to 512 MiB of source WAV data per render. Split the session or use smaller source files.',
+                'Realtime playback is limited to 512 MiB of source WAV data per session. Split the session or use smaller source files.',
               );
             }
             totalAssetBytes += bytes.length;
