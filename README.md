@@ -85,7 +85,7 @@ cd native/audio_engine
 cargo test --all-targets
 ```
 
-The renderer intentionally accepts decoded PCM assets at the session sample rate. The C ABI and Flutter FFI bridge are in place, but the shared library is not yet automatically packaged with desktop builds. The engine does not yet perform resampling, compressed-audio decoding, microphone capture or realtime playback.
+The renderer intentionally accepts decoded PCM assets at the session sample rate. The C ABI and Flutter FFI bridge are in place, and desktop workflows now build/copy the shared library beside each executable; this packaging change still needs a successful CI run. The engine does not yet perform resampling, compressed-audio decoding, microphone capture or realtime playback.
 
 ## Run the FastAPI backend
 
