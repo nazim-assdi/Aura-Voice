@@ -656,8 +656,9 @@ impl RealtimeMixer {
 }
 
 /// Builds the realtime graph before opening the device stream. Each distinct
-/// source asset is copied into one shared immutable sample allocation; clips
-/// referencing the same WAV reuse that allocation.
+/// source WAV is held by one shared immutable AudioBuffer; clips referencing
+/// the same WAV reuse that allocation. The owned FFI path moves PCM buffers
+/// into Arc without copying their sample payloads.
 pub(crate) fn build_realtime_mixer(
     session: &MixSession,
     assets: &HashMap<String, AudioBuffer>,
