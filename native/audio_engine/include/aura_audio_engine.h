@@ -91,6 +91,15 @@ AuraAudioPlaybackHandle *aura_audio_playback_start_wav(
 );
 uint64_t aura_audio_playback_position_frames(const AuraAudioPlaybackHandle *handle);
 uint32_t aura_audio_playback_status(const AuraAudioPlaybackHandle *handle);
+int32_t aura_audio_playback_pause(AuraAudioPlaybackHandle *handle);
+int32_t aura_audio_playback_resume(AuraAudioPlaybackHandle *handle);
+int32_t aura_audio_playback_seek(AuraAudioPlaybackHandle *handle, uint64_t frame);
+int32_t aura_audio_playback_set_loop(
+    AuraAudioPlaybackHandle *handle,
+    uint64_t start_frame,
+    uint64_t end_frame,
+    uint8_t enabled
+);
 void aura_audio_playback_stop(AuraAudioPlaybackHandle *handle);
 
 #ifdef __cplusplus
