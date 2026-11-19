@@ -1449,6 +1449,48 @@ mod tests {
     }
 
     #[test]
+    fn realtime_mixer_obeys_track_solo_and_mute_states() {
+        let mut assets = HashMap::new();
+        assets.insert("voice".into(), AudioBuffer::new(48_000, 1, vec![0.2]).unwrap());
+        assets.insert("room".into(), AudioBuffer::new(48_000, 1, vec![0.8]).unwrap());
+
+        let mut lead = Track::new("lead");
+        lead.clips.push(Clip::new("lead-clip", "voice", 0, 0, 1));
+        let mut ambience = Track::new("ambience");
+        ambience.solo = true;
+        ambience.clips.push(Clip::new("room-clip", "room", 0, 0, 1));
+
+        let mut session = MixSession::new(48_000, 1);
+        session.tracks = vec![lead, ambience];
+
+        let solo_mix = build_realtime_mixer(&session, &assets).unwrap();
+        assert!((solo_mix.mix_frame(0).0 - 0.8).abs() < 0.000001);
+
+        session.tracks[1].muted = true;
+        let muted_solo_mix = build_realtime_mixer(&session, &assets).unwrap();
+        assert!((muted_solo_mix.mix_frame(0).0 - 0.2).abs() < 0.000001);
+
+        session.tracks[1].muted = false;
+        session.tracks[0].clips[0].muted = true;
+        let clip_muted_mix = build_realtime_mixer(&session, &assets).unwrap();
+        assert!((clip_muted_mix.mix_frame(0).0 - 0.8).abs() < 0.000001);
+    }
+
+    #[test]
+    fn realtime_mixer_rejects_clip_source_ranges_outside_the_asset() {
+        let assets = asset("voice", 1, &[0.25, 0.5]);
+        let mut track = Track::new("lead");
+        track.clips.push(Clip::new("out-of-range", "voice", 0, 1, 2));
+        let mut session = MixSession::new(48_000, 1);
+        session.tracks.push(track);
+
+        assert!(matches!(
+            build_realtime_mixer(&session, &assets),
+            Err(AudioError::InvalidArgument(_))
+        ));
+    }
+
+    #[test]
     fn reads_and_writes_pcm_24_bit_and_rejects_bad_headers() {
         let input = AudioBuffer::new(48_000, 2, vec![-1.0, 0.0, 0.25, 1.0]).unwrap();
         let encoded = input.to_wav_pcm(24).unwrap();
