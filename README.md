@@ -4,7 +4,7 @@
 
 > Status: early development foundation (v0.1.0). The repository currently contains a Flutter app shell, FastAPI health/capabilities endpoints, a provider contract and tests. Real recording, production TTS, voice cloning, multitrack editing, DSP, dubbing and mastering are still in development.
 
-Aura Voice Studio is a voice-only product. It is **not a video editor**. The goal is a professional voice-production workstation for recording, editing, generating, restoring, dubbing, mixing and mastering speech and audio. The full production workspace is desktop-first (Windows, macOS and Linux), with Android and iOS support for recording, AI voice workflows, review and lightweight editing.
+Aura Voice Studio focuses exclusively on professional voice and audio production: recording, editing, generating, restoring, dubbing, mixing and mastering speech and audio. The full production workspace is desktop-first (Windows, macOS and Linux), with Android and iOS support for recording, AI voice workflows, review and lightweight editing.
 
 ## Product workspaces
 
@@ -32,6 +32,7 @@ A feature is only advertised as ready after its real engine is integrated and te
 │   │   ├── core/                # settings
 │   │   └── engines/             # speech provider contract and registry
 │   └── tests/
+├── native/audio_engine/         # Rust offline PCM audio renderer
 ├── docs/                        # product and engineering plans
 ├── .github/workflows/           # checks and platform build pipelines
 └── docker-compose.yml
@@ -48,7 +49,7 @@ A feature is only advertised as ready after its real engine is integrated and te
 
 ## What is not implemented yet
 
-- Real microphone capture, monitoring, multi-track editing or audio export.
+- Microphone capture, live monitoring, real-time playback or an in-app multitrack editing/export workflow. The Rust offline renderer is not yet connected to Flutter.
 - Production audio DSP, noise restoration, effects graph or mastering.
 - Production TTS inference, voice profile enrollment or voice cloning.
 - Speech recognition, translation/dubbing alignment and subtitle export.
@@ -127,9 +128,11 @@ Aura Voice must only generate or clone voices the user owns or is explicitly aut
 See [docs/PRO_VOICE_STUDIO_ARCHITECTURE.md](docs/PRO_VOICE_STUDIO_ARCHITECTURE.md) for the detailed feature requirements, engineering design and acceptance gates.
 
 - [x] Flutter/FastAPI foundation, health/capabilities and safe provider contract.
-- [ ] Professional voice-studio workspace and project/session model.
-- [ ] Real recording, playback, waveform and multitrack editing.
-- [ ] Native audio graph, DSP and restoration.
+- [x] Voice-studio dashboard, versioned sample-frame session model and serialization tests.
+- [x] Initial offline PCM WAV renderer with multitrack mixing, gain/pan, mute/solo, fades and WAV export (native CI verification pending).
+- [ ] Flutter FFI bridge, media-file access, waveform editor and session-to-render pipeline.
+- [ ] Real microphone capture, low-latency playback and device monitoring.
+- [ ] Native realtime audio graph, DSP effects and restoration.
 - [ ] Production multilingual TTS and optional local inference.
 - [ ] Secure, consent-based voice profile management.
 - [ ] Transcription, dubbing, translation review and subtitle export.
