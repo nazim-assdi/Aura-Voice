@@ -6,7 +6,7 @@
 
 The full production workspace is desktop-first (Windows, macOS and Linux). Android and iOS provide voice recording, script/TTS workflows, review, light edits and project handoff. A consistent project format keeps sessions portable across supported platforms.
 
-This repository is an early Flutter/FastAPI/native-engine foundation. Source includes local 24-bit PCM recording and audition plus a non-destructive, sample-frame multitrack editor with waveform clips, trim handles, split, overlapping crossfade, snap grid, timeline zoom, bounded undo/redo, debounced project autosave and sample-frame playhead/seek/pause/resume/whole-mix loop transport for offline-rendered mix playback. A real-time session mixer, full DSP, production TTS, voice cloning, dubbing and mastering are not yet implemented. Roadmap items below distinguish delivered source features from remaining requirements.
+This repository is an early Flutter/FastAPI/native-engine foundation. Source includes local 24-bit PCM recording and audition plus a non-destructive, sample-frame multitrack editor with waveform clips, trim handles, split, overlapping crossfade, snap grid, timeline zoom, bounded undo/redo, debounced project autosave and a native callback-driven realtime session mixer with playhead, seek, pause/resume and whole-mix/selected-clip looping. Track graph mutation during playback, optimized scheduling for dense projects, full DSP, production TTS, voice cloning, dubbing and mastering are not yet implemented. Roadmap items below distinguish delivered source features from remaining requirements.
 
 ## Product principles
 
@@ -79,6 +79,8 @@ This repository is an early Flutter/FastAPI/native-engine foundation. Source inc
 - UI state reflects actual engine capabilities. Disabled features explain what is missing.
 
 ### Native audio engine
+
+The current implementation of native output uses a sample-frame transport and no full render WAV intermediate.
 - Build a stable Rust or C++ engine behind a typed Flutter FFI boundary.
 - Evaluate platform audio I/O APIs (Core Audio, WASAPI, ALSA/PipeWire and mobile audio APIs) for low-latency capture/playback.
 - Use an explicit audio graph with typed nodes for input, playback, gain, EQ, dynamics, effects, buses and output.
