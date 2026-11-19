@@ -4,8 +4,9 @@
 //! decode PCM/IEEE-float WAV, arrange clips at exact sample-frame positions,
 //! mix tracks in floating point, meter the result, and export integer PCM WAV.
 //! Realtime device I/O is isolated in CPAL-backed capture and output
-//! modules. Capture writes to a preallocated SPSC ring; output reads decoded
-//! audio through an atomic sample-frame cursor and performs no file I/O.
+//! modules. Capture writes to a preallocated SPSC ring; output can either
+//! audition a decoded WAV or mix an immutable multitrack session snapshot
+//! directly in the callback. Neither callback performs file I/O.
 
 use std::collections::HashMap;
 use std::sync::Arc;
