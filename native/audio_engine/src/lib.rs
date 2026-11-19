@@ -627,7 +627,7 @@ unsafe fn checked_handle<'a>(
 /// Returns the current C ABI version. Increment on incompatible ABI changes.
 #[no_mangle]
 pub extern "C" fn aura_engine_abi_version() -> u32 {
-    2
+    3
 }
 
 /// Returns a static NUL-terminated engine version string.
@@ -991,8 +991,8 @@ mod tests {
     }
 
     #[test]
-    fn c_abi_reports_version_two_for_device_capture_and_playback() {
-        assert_eq!(aura_engine_abi_version(), 2);
+    fn c_abi_reports_version_three_for_transport_controls() {
+        assert_eq!(aura_engine_abi_version(), 3);
     }
 
     #[test]
