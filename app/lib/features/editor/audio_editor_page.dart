@@ -1231,16 +1231,34 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
                                     _dragClipToLocalX(details.localPosition.dx),
                                 onLongPressEnd: (_) => _endClipDrag(),
                                 onLongPressCancel: _endClipDrag,
-                                child: CustomPaint(
-                                  size: Size(timelineWidth, 112),
-                                  painter: _TrackWaveformPainter(
-                                    track: track,
-                                    waveforms: _waveformCache,
-                                    sampleRate: _session.sampleRate,
-                                    pixelsPerSecond: pixelsPerSecond,
-                                    selectedClipId: _selectedClipId,
-                                    playheadFrame:
-                                        _playback == null ? null : _playbackPosition,
+                                child: SizedBox(
+                                  width: timelineWidth,
+                                  height: 112,
+                                  child: Stack(
+                                    fit: StackFit.expand,
+                                    children: [
+                                      RepaintBoundary(
+                                        child: CustomPaint(
+                                          painter: _TrackWaveformPainter(
+                                            track: track,
+                                            waveforms: _waveformCache,
+                                            sampleRate: _session.sampleRate,
+                                            pixelsPerSecond: pixelsPerSecond,
+                                            selectedClipId: _selectedClipId,
+                                          ),
+                                        ),
+                                      ),
+                                      if (_playback != null)
+                                        IgnorePointer(
+                                          child: CustomPaint(
+                                            painter: _PlayheadPainter(
+                                              sampleRate: _session.sampleRate,
+                                              pixelsPerSecond: pixelsPerSecond,
+                                              frame: _playbackPosition,
+                                            ),
+                                          ),
+                                        ),
+                                    ],
                                   ),
                                 ),
                               ),
@@ -1749,6 +1767,35 @@ class _TimelineRulerPainter extends CustomPainter {
       oldDelegate.playheadFrame != playheadFrame;
 }
 
+class _PlayheadPainter extends CustomPainter {
+  const _PlayheadPainter({
+    required this.sampleRate,
+    required this.pixelsPerSecond,
+    required this.frame,
+  });
+
+  final int sampleRate;
+  final double pixelsPerSecond;
+  final int frame;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final x = (frame / sampleRate * pixelsPerSecond)
+        .clamp(0.0, size.width)
+        .toDouble();
+    final paint = Paint()
+      ..color = AuraTheme.mint
+      ..strokeWidth = 2;
+    canvas.drawLine(Offset(x, 0), Offset(x, size.height), paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _PlayheadPainter oldDelegate) =>
+      oldDelegate.sampleRate != sampleRate ||
+      oldDelegate.pixelsPerSecond != pixelsPerSecond ||
+      oldDelegate.frame != frame;
+}
+
 class _TrackWaveformPainter extends CustomPainter {
   const _TrackWaveformPainter({
     required this.track,
@@ -1756,7 +1803,6 @@ class _TrackWaveformPainter extends CustomPainter {
     required this.sampleRate,
     required this.pixelsPerSecond,
     required this.selectedClipId,
-    required this.playheadFrame,
   });
 
   final AudioTrack track;
@@ -1764,7 +1810,6 @@ class _TrackWaveformPainter extends CustomPainter {
   final int sampleRate;
   final double pixelsPerSecond;
   final String? selectedClipId;
-  final int? playheadFrame;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -1880,17 +1925,6 @@ class _TrackWaveformPainter extends CustomPainter {
       )..layout(maxWidth: math.max(20.0, rect.width - 12).toDouble());
       title.paint(canvas, Offset(rect.left + 6, rect.top + 4));
     }
-
-    final frame = playheadFrame;
-    if (frame != null) {
-      final x = (frame / sampleRate * pixelsPerSecond)
-          .clamp(0.0, size.width)
-          .toDouble();
-      final playheadPaint = Paint()
-        ..color = AuraTheme.mint
-        ..strokeWidth = 2;
-      canvas.drawLine(Offset(x, 0), Offset(x, size.height), playheadPaint);
-    }
   }
 
   String _clipName(String path) {
@@ -1906,6 +1940,5 @@ class _TrackWaveformPainter extends CustomPainter {
       oldDelegate.waveforms != waveforms ||
       oldDelegate.sampleRate != sampleRate ||
       oldDelegate.pixelsPerSecond != pixelsPerSecond ||
-      oldDelegate.selectedClipId != selectedClipId ||
-      oldDelegate.playheadFrame != playheadFrame;
+      oldDelegate.selectedClipId != selectedClipId;
 }
