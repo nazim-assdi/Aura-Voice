@@ -133,6 +133,41 @@ class FfiAudioEngineService implements AudioEngineService {
     }
   }
 
+
+  @override
+  Future<AudioPlaybackSession> startRealtimePlayback({
+    required AudioSession session,
+    required Map<String, Uint8List> assetWavs,
+  }) async {
+    final api = _api;
+    if (api == null) {
+      throw const AudioEngineUnavailable(
+        'Native Aura audio library was not found beside the application.',
+      );
+    }
+    var totalBytes = 0;
+    const maximumRealtimeInputBytes = 536870912;
+    final copiedAssets = <String, Uint8List>{};
+    for (final entry in assetWavs.entries) {
+      if (entry.value.length > maximumRealtimeInputBytes - totalBytes) {
+        throw const AudioEngineUnavailable(
+          'Realtime playback is limited to 512 MiB of source WAV data per session.',
+        );
+      }
+      totalBytes += entry.value.length;
+      copiedAssets[entry.key] = Uint8List.fromList(entry.value);
+    }
+    final result = await Isolate.run(
+      () => _startRealtimePlaybackInWorker(session.toJson(), copiedAssets),
+    );
+    return FfiAudioPlaybackSession(
+      api: api,
+      handle: Pointer<Void>.fromAddress(result['handleAddress']!),
+      sampleRate: result['sampleRate']!,
+      totalFrames: result['totalFrames']!,
+    );
+  }
+
   @override
   Future<AudioRenderResult> renderSession({
     required AudioSession session,
@@ -286,6 +321,108 @@ AudioRenderResult _renderInWorker(
       calloc.free(outClipped);
     }
   } finally {
+    api.destroy(handle);
+  }
+}
+
+
+
+/// Prepares a native session and starts its callback-driven output stream on
+/// a worker isolate so WAV decoding and graph preparation do not block Flutter.
+Map<String, int> _startRealtimePlaybackInWorker(
+  Map<String, Object> sessionJson,
+  Map<String, Uint8List> assetWavs,
+) {
+  final api = _NativeApi.open();
+  final session = AudioSession.fromJson(
+    Map<String, dynamic>.from(sessionJson),
+  );
+  final handle = api.create(session.sampleRate, session.channels);
+  if (handle == nullptr) {
+    throw AudioEngineUnavailable(api.lastError());
+  }
+
+  try {
+    for (final entry in assetWavs.entries) {
+      final id = entry.key.toNativeUtf8();
+      final data = calloc<Uint8>(entry.value.length);
+      try {
+        data.asTypedList(entry.value.length).setAll(0, entry.value);
+        _checkStatus(
+          api,
+          api.addWavAsset(handle, id, data, entry.value.length),
+        );
+      } finally {
+        calloc.free(data);
+        calloc.free(id);
+      }
+    }
+
+    for (final track in session.tracks) {
+      final trackId = track.id.toNativeUtf8();
+      try {
+        _checkStatus(
+          api,
+          api.addTrack(
+            handle,
+            trackId,
+            track.gain,
+            track.pan,
+            track.muted ? 1 : 0,
+            track.solo ? 1 : 0,
+          ),
+        );
+      } finally {
+        calloc.free(trackId);
+      }
+
+      for (final clip in track.clips) {
+        final nativeTrackId = track.id.toNativeUtf8();
+        final clipId = clip.id.toNativeUtf8();
+        final assetId = clip.mediaId.toNativeUtf8();
+        try {
+          _checkStatus(
+            api,
+            api.addClip(
+              handle,
+              nativeTrackId,
+              clipId,
+              assetId,
+              clip.startFrame,
+              clip.sourceStartFrame,
+              clip.durationFrames,
+              clip.gain,
+              clip.pan,
+              clip.muted ? 1 : 0,
+              clip.fadeInFrames,
+              clip.fadeOutFrames,
+            ),
+          );
+        } finally {
+          calloc.free(nativeTrackId);
+          calloc.free(clipId);
+          calloc.free(assetId);
+        }
+      }
+    }
+
+    final totalFrames = calloc<Uint64>();
+    try {
+      final playback = api.realtimePlaybackStart(handle, totalFrames);
+      if (playback == nullptr) {
+        throw AudioEngineUnavailable(api.lastError());
+      }
+      return {
+        'handleAddress': playback.address,
+        'sampleRate': session.sampleRate,
+        'totalFrames': totalFrames.value,
+      };
+    } finally {
+      calloc.free(totalFrames);
+    }
+  } finally {
+    // The realtime playback handle owns an immutable Arc-backed snapshot, so
+    // the temporary session builder can be released immediately.
     api.destroy(handle);
   }
 }
@@ -482,6 +619,11 @@ class _NativeApi {
             library.lookupFunction<_CaptureStartNative, _CaptureStartDart>(
           'aura_audio_capture_start',
         ),
+        _realtimePlaybackStart = library.lookupFunction<
+            _RealtimePlaybackStartNative,
+            _RealtimePlaybackStartDart>(
+          'aura_engine_realtime_playback_start',
+        ),
         _playbackStartWav = library.lookupFunction<
             _PlaybackStartWavNative,
             _PlaybackStartWavDart>(
@@ -574,9 +716,9 @@ class _NativeApi {
           'aura_engine_last_error',
         ) {
     final abi = _abiVersion();
-    if (abi != 3) {
+    if (abi != 4) {
       throw AudioEngineUnavailable(
-        'Native audio ABI mismatch: expected 3, found $abi.',
+        'Native audio ABI mismatch: expected 4, found $abi.',
       );
     }
   }
@@ -589,6 +731,8 @@ class _NativeApi {
     Pointer<Uint32>,
     Pointer<Uint16>,
   ) _captureStart;
+  final Pointer<Void> Function(Pointer<Void>, Pointer<Uint64>)
+      _realtimePlaybackStart;
   final Pointer<Void> Function(
     Pointer<Uint8>,
     int,
@@ -649,6 +793,12 @@ class _NativeApi {
   ) _renderWav;
   final void Function(Pointer<Uint8>, int) _freeBuffer;
   final Pointer<Utf8> Function() _lastError;
+
+  Pointer<Void> realtimePlaybackStart(
+    Pointer<Void> engine,
+    Pointer<Uint64> totalFrames,
+  ) =>
+      _realtimePlaybackStart(engine, totalFrames);
 
   Pointer<Utf8> listInputDevices() => _listInputDevices();
   void freeString(Pointer<Utf8> value) => _freeString(value);
@@ -813,6 +963,15 @@ typedef _CaptureStartDart = Pointer<Void> Function(
   int,
   Pointer<Uint32>,
   Pointer<Uint16>,
+);
+
+typedef _RealtimePlaybackStartNative = Pointer<Void> Function(
+  Pointer<Void>,
+  Pointer<Uint64>,
+);
+typedef _RealtimePlaybackStartDart = Pointer<Void> Function(
+  Pointer<Void>,
+  Pointer<Uint64>,
 );
 
 typedef _PlaybackStartWavNative = Pointer<Void> Function(
