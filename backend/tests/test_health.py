@@ -18,8 +18,14 @@ def test_capabilities_do_not_claim_unimplemented_features() -> None:
     response = client.get("/api/v1/capabilities")
     assert response.status_code == 200
     body = response.json()
+    assert body["product"] == "Aura Voice Studio"
     assert body["engine_mode"] == "hybrid"
     assert body["speech_generation_ready"] is False
+    assert body["recording_ready"] is False
+    assert body["multitrack_editing_ready"] is False
+    assert body["audio_processing_ready"] is False
+    assert body["dubbing_ready"] is False
+    assert body["mastering_ready"] is False
     assert body["voice_cloning_ready"] is False
     assert body["live_audio_routing_ready"] is False
 
