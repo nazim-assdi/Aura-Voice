@@ -1130,6 +1130,13 @@ class _LibraryPageState extends State<LibraryPage> {
 
   Future<void> _play(AudioLibraryRecording recording) async {
     if (_loadingPath != null) return;
+    if (recording.channels < 1 || recording.channels > 2) {
+      setState(() {
+        _message =
+            'Playback supports mono or stereo WAV only. This file has ${recording.channels} channels.';
+      });
+      return;
+    }
     if (_playingPath == recording.path && _playback != null) {
       await _stopPlayback();
       return;
@@ -1390,6 +1397,13 @@ class _LibraryPageState extends State<LibraryPage> {
       if (selected == null || !mounted) return;
       final session = await _projects.load(selected.path);
       if (!mounted) return;
+      if (session.channels < 1 || session.channels > 2) {
+        setState(() {
+          _message =
+              'This project uses ${session.channels} channels. The current native renderer supports mono/stereo sessions only.';
+        });
+        return;
+      }
       await Navigator.of(context).push(
         MaterialPageRoute<void>(
           builder: (_) => AudioEditorPage(
@@ -1405,6 +1419,15 @@ class _LibraryPageState extends State<LibraryPage> {
   }
 
   Future<void> _openEditor(AudioLibraryRecording recording) async {
+    if (recording.frameCount <= 0 ||
+        recording.channels < 1 ||
+        recording.channels > 2) {
+      setState(() {
+        _message =
+            'The current editor supports non-empty mono/stereo WAV files only. This file has ${recording.channels} channels.';
+      });
+      return;
+    }
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => AudioEditorPage(initialRecording: recording),
