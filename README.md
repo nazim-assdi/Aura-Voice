@@ -85,7 +85,7 @@ cd native/audio_engine
 cargo test --all-targets
 ```
 
-The renderer intentionally accepts decoded PCM assets at the session sample rate. The C ABI and Flutter FFI bridge are in place, and desktop workflows now build/copy the shared library beside each executable; this packaging change still needs a successful CI run. The engine does not yet perform resampling, compressed-audio decoding, microphone capture or realtime playback.
+The renderer intentionally accepts decoded PCM assets at the session sample rate. The C ABI and Flutter FFI bridge are in place, and desktop workflows now build/copy the shared library beside each executable; this packaging change still needs a successful CI run. The native module now exposes CPAL microphone input discovery/capture and a bounded realtime-safe sample ring through its C ABI and Dart service. The Flutter Record Booth still needs UI controls, WAV/session writing and live monitoring; sample-rate conversion and compressed-audio decoding are not implemented.
 
 ## Run the FastAPI backend
 
@@ -134,7 +134,8 @@ See [docs/PRO_VOICE_STUDIO_ARCHITECTURE.md](docs/PRO_VOICE_STUDIO_ARCHITECTURE.m
 - [x] Initial offline PCM WAV renderer with multitrack mixing, gain/pan, mute/solo, fades and WAV export (native CI verification pending).
 - [ ] Verify the new desktop native-library packaging and Flutter-to-Rust render call through CI.
 - [ ] Flutter media-file access, waveform editor and session-to-render UI workflow.
-- [ ] Real microphone capture, low-latency playback and device monitoring.
+- [x] Native microphone device discovery and capture API with a bounded realtime-safe ring (end-to-end CI verification pending).
+- [ ] Record Booth UI, capture-to-WAV/session writing, continuous ring draining, playback and device monitoring.
 - [ ] Native realtime audio graph, DSP effects and restoration.
 - [ ] Production multilingual TTS and optional local inference.
 - [ ] Secure, consent-based voice profile management.
