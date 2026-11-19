@@ -12,6 +12,8 @@ import '../../core/services/audio_waveform_service.dart';
 import '../../core/theme/aura_theme.dart';
 import '../session/models/audio_session.dart';
 
+enum _ClipDragMode { move, trimStart, trimEnd }
+
 class AudioEditorPage extends StatefulWidget {
   const AudioEditorPage({
     this.initialRecording,
@@ -52,6 +54,18 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
   bool _saving = false;
   bool _rendering = false;
   bool _pollingPlayback = false;
+  Timer? _autosaveTimer;
+  bool _autosaving = false;
+  int _editRevision = 0;
+  int _autosavedRevision = -1;
+  final List<AudioSession> _undoStack = [];
+  final List<AudioSession> _redoStack = [];
+  AudioSession? _transactionSnapshot;
+  bool _transactionChanged = false;
+  bool _snapEnabled = true;
+  int _snapGridMilliseconds = 100;
+  double _timelineZoom = 1.0;
+  _ClipDragMode _dragMode = _ClipDragMode.move;
 
   @override
   void initState() {
@@ -110,6 +124,7 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
   @override
   void dispose() {
     _playbackTimer?.cancel();
+    _autosaveTimer?.cancel();
     final playback = _playback;
     _playback = null;
     if (playback != null) unawaited(playback.stop());
@@ -152,7 +167,123 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
   }
 
   double get _timelineWidth =>
-      math.max(900.0, math.min(7200.0, _totalSeconds * 76.0)).toDouble();
+      math.max(900.0, _totalSeconds * 76.0 * _timelineZoom).toDouble();
+
+  int _snapFrame(int frame) {
+    if (!_snapEnabled) return frame;
+    final gridFrames = math.max(
+      1,
+      _session.sampleRate * _snapGridMilliseconds ~/ 1000,
+    ).toInt();
+    return ((frame / gridFrames).round() * gridFrames).toInt();
+  }
+
+  void _setTimelineZoom(double value) {
+    setState(() => _timelineZoom = value.clamp(0.25, 4.0).toDouble());
+  }
+
+  AudioSession _cloneSession(AudioSession session) =>
+      AudioSession.fromJson(Map<String, dynamic>.from(session.toJson()));
+
+  void _pushHistory(List<AudioSession> stack, AudioSession session) {
+    if (stack.length >= 100) stack.removeAt(0);
+    stack.add(session);
+  }
+
+  void _beginEditTransaction() {
+    _transactionSnapshot ??= _cloneSession(_session);
+    _transactionChanged = false;
+  }
+
+  void _finishEditTransaction() {
+    final snapshot = _transactionSnapshot;
+    if (snapshot != null && _transactionChanged) {
+      _pushHistory(_undoStack, snapshot);
+      _redoStack.clear();
+    }
+    _transactionSnapshot = null;
+    _transactionChanged = false;
+    if (mounted) setState(() {});
+  }
+
+  void _commitSession(AudioSession next) {
+    if (_transactionSnapshot != null) {
+      _transactionChanged = true;
+    } else {
+      _pushHistory(_undoStack, _cloneSession(_session));
+      _redoStack.clear();
+    }
+    setState(() {
+      _session = next;
+      _editRevision++;
+    });
+    _scheduleAutosave();
+  }
+
+  void _restoreHistorySession(AudioSession restored) {
+    setState(() {
+      _session = restored;
+      final trackExists = _session.tracks.any((track) => track.id == _selectedTrackId);
+      if (!trackExists) {
+        _selectedTrackId = _session.tracks.isEmpty ? null : _session.tracks.first.id;
+      }
+      final clipExists = _session.tracks.any(
+        (track) => track.clips.any((clip) => clip.id == _selectedClipId),
+      );
+      if (!clipExists) _selectedClipId = null;
+      _editRevision++;
+    });
+    _scheduleAutosave();
+  }
+
+  void _undo() {
+    _finishEditTransaction();
+    if (_undoStack.isEmpty) return;
+    _pushHistory(_redoStack, _cloneSession(_session));
+    _restoreHistorySession(_undoStack.removeLast());
+    setState(() => _message = 'Undo complete.');
+  }
+
+  void _redo() {
+    _finishEditTransaction();
+    if (_redoStack.isEmpty) return;
+    _pushHistory(_undoStack, _cloneSession(_session));
+    _restoreHistorySession(_redoStack.removeLast());
+    setState(() => _message = 'Redo complete.');
+  }
+
+  void _scheduleAutosave() {
+    _autosaveTimer?.cancel();
+    _autosaveTimer = Timer(
+      const Duration(milliseconds: 1200),
+      () => unawaited(_runAutosave()),
+    );
+  }
+
+  Future<void> _runAutosave() async {
+    if (!mounted || _editRevision <= _autosavedRevision) return;
+    if (_saving || _autosaving) {
+      _scheduleAutosave();
+      return;
+    }
+    _autosaving = true;
+    final revision = _editRevision;
+    final snapshot = _cloneSession(_session);
+    try {
+      final path = await _projects.save(snapshot);
+      if (!mounted) return;
+      setState(() {
+        _projectPath = path;
+        _autosavedRevision = revision;
+        _message = 'Autosaved locally.';
+      });
+    } catch (error) {
+      if (mounted) setState(() => _message = 'Autosave failed: $error');
+    } finally {
+      _autosaving = false;
+      if (mounted && _editRevision > _autosavedRevision) _scheduleAutosave();
+    }
+  }
 
   Future<void> _loadWaveform(String path) async {
     if (_waveformCache.containsKey(path)) return;
@@ -179,7 +310,7 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
     final tracks = _session.tracks
         .map((track) => track.id == updated.id ? updated : track)
         .toList();
-    setState(() => _session = _withTracks(tracks));
+    _commitSession(_withTracks(tracks));
   }
 
   void _addTrack() {
@@ -190,8 +321,8 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
       name: 'Voice $index',
       kind: AudioTrackKind.voice,
     );
+    _commitSession(_withTracks([..._session.tracks, track]));
     setState(() {
-      _session = _withTracks([..._session.tracks, track]);
       _selectedTrackId = id;
       _selectedClipId = null;
     });
@@ -329,6 +460,17 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
       _lastDragX = null;
       return;
     }
+    final clipLeft = hit.startFrame / _session.sampleRate * _pixelsPerSecond;
+    final clipRight = (hit.startFrame + hit.durationFrames) /
+        _session.sampleRate *
+        _pixelsPerSecond;
+    const handleWidth = 16.0;
+    _dragMode = (localX - clipLeft).abs() <= handleWidth
+        ? _ClipDragMode.trimStart
+        : (localX - clipRight).abs() <= handleWidth
+            ? _ClipDragMode.trimEnd
+            : _ClipDragMode.move;
+    _beginEditTransaction();
     setState(() {
       _selectedTrackId = track.id;
       _selectedClipId = hit!.id;
@@ -354,18 +496,58 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
     final deltaFrames =
         (deltaX / _pixelsPerSecond * _session.sampleRate).round();
     if (deltaFrames == 0) return;
-    final nextFrame = math.max(0, clip.startFrame + deltaFrames).toInt();
-    _updateSelectedClip(startFrame: nextFrame);
+
+    switch (_dragMode) {
+      case _ClipDragMode.move:
+        final nextFrame = _snapFrame(
+          math.max(0, clip.startFrame + deltaFrames).toInt(),
+        );
+        if (nextFrame != clip.startFrame) {
+          _updateSelectedClip(startFrame: nextFrame);
+        }
+      case _ClipDragMode.trimStart:
+        final nextStart = _snapFrame(clip.startFrame + deltaFrames);
+        final trimFrames = math.max(0, nextStart - clip.startFrame).toInt();
+        if (trimFrames <= 0 || trimFrames >= clip.durationFrames) return;
+        final trimmed = clip.trimStartByFrames(
+          trimFrames,
+          newId: clip.id,
+        );
+        _updateSelectedClip(
+          startFrame: trimmed.startFrame,
+          sourceStartFrame: trimmed.sourceStartFrame,
+          durationFrames: trimmed.durationFrames,
+          fadeInFrames: trimmed.fadeInFrames,
+          fadeOutFrames: trimmed.fadeOutFrames,
+        );
+      case _ClipDragMode.trimEnd:
+        final oldEnd = clip.startFrame + clip.durationFrames;
+        final nextEnd = _snapFrame(oldEnd + deltaFrames);
+        final nextDuration = nextEnd - clip.startFrame;
+        if (nextDuration <= 0 || nextDuration >= clip.durationFrames) return;
+        final trimmed = clip.trimEndByFrames(
+          clip.durationFrames - nextDuration,
+          newId: clip.id,
+        );
+        _updateSelectedClip(
+          durationFrames: trimmed.durationFrames,
+          fadeInFrames: trimmed.fadeInFrames,
+          fadeOutFrames: trimmed.fadeOutFrames,
+        );
+    }
   }
 
   void _endClipDrag() {
     _dragTrackId = null;
     _dragClipId = null;
     _lastDragX = null;
+    _finishEditTransaction();
   }
 
   void _updateSelectedClip({
     int? startFrame,
+    int? sourceStartFrame,
+    int? durationFrames,
     double? gain,
     bool? muted,
     int? fadeInFrames,
@@ -378,8 +560,8 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
       id: clip.id,
       mediaId: clip.mediaId,
       startFrame: startFrame ?? clip.startFrame,
-      sourceStartFrame: clip.sourceStartFrame,
-      durationFrames: clip.durationFrames,
+      sourceStartFrame: sourceStartFrame ?? clip.sourceStartFrame,
+      durationFrames: durationFrames ?? clip.durationFrames,
       gain: gain ?? clip.gain,
       pan: clip.pan,
       muted: muted ?? clip.muted,
@@ -406,7 +588,9 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
     final clip = _selectedClip;
     if (clip == null) return;
     final delta = seconds * _session.sampleRate;
-    final next = math.max(0, clip.startFrame + delta).toInt();
+    final next = _snapFrame(
+      math.max(0, clip.startFrame + delta).toInt(),
+    );
     _updateSelectedClip(startFrame: next);
   }
 
@@ -449,6 +633,77 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
     } catch (error) {
       setState(() => _message = error.toString());
     }
+  }
+
+  void _crossfadeSelectedWithNext() {
+    final track = _selectedTrack;
+    final clip = _selectedClip;
+    if (track == null || clip == null) return;
+    final candidates = track.clips
+        .where((item) => item.id != clip.id && item.startFrame >= clip.startFrame)
+        .toList()
+      ..sort((a, b) => a.startFrame.compareTo(b.startFrame));
+    if (candidates.isEmpty) return;
+    final next = candidates.first;
+    final fadeFrames = math.min(
+      _session.sampleRate ~/ 4,
+      math.min(clip.durationFrames ~/ 2, next.durationFrames ~/ 2),
+    ).toInt();
+    if (fadeFrames < 1) return;
+
+    final overlapStart = math.max(
+      0,
+      clip.startFrame + clip.durationFrames - fadeFrames,
+    ).toInt();
+    final updatedClip = AudioClip(
+      id: clip.id,
+      mediaId: clip.mediaId,
+      startFrame: clip.startFrame,
+      sourceStartFrame: clip.sourceStartFrame,
+      durationFrames: clip.durationFrames,
+      gain: clip.gain,
+      pan: clip.pan,
+      muted: clip.muted,
+      fadeInFrames: clip.fadeInFrames,
+      fadeOutFrames: fadeFrames,
+    );
+    final updatedNext = AudioClip(
+      id: next.id,
+      mediaId: next.mediaId,
+      startFrame: overlapStart,
+      sourceStartFrame: next.sourceStartFrame,
+      durationFrames: next.durationFrames,
+      gain: next.gain,
+      pan: next.pan,
+      muted: next.muted,
+      fadeInFrames: fadeFrames,
+      fadeOutFrames: next.fadeOutFrames,
+    );
+    _replaceTrack(
+      AudioTrack(
+        id: track.id,
+        name: track.name,
+        kind: track.kind,
+        gain: track.gain,
+        pan: track.pan,
+        muted: track.muted,
+        solo: track.solo,
+        armed: track.armed,
+        clips: [
+          for (final item in track.clips)
+            if (item.id == clip.id)
+              updatedClip
+            else if (item.id == next.id)
+              updatedNext
+            else
+              item,
+        ],
+      ),
+    );
+    setState(() {
+      _selectedClipId = clip.id;
+      _message = 'Created a 250 ms crossfade with the next clip.';
+    });
   }
 
   void _removeSelectedClip() {
@@ -506,23 +761,30 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
   }
 
   Future<void> _saveProject() async {
-    if (_saving) return;
+    if (_saving || _autosaving) return;
+    _autosaveTimer?.cancel();
+    final revision = _editRevision;
+    final snapshot = _cloneSession(_session);
     setState(() {
       _saving = true;
       _message = null;
     });
     try {
-      final path = await _projects.save(_session);
+      final path = await _projects.save(snapshot);
       if (mounted) {
         setState(() {
           _projectPath = path;
+          _autosavedRevision = revision;
           _message = 'Session saved locally.';
         });
       }
     } catch (error) {
       if (mounted) setState(() => _message = error.toString());
     } finally {
-      if (mounted) setState(() => _saving = false);
+      if (mounted) {
+        setState(() => _saving = false);
+        if (_editRevision > _autosavedRevision) _scheduleAutosave();
+      }
     }
   }
 
@@ -648,6 +910,16 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
         ),
         actions: [
           IconButton(
+            tooltip: 'Undo',
+            onPressed: _undoStack.isEmpty ? null : _undo,
+            icon: const Icon(Icons.undo_rounded),
+          ),
+          IconButton(
+            tooltip: 'Redo',
+            onPressed: _redoStack.isEmpty ? null : _redo,
+            icon: const Icon(Icons.redo_rounded),
+          ),
+          IconButton(
             tooltip: 'Add track',
             onPressed: _addTrack,
             icon: const Icon(Icons.add_box_outlined),
@@ -690,10 +962,14 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
         child: Column(
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
-              child: Row(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+              child: Wrap(
+                spacing: 10,
+                runSpacing: 6,
+                crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
-                  Expanded(
+                  SizedBox(
+                    width: 205,
                     child: Text(
                       '${_session.sampleRate} Hz · ${_session.channels} channel(s) · '
                       '${_session.tracks.length} tracks',
@@ -701,6 +977,53 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
                             color: AuraTheme.muted,
                           ),
                     ),
+                  ),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Switch.adaptive(
+                        value: _snapEnabled,
+                        onChanged: (value) => setState(() => _snapEnabled = value),
+                      ),
+                      const Text('Snap'),
+                      const SizedBox(width: 4),
+                      DropdownButton<int>(
+                        value: _snapGridMilliseconds,
+                        underline: const SizedBox.shrink(),
+                        isDense: true,
+                        items: const [
+                          DropdownMenuItem(value: 10, child: Text('10 ms')),
+                          DropdownMenuItem(value: 50, child: Text('50 ms')),
+                          DropdownMenuItem(value: 100, child: Text('100 ms')),
+                          DropdownMenuItem(value: 250, child: Text('250 ms')),
+                          DropdownMenuItem(value: 500, child: Text('500 ms')),
+                          DropdownMenuItem(value: 1000, child: Text('1 s')),
+                        ],
+                        onChanged: (value) {
+                          if (value != null) {
+                            setState(() => _snapGridMilliseconds = value);
+                          }
+                        },
+                      ),
+                    ],
+                  ),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        tooltip: 'Zoom out',
+                        visualDensity: VisualDensity.compact,
+                        onPressed: () => _setTimelineZoom(_timelineZoom / 1.25),
+                        icon: const Icon(Icons.zoom_out_rounded),
+                      ),
+                      Text('${(_timelineZoom * 100).round()}%'),
+                      IconButton(
+                        tooltip: 'Zoom in',
+                        visualDensity: VisualDensity.compact,
+                        onPressed: () => _setTimelineZoom(_timelineZoom * 1.25),
+                        icon: const Icon(Icons.zoom_in_rounded),
+                      ),
+                    ],
                   ),
                   OutlinedButton.icon(
                     onPressed: _addRecordingToTrack,
@@ -821,6 +1144,13 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
                 onToggleMute: _toggleSelectedClipMute,
                 onRemove: _removeSelectedClip,
                 onSplit: _splitSelectedClip,
+                onCrossfade: _crossfadeSelectedWithNext,
+                canCrossfade: selectedTrack.clips.any(
+                  (clip) => clip.id != selectedClip.id &&
+                      clip.startFrame >= selectedClip.startFrame,
+                ),
+                onTransactionStart: _beginEditTransaction,
+                onTransactionEnd: _finishEditTransaction,
                 maxFadeFrames: math.min(
                   selectedClip.durationFrames,
                   _session.sampleRate * 5,
@@ -1011,6 +1341,10 @@ class _SelectedClipPanel extends StatelessWidget {
     required this.onToggleMute,
     required this.onRemove,
     required this.onSplit,
+    required this.onCrossfade,
+    required this.canCrossfade,
+    required this.onTransactionStart,
+    required this.onTransactionEnd,
     required this.onGainChanged,
     required this.onFadeInChanged,
     required this.onFadeOutChanged,
@@ -1025,6 +1359,10 @@ class _SelectedClipPanel extends StatelessWidget {
   final VoidCallback onToggleMute;
   final VoidCallback onRemove;
   final VoidCallback onSplit;
+  final VoidCallback onCrossfade;
+  final bool canCrossfade;
+  final VoidCallback onTransactionStart;
+  final VoidCallback onTransactionEnd;
   final ValueChanged<double> onGainChanged;
   final ValueChanged<double> onFadeInChanged;
   final ValueChanged<double> onFadeOutChanged;
@@ -1067,6 +1405,11 @@ class _SelectedClipPanel extends StatelessWidget {
                   icon: const Icon(Icons.content_cut_rounded),
                 ),
                 IconButton(
+                  tooltip: 'Crossfade with next clip (250 ms)',
+                  onPressed: canCrossfade ? onCrossfade : null,
+                  icon: const Icon(Icons.compare_arrows_rounded),
+                ),
+                IconButton(
                   tooltip: 'Move left one second',
                   onPressed: onMoveLeft,
                   icon: const Icon(Icons.arrow_back_rounded),
@@ -1097,6 +1440,8 @@ class _SelectedClipPanel extends StatelessWidget {
               max: 2,
               valueLabel: '${(clip.gain * 100).round()}%',
               onChanged: onGainChanged,
+              onChangeStart: onTransactionStart,
+              onChangeEnd: onTransactionEnd,
             ),
             _ClipValueSlider(
               label: 'Fade In',
@@ -1105,6 +1450,8 @@ class _SelectedClipPanel extends StatelessWidget {
               max: math.max(1, maxFadeFrames).toDouble(),
               valueLabel: '${_milliseconds(clip.fadeInFrames)} ms',
               onChanged: onFadeInChanged,
+              onChangeStart: onTransactionStart,
+              onChangeEnd: onTransactionEnd,
             ),
             _ClipValueSlider(
               label: 'Fade Out',
@@ -1113,6 +1460,8 @@ class _SelectedClipPanel extends StatelessWidget {
               max: math.max(1, maxFadeFrames).toDouble(),
               valueLabel: '${_milliseconds(clip.fadeOutFrames)} ms',
               onChanged: onFadeOutChanged,
+              onChangeStart: onTransactionStart,
+              onChangeEnd: onTransactionEnd,
             ),
           ],
         ),
@@ -1127,6 +1476,8 @@ class _ClipValueSlider extends StatelessWidget {
     required this.max,
     required this.valueLabel,
     required this.onChanged,
+    this.onChangeStart,
+    this.onChangeEnd,
   });
 
   final String label;
@@ -1135,6 +1486,8 @@ class _ClipValueSlider extends StatelessWidget {
   final double max;
   final String valueLabel;
   final ValueChanged<double> onChanged;
+  final ValueChanged<double>? onChangeStart;
+  final ValueChanged<double>? onChangeEnd;
 
   @override
   Widget build(BuildContext context) => Row(
@@ -1146,6 +1499,8 @@ class _ClipValueSlider extends StatelessWidget {
               max: max,
               value: value.clamp(min, max).toDouble(),
               onChanged: onChanged,
+              onChangeStart: onChangeStart,
+              onChangeEnd: onChangeEnd,
             ),
           ),
           SizedBox(
@@ -1253,6 +1608,19 @@ class _TrackWaveformPainter extends CustomPainter {
         RRect.fromRectAndRadius(rect, const Radius.circular(8)),
         outline,
       );
+      if (isSelected) {
+        final handlePaint = Paint()..color = Colors.white.withValues(alpha: 0.9);
+        final leftHandle = RRect.fromRectAndRadius(
+          Rect.fromLTWH(rect.left + 2, rect.top + 2, 5, 18),
+          const Radius.circular(2),
+        );
+        final rightHandle = RRect.fromRectAndRadius(
+          Rect.fromLTWH(rect.right - 7, rect.top + 2, 5, 18),
+          const Radius.circular(2),
+        );
+        canvas.drawRRect(leftHandle, handlePaint);
+        canvas.drawRRect(rightHandle, handlePaint);
+      }
 
       final waveform = waveforms[clip.mediaId];
       if (waveform != null && waveform.peaks.isNotEmpty) {
