@@ -75,7 +75,7 @@ class FfiAudioEngineService implements AudioEngineService {
       if (handle == nullptr) {
         throw AudioEngineUnavailable(api.lastError());
       }
-      return FfiAudioCaptureSession(
+      return FfiAudioCaptureSession._(
         api: api,
         handle: handle,
         sampleRate: sampleRate.value,
@@ -121,7 +121,7 @@ class FfiAudioEngineService implements AudioEngineService {
       if (handle == nullptr) {
         throw AudioEngineUnavailable(api.lastError());
       }
-      return FfiAudioPlaybackSession(
+      return FfiAudioPlaybackSession._(
         api: api,
         handle: handle,
         sampleRate: sampleRate.value,
@@ -164,7 +164,7 @@ class FfiAudioEngineService implements AudioEngineService {
     final result = await Isolate.run(
       () => _startRealtimePlaybackInWorker(sessionJson, workerAssets),
     );
-    return FfiAudioPlaybackSession(
+    return FfiAudioPlaybackSession._(
       api: api,
       handle: Pointer<Void>.fromAddress(result['handleAddress']!),
       sampleRate: result['sampleRate']!,
@@ -565,7 +565,7 @@ void _checkStatus(_NativeApi api, int status) {
 }
 
 class FfiAudioPlaybackSession implements AudioPlaybackSession {
-  FfiAudioPlaybackSession({
+  FfiAudioPlaybackSession._({
     required _NativeApi api,
     required Pointer<Void> handle,
     required this.sampleRate,
@@ -720,7 +720,7 @@ class FfiAudioPlaybackSession implements AudioPlaybackSession {
 }
 
 class FfiAudioCaptureSession implements AudioCaptureSession {
-  FfiAudioCaptureSession({
+  FfiAudioCaptureSession._({
     required _NativeApi api,
     required Pointer<Void> handle,
     required this.sampleRate,
