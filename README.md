@@ -47,6 +47,7 @@ A feature is only advertised as ready after its real engine is integrated and te
 - Versioned C ABI and public header for offline rendering, microphone input capture and system-output WAV playback.
 - Flutter FFI adapter with ABI-version check, worker-isolate rendering, native-library discovery, microphone capture and playback sessions, plus explicit web/unsupported-platform fallbacks.
 - Studio single-take Record Booth: selectable microphone, live Peak/RMS meters, local 24-bit PCM WAV save, dropped-frame warning and Play/Stop audition with progress.
+- Local Audio Library: scans WAV metadata without loading audio payloads, search/sort, saved-take playback, rename and confirmed delete limited to the app's recordings directory.
 - Rust unit tests for sample-accurate placement, mixing, panning, fades, clipping, format conversion and invalid media. Native CI is configured; check the latest workflow run for its result.
 - Backend tests, Docker development setup and CI workflows for the configured platform targets.
 
