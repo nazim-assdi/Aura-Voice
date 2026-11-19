@@ -15,7 +15,7 @@ Aura Voice Studio's native Rust engine provides offline PCM WAV rendering, CPAL 
 - Use a preallocated single-producer/single-consumer ring: the audio callback performs no file I/O, heap allocation or blocking lock operation; ring overflow is counted.
 - Record a single local take from Flutter into a 24-bit PCM WAV file. The UI drains the ring outside the device callback, shows Peak/RMS meters and reports dropped frames.
 - Pause capture, flush buffered samples, finalize the WAV header and stop the input stream on Finish & Save.
-- Play a saved PCM/IEEE-float WAV through the default OS output device using CPAL. The output stream uses a supported configuration at the WAV's sample rate, converts common device sample formats in the output callback, and exposes playback position, completion/error status and stop.
+- Play a saved PCM/IEEE-float WAV through the default OS output device using CPAL. The output stream uses a supported configuration at the WAV's sample rate, converts common device sample formats in the output callback, and exposes playback position, completion/error status, a 250 ms output-drain tail and stop.
 - Studio Play/Stop controls and progress for the most recent saved take.
 - Versioned C ABI and public C header in `include/aura_audio_engine.h`.
 
