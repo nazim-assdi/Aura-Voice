@@ -1,6 +1,6 @@
 # Aura Audio Engine
 
-The first native-engine milestone for Aura Voice Studio is a dependency-free Rust library for deterministic offline PCM WAV rendering, exposed through both a Rust API and a C ABI.
+The native-engine foundation for Aura Voice Studio combines deterministic offline PCM WAV rendering with CPAL-based live microphone capture, exposed through Rust and C ABIs.
 
 ## Implemented
 
@@ -12,6 +12,10 @@ The first native-engine milestone for Aura Voice Studio is a dependency-free Rus
 - Export integer PCM WAV at 16/24/32-bit.
 - C ABI for creating/destroying render sessions, loading WAV assets, adding tracks/clips, rendering output and releasing returned buffers.
 - Public C header at `include/aura_audio_engine.h`.
+- Cross-platform microphone input enumeration with stable device ids and default-device reporting.
+- Live mono/stereo microphone capture at the input device's default sample rate.
+- A preallocated SPSC sample ring. The audio callback does not allocate, lock, or write files; overflow is reported as dropped frames.
+- C ABI capture start/read/status/stop lifecycle and Dart FFI wrappers for device listing and capture reads.
 
 ## Build the shared library
 
@@ -34,4 +38,4 @@ cargo test --all-targets
 
 ## Current limitations
 
-The engine is an offline renderer, not a live recording engine. It does not yet capture microphone input, play through audio devices, resample, decode compressed MP3/AAC/FLAC, or provide realtime DSP. Input assets must already be WAV and match the session sample rate. The current mixer supports mono/stereo output.
+Live capture is an input-stream foundation, not yet a complete recording booth. The Flutter studio does not yet expose record/arm/pause controls, continuously drain the capture ring into a project asset, write captured PCM to WAV, or provide live monitor playback. Capture uses the device's default rate/format; unsupported sample formats, resampling, device reconnect recovery, loopback and realtime DSP remain future work. The offline mixer still accepts mono/stereo WAV assets only.
