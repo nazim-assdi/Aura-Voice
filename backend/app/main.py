@@ -7,7 +7,7 @@ from app.core.config import settings
 app = FastAPI(
     title=settings.app_name,
     version=settings.app_version,
-    description="API foundation for Aura Voice AI. Speech providers are disabled until configured.",
+    description="API foundation for Aura Voice Studio. Audio and speech engines remain disabled until real providers are configured and tested.",
 )
 
 app.add_middleware(
