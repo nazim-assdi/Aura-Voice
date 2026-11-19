@@ -54,6 +54,13 @@ class FileAudioLibraryService implements AudioLibraryService {
     if (!await source.exists()) {
       throw const AudioLibraryUnavailable('This recording no longer exists.');
     }
+    if (normalized.toLowerCase() == recording.name.toLowerCase()) {
+      final current = await _readMetadata(source);
+      if (current == null) {
+        throw const AudioLibraryUnavailable('This recording could not be read.');
+      }
+      return current;
+    }
     final extension = '.wav';
     final destination = await _uniqueDestination(normalized, extension);
     final renamed = await source.rename(destination.path);
@@ -141,7 +148,7 @@ class FileAudioLibraryService implements AudioLibraryService {
           channels > 8 ||
           sampleRate < 8000 ||
           sampleRate > 384000 ||
-          blockAlign <= 0 ||
+          blockAlign != channels * (bitsPerSample ~/ 8) ||
           dataBytes % blockAlign != 0 ||
           !((formatTag == 1 && [8, 16, 24, 32].contains(bitsPerSample)) ||
               (formatTag == 3 && bitsPerSample == 32))) {
