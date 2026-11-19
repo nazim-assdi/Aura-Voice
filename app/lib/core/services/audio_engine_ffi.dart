@@ -495,9 +495,9 @@ class _NativeApi {
           'aura_engine_last_error',
         ) {
     final abi = _abiVersion();
-    if (abi != 1) {
+    if (abi != 2) {
       throw AudioEngineUnavailable(
-        'Native audio ABI mismatch: expected 1, found $abi.',
+        'Native audio ABI mismatch: expected 2, found $abi.',
       );
     }
   }
