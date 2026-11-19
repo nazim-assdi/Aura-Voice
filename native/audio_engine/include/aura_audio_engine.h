@@ -92,6 +92,14 @@ AuraAudioPlaybackHandle *aura_engine_realtime_playback_start(
     uint64_t *out_total_frames
 );
 
+/* Publishes a replacement session graph while multitrack playback stays active.
+ * The callback switches to the new immutable graph at the next audio block. */
+int32_t aura_audio_playback_replace_session(
+    AuraAudioPlaybackHandle *playback,
+    AuraEngineHandle *session_handle,
+    uint64_t *out_total_frames
+);
+
 AuraAudioPlaybackHandle *aura_audio_playback_start_wav(
     const uint8_t *wav_data,
     size_t wav_len,
