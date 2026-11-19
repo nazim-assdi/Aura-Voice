@@ -77,7 +77,7 @@ class FileAudioLibraryService implements AudioLibraryService {
       final fileLength = await random.length();
       if (fileLength < 44) return null;
 
-      final riffHeader = await random.read(12);
+      final riffHeader = await _readAvailable(random, 12);
       if (riffHeader.length != 12 ||
           _fourCc(riffHeader, 0) != 'RIFF' ||
           _fourCc(riffHeader, 8) != 'WAVE') {
@@ -95,7 +95,7 @@ class FileAudioLibraryService implements AudioLibraryService {
       while (position + 8 <= fileLength &&
           (formatTag == null || dataBytes == null)) {
         await random.setPosition(position);
-        final chunkHeader = await random.read(8);
+        final chunkHeader = await _readAvailable(random, 8);
         if (chunkHeader.length != 8) break;
         final chunkId = _fourCc(chunkHeader, 0);
         final chunkLength = ByteData.sublistView(chunkHeader)
@@ -111,7 +111,7 @@ class FileAudioLibraryService implements AudioLibraryService {
             throw const FormatException('Invalid WAV format chunk.');
           }
           await random.setPosition(chunkStart);
-          final format = await random.read(chunkLength);
+          final format = await _readAvailable(random, chunkLength);
           if (format.length != chunkLength) {
             throw const FormatException('Incomplete WAV format chunk.');
           }
@@ -223,6 +223,21 @@ class FileAudioLibraryService implements AudioLibraryService {
     name = name.replaceAll(RegExp(r'[. ]+$'), '');
     if (name.length > 90) name = name.substring(0, 90).trim();
     return name;
+  }
+
+  Future<Uint8List> _readAvailable(
+    RandomAccessFile file,
+    int byteCount,
+  ) async {
+    final builder = BytesBuilder(copy: false);
+    var remaining = byteCount;
+    while (remaining > 0) {
+      final part = await file.read(remaining);
+      if (part.isEmpty) break;
+      builder.add(part);
+      remaining -= part.length;
+    }
+    return builder.takeBytes();
   }
 
   String _fourCc(Uint8List bytes, int offset) =>
