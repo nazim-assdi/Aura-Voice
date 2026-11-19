@@ -15,6 +15,9 @@ Aura Voice Studio's native Rust engine provides offline PCM WAV rendering, CPAL 
 - Use a preallocated single-producer/single-consumer ring: the audio callback performs no file I/O, heap allocation or blocking lock operation; ring overflow is counted.
 - Record a single local take from Flutter into a 24-bit PCM WAV file. The UI drains the ring outside the device callback, shows Peak/RMS meters and reports dropped frames.
 - Pause capture, flush buffered samples, finalize the WAV header and stop the input stream on Finish & Save.
+- Local Audio Library reads RIFF metadata without loading the WAV payload, and its waveform analyzer scans samples in bounded 64 KiB chunks to build peak buckets.
+- A local project manifest store saves sample-frame sessions in JSON, uses backup/restore when updating an existing manifest, and can locate source WAV paths referenced by clips.
+- The current Flutter multitrack editor can arrange sample-frame clips from the library, show real waveform lanes, set track mute/solo and clip gain/mute, remove clips non-destructively, save/reopen sessions and render/play an offline mix.
 - Play a saved PCM/IEEE-float WAV through the default OS output device using CPAL. The output stream uses a supported configuration at the WAV's sample rate, converts common device sample formats in the output callback, and exposes playback position, completion/error status, a 250 ms output-drain tail and stop.
 - Studio Play/Stop controls and progress for the most recent saved take.
 - Versioned C ABI and public C header in `include/aura_audio_engine.h`.
@@ -45,8 +48,8 @@ The shared library must be placed beside the Flutter desktop executable (or on t
 
 ## Current limitations
 
-This is a single-take Record Booth, not a complete multitrack recording studio. The current recorder saves standalone 24-bit PCM WAV files under `Documents/Aura Voice Studio/Recordings`; it does not yet attach takes to an editable session or provide pause/resume, punch-in, take lanes, waveform editing, clip audition or project recovery.
+The Record Booth still creates standalone 24-bit PCM WAV takes under `Documents/Aura Voice Studio/Recordings`. The editor stores clip references by local source path and keeps source WAVs unchanged. A complete take lane/punch-in workflow, project asset import/copy and media-relink recovery are not yet implemented.
 
-Playback currently uses only the default output device. The Flutter preview reads the WAV into memory and is limited to 256 MiB; the output device must support the file's sample rate. There is no resampling, output-device picker, seek, pause, loop, volume automation or multitrack transport yet. The output callback does not allocate or lock, but playback has not yet been validated on physical Windows/macOS/Linux audio devices in CI.
+Playback currently uses only the default output device. Single-take and editor mix preview decode/render to memory and play through the default device; a source preview WAV is limited to 256 MiB and output requires a supported sample rate. The editor preview renders the current session offline before playback; it is not real-time multitrack transport. There is no resampling, output-device picker, seek, pause, loop, volume automation or continuous timeline playback. The output callback is designed to avoid allocation/locking, but playback has not yet been validated on physical Windows/macOS/Linux audio devices in CI.
 
-Input-to-output monitoring, live effects, device reconnect recovery, output latency calibration, more microphone sample formats, compressed MP3/AAC/FLAC decoding, realtime DSP and waveform caches remain future work. Android/iOS native library packaging and audio-session integration are also not complete.
+Input-to-output monitoring, live effects, device reconnect recovery, output latency calibration, more microphone sample formats, drag/drop/trim/split/fade/crossfade editing, undo/redo, autosave, media relinking, compressed MP3/AAC/FLAC decoding, resampling, realtime DSP and persistent waveform caches remain future work. Android/iOS native library packaging and audio-session integration are also not complete.
