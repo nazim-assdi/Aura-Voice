@@ -8,6 +8,7 @@ import '../../core/services/api_client.dart';
 import '../../core/services/audio_engine_service.dart';
 import '../../core/services/audio_file_service.dart';
 import '../../core/services/audio_library_service.dart';
+import '../../core/services/audio_project_service.dart';
 import '../../core/services/audio_recording_service.dart';
 import '../../core/services/audio_waveform_service.dart';
 import '../../core/theme/aura_theme.dart';
@@ -1048,6 +1049,7 @@ class LibraryPage extends StatefulWidget {
 
 class _LibraryPageState extends State<LibraryPage> {
   late final AudioLibraryService _library;
+  late final AudioProjectStore _projects;
   late final AudioEngineService _engine;
   late final AudioWaveformService _waveforms;
   final TextEditingController _searchController = TextEditingController();
@@ -1066,6 +1068,7 @@ class _LibraryPageState extends State<LibraryPage> {
   void initState() {
     super.initState();
     _library = createAudioLibraryService();
+    _projects = createAudioProjectStore();
     _engine = createAudioEngineService();
     _waveforms = createAudioWaveformService();
     unawaited(_refresh());
@@ -1321,6 +1324,70 @@ class _LibraryPageState extends State<LibraryPage> {
     }
   }
 
+  Future<void> _openSavedProjects() async {
+    try {
+      final projects = await _projects.listProjects();
+      if (!mounted) return;
+      if (projects.isEmpty) {
+        setState(() => _message = 'No saved sessions yet. Open a recording in the editor and save a project.');
+        return;
+      }
+      final selected = await showDialog<AudioProjectSummary>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Saved sessions'),
+          content: SizedBox(
+            width: 440,
+            height: 380,
+            child: ListView.separated(
+              itemCount: projects.length,
+              separatorBuilder: (_, __) => const Divider(height: 1),
+              itemBuilder: (context, index) {
+                final project = projects[index];
+                final modified = project.modifiedAt.toLocal();
+                final stamp = '${modified.day.toString().padLeft(2, '0')}/'
+                    '${modified.month.toString().padLeft(2, '0')}/'
+                    '${modified.year}';
+                return ListTile(
+                  leading: const Icon(Icons.audio_file_rounded, color: AuraTheme.mint),
+                  title: Text(
+                    project.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  subtitle: Text(
+                    '${project.trackCount} tracks · ${project.sampleRate} Hz · $stamp',
+                  ),
+                  onTap: () => Navigator.of(dialogContext).pop(project),
+                );
+              },
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Close'),
+            ),
+          ],
+        ),
+      );
+      if (selected == null || !mounted) return;
+      final session = await _projects.load(selected.path);
+      if (!mounted) return;
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => AudioEditorPage(
+            initialSession: session,
+            initialProjectPath: selected.path,
+          ),
+        ),
+      );
+      if (mounted) await _refresh();
+    } catch (error) {
+      if (mounted) setState(() => _message = error.toString());
+    }
+  }
+
   Future<void> _openEditor(AudioLibraryRecording recording) async {
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
@@ -1438,6 +1505,11 @@ class _LibraryPageState extends State<LibraryPage> {
                           ),
                         ],
                       ),
+                    ),
+                    IconButton(
+                      tooltip: 'Open saved sessions',
+                      onPressed: _loading ? null : _openSavedProjects,
+                      icon: const Icon(Icons.folder_open_rounded),
                     ),
                     IconButton(
                       tooltip: 'Refresh library',
