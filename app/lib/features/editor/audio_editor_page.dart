@@ -1080,7 +1080,7 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
             onPressed: _rendering
                 ? null
                 : _playback == null
-                    ? _renderAndPlay
+                    ? _startRealtimePlayback
                     : _stopPlayback,
             icon: _rendering
                 ? const SizedBox(
