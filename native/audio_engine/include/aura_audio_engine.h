@@ -59,6 +59,26 @@ int32_t aura_engine_render_wav(
 
 void aura_engine_free_buffer(uint8_t *data, size_t len);
 
+/* Realtime microphone capture (CPAL). */
+typedef struct AuraAudioCaptureHandle AuraAudioCaptureHandle;
+
+char *aura_audio_input_devices_json(void);
+void aura_audio_string_free(char *value);
+AuraAudioCaptureHandle *aura_audio_capture_start(
+    const char *device_id,
+    uint32_t buffer_milliseconds,
+    uint32_t *out_sample_rate,
+    uint16_t *out_channels
+);
+uint32_t aura_audio_capture_read(
+    AuraAudioCaptureHandle *handle,
+    float *output,
+    uint32_t max_frames
+);
+uint64_t aura_audio_capture_dropped_frames(const AuraAudioCaptureHandle *handle);
+uint32_t aura_audio_capture_status(const AuraAudioCaptureHandle *handle);
+void aura_audio_capture_stop(AuraAudioCaptureHandle *handle);
+
 #ifdef __cplusplus
 }
 #endif
