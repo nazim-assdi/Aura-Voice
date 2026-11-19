@@ -40,6 +40,16 @@ class UnavailableAudioEngineService implements AudioEngineService {
   }
 
   @override
+  Future<AudioPlaybackSession> startRealtimePlayback({
+    required AudioSession session,
+    required Map<String, Uint8List> assetWavs,
+  }) {
+    throw const AudioEngineUnavailable(
+      'Realtime multitrack playback is not available on this platform.',
+    );
+  }
+
+  @override
   Future<AudioCaptureSession> startCapture({
     String? deviceId,
     int bufferMilliseconds = 1000,
