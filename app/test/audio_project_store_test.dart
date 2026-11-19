@@ -152,6 +152,30 @@ void main() {
       await outside.delete();
     });
 
+    test('restores a backup when the main manifest is missing', () async {
+      final path = await store.save(makeSession());
+      final backup = File('$path.backup');
+      await File(path).rename(backup.path);
+
+      final projects = await store.listProjects();
+
+      expect(projects, hasLength(1));
+      expect(await File(path).exists(), isTrue);
+      expect(await backup.exists(), isFalse);
+      expect((await store.load(path)).title, 'Voice Over Test');
+    });
+
+    test('removes stale backup when the main manifest exists', () async {
+      final path = await store.save(makeSession());
+      final backup = File('$path.backup');
+      await backup.writeAsString('stale backup');
+
+      await store.listProjects();
+
+      expect(await File(path).exists(), isTrue);
+      expect(await backup.exists(), isFalse);
+    });
+
     test('ignores damaged project manifests while listing', () async {
       await store.save(makeSession());
       await File(
