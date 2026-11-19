@@ -2,7 +2,7 @@
 
 **Professional voice production · Recording · WAV preview · Multitrack audio · AI speech · Dubbing · Restoration · Mixing & mastering**
 
-> Status: early development foundation (v0.1.0). The source now includes single-take microphone recording to local 24-bit PCM WAV and saved-WAV audition. Full multitrack recording/editing, production TTS, voice cloning, DSP, dubbing and mastering remain in development.
+> Status: early development foundation (v0.1.0). The source includes single-take recording, a non-destructive multitrack editor, callback-driven realtime mixing, live graph replacement and per-track high-pass/compressor controls. Advanced DSP, production TTS, voice cloning, dubbing and mastering remain in development.
 
 Aura Voice Studio focuses exclusively on professional voice and audio production: recording, editing, generating, restoring, dubbing, mixing and mastering speech and audio. The full production workspace is desktop-first (Windows, macOS and Linux), with Android and iOS support for recording, AI voice workflows, review and lightweight editing.
 
@@ -55,8 +55,8 @@ A feature is only advertised as ready after its real engine is integrated and te
 
 ## What is not implemented yet
 
-- The realtime mixer currently uses an immutable session snapshot prepared before playback and scans the clip graph for each output sample frame. Dynamic graph edits while playing, optimized block scheduling for very dense sessions, track/bus routing, realtime DSP automation, input-to-output monitoring, waveform-cache persistence and media relinking remain future work. Playback requires each source WAV to match the session sample rate and the output device to support that rate; resampling is not implemented.
-- Production audio DSP, noise restoration, effects graph or mastering.
+- The realtime mixer now uses a sample-time event scheduler and preallocated blocks up to 1024 frames. It visits active clips rather than scanning every project clip for each frame, and supports atomic immutable-graph replacement at the next audio block. The first DSP lane includes per-track high-pass filtering and an envelope compressor. Hardware CPU/latency/underrun benchmarks for dense sessions, resampling, output-device selection, microphone-to-output monitoring, advanced DSP/effects, buses/sends and waveform-cache persistence remain outstanding.
+- Advanced DSP beyond the current high-pass/compressor lane, configurable effects graphs, noise restoration, bus/send routing, mastering and loudness/true-peak tools.
 - Production TTS inference, voice profile enrollment or voice cloning.
 - Speech recognition, translation/dubbing alignment and subtitle export.
 - Desktop virtual audio routing, signed installers and app-store releases.
@@ -89,7 +89,7 @@ cd native/audio_engine
 cargo test --all-targets
 ```
 
-Native unit tests cover the offline renderer and parity between its output and the realtime frame mixer. The renderer intentionally accepts decoded PCM assets at the session sample rate. The C ABI and Flutter FFI bridge are in place, and desktop workflows now build/copy the shared library beside each executable; this packaging change still needs a successful CI run. The native module now exposes CPAL microphone input discovery/capture and a bounded realtime-safe sample ring through its C ABI and Dart service. The Flutter Record Booth still needs UI controls, WAV/session writing and live monitoring; sample-rate conversion and compressed-audio decoding are not implemented.
+Native unit tests cover offline/realtime DSP parity, event-based block rendering, seek and clip-boundary scheduling, live graph snapshot lifetime, mute/solo, source-range validation and an 8,192-clip scheduling stress case. Physical audio-device timing and underrun measurements are still required before the mixer can be considered performance-verified.
 
 ## Run the FastAPI backend
 
@@ -140,8 +140,8 @@ See [docs/PRO_VOICE_STUDIO_ARCHITECTURE.md](docs/PRO_VOICE_STUDIO_ARCHITECTURE.m
 - [x] Flutter media-file access, waveform editor, multitrack project workflow and non-destructive DAW editing controls (source implemented; end-to-end CI verification pending).
 - [x] Native microphone device discovery/capture, real-time-safe ring, Flutter input meters and streamed local 24-bit PCM WAV recording (end-to-end CI verification pending).
 - [ ] Record Booth UI, capture-to-WAV/session writing, continuous ring draining, playback and device monitoring.
-- [x] Initial callback-driven native realtime multitrack mixer with sample-frame transport and selected-clip looping (physical-device and dense-session performance validation pending).
-- [ ] Optimized block scheduler, dynamic graph updates, DSP effects and restoration.
+- [x] Callback-driven native realtime multitrack mixer, event-based block scheduler, live graph updates and per-track high-pass/compressor (physical-device and dense-session performance validation pending).
+- [ ] Sample-rate conversion, output-device selection, live input monitoring, advanced DSP/effects graph, restoration, buses/sends and mastering.
 - [ ] Production multilingual TTS and optional local inference.
 - [ ] Secure, consent-based voice profile management.
 - [ ] Transcription, dubbing, translation review and subtitle export.
