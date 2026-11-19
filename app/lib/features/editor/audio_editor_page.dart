@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:math' as math;
+import 'dart:typed_data';
 
 import 'package:material_ui/material_ui.dart';
 
@@ -29,7 +30,7 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
   late final AudioLibraryService _library;
   late final AudioProjectStore _projects;
   late final AudioWaveformService _waveforms;
-  final Map<String, AudioWaveformData> _waveformCache = {};
+  Map<String, AudioWaveformData> _waveformCache = {};
 
   String? _selectedTrackId;
   String? _selectedClipId;
@@ -116,7 +117,7 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
   }
 
   double get _totalSeconds =>
-      math.max(10.0, _sessionEndFrame / _session.sampleRate + 2.0);
+      math.max(10.0, _sessionEndFrame / _session.sampleRate + 2.0).toDouble();
 
   double get _pixelsPerSecond {
     final width = _timelineWidth;
@@ -124,14 +125,14 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
   }
 
   double get _timelineWidth =>
-      math.max(900.0, math.min(7200.0, _totalSeconds * 76.0));
+      math.max(900.0, math.min(7200.0, _totalSeconds * 76.0)).toDouble();
 
   Future<void> _loadWaveform(String path) async {
     if (_waveformCache.containsKey(path)) return;
     try {
       final data = await _waveforms.analyze(path, peakCount: 512);
       if (!mounted) return;
-      setState(() => _waveformCache[path] = data);
+      setState(() => _waveformCache = {..._waveformCache, path: data});
     } catch (error) {
       if (mounted) setState(() => _message = 'Waveform unavailable: $error');
     }
@@ -169,8 +170,15 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
     });
   }
 
-  Future<void> _addRecordingToTrack() async {
-    final compatible = (await _library.listRecordings())
+  Future<void> _addRecordingToTrack({String? targetTrackId}) async {
+    List<AudioLibraryRecording> available;
+    try {
+      available = await _library.listRecordings();
+    } catch (error) {
+      if (mounted) setState(() => _message = error.toString());
+      return;
+    }
+    final compatible = available
         .where(
           (item) =>
               item.sampleRate == _session.sampleRate &&
@@ -220,7 +228,17 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
     );
     if (selected == null || !mounted) return;
 
-    var track = _selectedTrack;
+    AudioTrack? track;
+    if (targetTrackId != null) {
+      for (final candidate in _session.tracks) {
+        if (candidate.id == targetTrackId) {
+          track = candidate;
+          break;
+        }
+      }
+    } else {
+      track = _selectedTrack;
+    }
     if (track == null) {
       _addTrack();
       track = _selectedTrack;
@@ -252,8 +270,8 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
       armed: track.armed,
       clips: [...track.clips, clip],
     );
+    _replaceTrack(updated);
     setState(() {
-      _replaceTrack(updated);
       _selectedTrackId = track!.id;
       _selectedClipId = clip.id;
       _message = 'Added ${selected.name} as a non-destructive clip.';
@@ -615,7 +633,8 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
                                 }),
                                 onMute: () => _toggleTrackMute(track),
                                 onSolo: () => _toggleTrackSolo(track),
-                                onAddClip: _addRecordingToTrack,
+                                onAddClip: () =>
+                                    _addRecordingToTrack(targetTrackId: track.id),
                               ),
                               GestureDetector(
                                 behavior: HitTestBehavior.opaque,
@@ -1066,7 +1085,7 @@ class _TrackWaveformPainter extends CustomPainter {
   }
 
   String _clipName(String path) {
-    final name = path.split(Platform.pathSeparator).last;
+    final name = path.split(RegExp(r'[/\\\\]')).last;
     return name.toLowerCase().endsWith('.wav')
         ? name.substring(0, name.length - 4)
         : name;
