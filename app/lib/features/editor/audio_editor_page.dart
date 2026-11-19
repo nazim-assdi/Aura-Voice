@@ -844,12 +844,17 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
         );
       }
       final playback = await _engine.startPlayback(wavBytes: result.wavBytes);
-      if (_loopEnabled) {
-        await playback.setLoopRange(
-          startFrame: 0,
-          endFrame: playback.totalFrames,
-          enabled: true,
-        );
+      try {
+        if (_loopEnabled) {
+          await playback.setLoopRange(
+            startFrame: 0,
+            endFrame: playback.totalFrames,
+            enabled: true,
+          );
+        }
+      } catch (_) {
+        await playback.stop();
+        rethrow;
       }
       if (!mounted) {
         await playback.stop();
@@ -1336,8 +1341,7 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
                           _formatTransportPosition(
                             _seekPreviewFrame ?? _playbackPosition,
                           ),
-                          style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                              ),
+                          style: Theme.of(context).textTheme.labelMedium,
                         ),
                         const Spacer(),
                         Text(
