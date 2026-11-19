@@ -6,6 +6,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../../core/services/api_client.dart';
 import '../../core/services/audio_engine_service.dart';
+import '../../core/services/audio_recording_service.dart';
 import '../../core/theme/aura_theme.dart';
 
 class HomeShell extends StatefulWidget {
@@ -338,7 +339,9 @@ class _StudioPageState extends State<StudioPage> {
   late final AudioEngineService _engine;
   final List<AudioInputDevice> _devices = [];
   AudioCaptureSession? _capture;
+  AudioRecordingWriter? _writer;
   Timer? _meterTimer;
+  String? _savedPath;
   String? _selectedDeviceId;
   String? _message;
   bool _loadingDevices = true;
@@ -361,12 +364,28 @@ class _StudioPageState extends State<StudioPage> {
   @override
   void dispose() {
     _meterTimer?.cancel();
+    unawaited(_finishOnDispose());
+    super.dispose();
+  }
+
+  Future<void> _finishOnDispose() async {
     final capture = _capture;
     _capture = null;
     if (capture != null) {
-      unawaited(capture.stop());
+      await capture.stop();
     }
-    super.dispose();
+    while (_polling) {
+      await Future<void>.delayed(const Duration(milliseconds: 2));
+    }
+    final writer = _writer;
+    _writer = null;
+    if (writer != null) {
+      try {
+        await writer.finish();
+      } catch (_) {
+        await writer.discard();
+      }
+    }
   }
 
   Future<void> _refreshDevices() async {
@@ -411,25 +430,37 @@ class _StudioPageState extends State<StudioPage> {
       _capturedFrames = 0;
       _droppedFrames = 0;
     });
+    AudioCaptureSession? capture;
+    AudioRecordingWriter? writer;
     try {
-      final capture = await _engine.startCapture(
+      capture = await _engine.startCapture(
         deviceId: _selectedDeviceId,
         bufferMilliseconds: 1000,
       );
+      writer = createAudioRecordingWriter();
+      await writer.start(
+        sampleRate: capture.sampleRate,
+        channels: capture.channels,
+      );
       if (!mounted) {
         await capture.stop();
+        await writer.discard();
         return;
       }
       setState(() {
         _capture = capture;
-        _sampleRate = capture.sampleRate;
+        _writer = writer;
+        _sampleRate = capture!.sampleRate;
         _channels = capture.channels;
+        _savedPath = null;
       });
       _meterTimer = Timer.periodic(
         const Duration(milliseconds: 25),
         (_) => unawaited(_pollInput()),
       );
     } catch (error) {
+      if (capture != null) await capture.stop();
+      if (writer != null) await writer.discard();
       if (mounted) setState(() => _message = error.toString());
     } finally {
       if (mounted) setState(() => _starting = false);
@@ -442,6 +473,14 @@ class _StudioPageState extends State<StudioPage> {
     _polling = true;
     try {
       final samples = await capture.readFrames(maxFrames: 4096);
+      if (!mounted || !identical(capture, _capture)) return;
+      if (samples.isNotEmpty) {
+        final writer = _writer;
+        if (writer == null) {
+          throw const AudioRecordingUnavailable('Recording file is not available.');
+        }
+        await writer.append(samples);
+      }
       if (!mounted || !identical(capture, _capture)) return;
       var peak = 0.0;
       var sumSquares = 0.0;
@@ -479,10 +518,26 @@ class _StudioPageState extends State<StudioPage> {
     final capture = _capture;
     _capture = null;
     if (capture != null) await capture.stop();
+    while (_polling) {
+      await Future<void>.delayed(const Duration(milliseconds: 2));
+    }
+    final writer = _writer;
+    _writer = null;
+    String? path;
+    try {
+      if (writer != null) path = await writer.finish();
+    } catch (error) {
+      _message = 'The recording could not be finalized: $error';
+      if (writer != null) await writer.discard();
+    }
     if (mounted) {
       setState(() {
         _peak = 0;
         _rms = 0;
+        _savedPath = path;
+        if (path != null) {
+          _message = 'Recording saved successfully.';
+        }
       });
     }
   }
@@ -560,7 +615,7 @@ class _StudioPageState extends State<StudioPage> {
                                 ),
                           ),
                         ),
-                        _StatusChip(label: listening ? 'INPUT ACTIVE' : 'STOPPED'),
+                        _StatusChip(label: listening ? 'RECORDING' : 'STOPPED'),
                       ],
                     ),
                     const SizedBox(height: 18),
@@ -645,7 +700,7 @@ class _StudioPageState extends State<StudioPage> {
                                     child: CircularProgressIndicator(strokeWidth: 2),
                                   )
                                 : const Icon(Icons.mic_rounded),
-                            label: Text(_starting ? 'Starting…' : 'Start input check'),
+                            label: Text(_starting ? 'Starting…' : 'Start recording'),
                             style: FilledButton.styleFrom(
                               backgroundColor: AuraTheme.mint,
                               foregroundColor: const Color(0xFF07151A),
@@ -658,7 +713,7 @@ class _StudioPageState extends State<StudioPage> {
                           OutlinedButton.icon(
                             onPressed: _stopInputCheck,
                             icon: const Icon(Icons.stop_rounded),
-                            label: const Text('Stop'),
+                            label: const Text('Finish & save'),
                             style: OutlinedButton.styleFrom(
                               foregroundColor: Colors.white,
                               padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
@@ -694,7 +749,7 @@ class _StudioPageState extends State<StudioPage> {
                     const SizedBox(width: 10),
                     Expanded(
                       child: Text(
-                        'Live input check only: microphone samples are measured for the meters and then discarded. No recording file is saved yet.',
+                        'Recording is saved locally as 24-bit PCM WAV in Documents / Aura Voice Studio / Recordings. Audio is not uploaded to a cloud service.',
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
                               color: AuraTheme.muted,
                               height: 1.5,
@@ -708,13 +763,39 @@ class _StudioPageState extends State<StudioPage> {
                 const SizedBox(height: 12),
                 Text(
                   _droppedFrames == 0
-                      ? 'Input buffer healthy  ·  $_capturedFrames frames read'
-                      : 'Warning: $_droppedFrames frames dropped. The input buffer was not drained fast enough.',
+                      ? 'Input buffer healthy  ·  $_capturedFrames frames written'
+                      : 'Warning: $_droppedFrames frames dropped. This take may contain a gap.',
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: _droppedFrames == 0
                             ? AuraTheme.muted
                             : const Color(0xFFFFC27A),
                       ),
+                ),
+              ],
+              if (_savedPath != null) ...[
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: AuraTheme.panel,
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Icon(Icons.check_circle_outline_rounded, color: AuraTheme.mint),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: SelectableText(
+                          _savedPath!,
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                color: Colors.white70,
+                                height: 1.45,
+                              ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ],
             ]),
