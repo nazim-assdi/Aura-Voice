@@ -384,11 +384,10 @@ class _StudioPageState extends State<StudioPage> {
           ..clear()
           ..addAll(devices);
         if (!_devices.any((device) => device.id == _selectedDeviceId)) {
-          _selectedDeviceId = _devices
-              .where((device) => device.isDefault)
-              .firstOrNull
-              ?.id ??
-              (_devices.isEmpty ? null : _devices.first.id);
+          final defaults = _devices.where((device) => device.isDefault);
+          _selectedDeviceId = defaults.isNotEmpty
+              ? defaults.first.id
+              : (_devices.isEmpty ? null : _devices.first.id);
         }
         if (_devices.isEmpty) {
           _message = 'No microphone input was found. Connect a microphone and refresh.';
@@ -531,7 +530,9 @@ class _StudioPageState extends State<StudioPage> {
                   ),
                   IconButton(
                     tooltip: 'Refresh microphone list',
-                    onPressed: listening || _loadingDevices ? null : _refreshDevices,
+                    onPressed: listening || _loadingDevices || _starting
+                        ? null
+                        : _refreshDevices,
                     icon: const Icon(Icons.refresh_rounded),
                   ),
                 ],
