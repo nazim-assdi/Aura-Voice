@@ -166,7 +166,7 @@ This repository is an early Flutter/FastAPI/native-engine foundation. In additio
 - Flutter Studio UI for one-take local 24-bit PCM WAV recording, live Peak/RMS meters, a dropped-frame warning, and Play/Stop preview with progress.
 - Local Audio Library with RIFF metadata scan, sample-frame duration, recording search/sort, saved-take playback, true sample-derived waveform preview, rename and confirmed deletion guarded to the canonical recordings directory. Recordings referenced by saved projects are protected.
 - Local JSON session-project store with backup/restore on interrupted replacement, project listing/reopen and source-media reference checks.
-- Early multitrack editor UI with a sample-frame timeline ruler, real waveform clip lanes, add clips to tracks, clip selection, one-second nudge, gain, mute, track mute/solo, clip removal, session save/reopen and offline mix rendering/playback.
+- Early multitrack editor UI with a sample-frame timeline ruler, real waveform clip lanes, add clips to tracks, long-press clip dragging with sample-frame positioning, clip selection, one-second nudge, gain, mute, track mute/solo, clip removal, session save/reopen and offline mix rendering/playback.
 - Versioned C ABI, public C header, engine error reporting and an end-to-end Rust FFI unit test.
 - Flutter FFI adapter with ABI checks, asset/track/clip marshaling, output-buffer ownership handling, worker-isolate rendering and a web/unsupported-platform fallback.
 - Desktop build workflow steps to compile and copy the native shared library beside Linux, Windows and macOS executables.
