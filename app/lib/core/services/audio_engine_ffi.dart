@@ -1143,7 +1143,7 @@ class _NativeApi {
   }
 
   static _NativeApi open() {
-    final configuredPath = const String.fromEnvironment(
+    const configuredPath = String.fromEnvironment(
       'AURA_AUDIO_ENGINE_LIBRARY',
     );
     final library = configuredPath.isNotEmpty
