@@ -164,6 +164,7 @@ This repository is an early Flutter/FastAPI/native-engine foundation. In additio
 - CPAL mono/stereo microphone capture stream with preallocated lock-free SPSC ring, dropped-frame counter and stream-error status.
 - C ABI functions for listing inputs, starting/pausing/reading/stopping capture, and starting/querying/stopping WAV playback; Dart FFI wrappers expose capture and playback session handles.
 - Flutter Studio UI for one-take local 24-bit PCM WAV recording, live Peak/RMS meters, a dropped-frame warning, and Play/Stop preview with progress.
+- Local Audio Library with RIFF metadata scan, recording search/sort, latest-take playback, rename and confirmed deletion guarded to the recordings directory.
 - Versioned C ABI, public C header, engine error reporting and an end-to-end Rust FFI unit test.
 - Flutter FFI adapter with ABI checks, asset/track/clip marshaling, output-buffer ownership handling, worker-isolate rendering and a web/unsupported-platform fallback.
 - Desktop build workflow steps to compile and copy the native shared library beside Linux, Windows and macOS executables.
