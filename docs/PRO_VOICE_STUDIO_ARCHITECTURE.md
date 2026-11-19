@@ -118,7 +118,7 @@ This repository is currently an early Flutter/FastAPI foundation. The UI shell, 
 ## Delivery phases and acceptance gates
 
 ### Phase 0 — Voice product foundation
-- Replace the video-editor direction with this professional voice-studio direction.
+- Lock the product direction to professional voice and audio production.
 - Define session schema, audio-engine capability contract and UI navigation.
 - Add accurate feature readiness and diagnostics.
 - Gate: app loads and reports only capabilities that exist; session schema round-trips through tests.
