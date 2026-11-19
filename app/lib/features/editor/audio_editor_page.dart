@@ -1337,7 +1337,6 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
                             _seekPreviewFrame ?? _playbackPosition,
                           ),
                           style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                                fontFeatures: const [FontFeature.tabularFigures()],
                               ),
                         ),
                         const Spacer(),
@@ -1345,7 +1344,6 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
                           _formatTransportPosition(_transportTotalFrames),
                           style: Theme.of(context).textTheme.labelSmall?.copyWith(
                                 color: AuraTheme.muted,
-                                fontFeatures: const [FontFeature.tabularFigures()],
                               ),
                         ),
                       ],
@@ -1693,10 +1691,14 @@ class _TimelineRulerPainter extends CustomPainter {
   const _TimelineRulerPainter({
     required this.pixelsPerSecond,
     required this.totalSeconds,
+    required this.sampleRate,
+    required this.playheadFrame,
   });
 
   final double pixelsPerSecond;
   final double totalSeconds;
+  final int sampleRate;
+  final int? playheadFrame;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -1718,12 +1720,30 @@ class _TimelineRulerPainter extends CustomPainter {
         painter.paint(canvas, Offset(x + 4, 2));
       }
     }
+    final frame = playheadFrame;
+    if (frame != null) {
+      final x = (frame / sampleRate * pixelsPerSecond)
+          .clamp(0.0, size.width)
+          .toDouble();
+      final playheadPaint = Paint()
+        ..color = AuraTheme.mint
+        ..strokeWidth = 2;
+      canvas.drawLine(Offset(x, 0), Offset(x, size.height), playheadPaint);
+      final head = Path()
+        ..moveTo(x - 5, 0)
+        ..lineTo(x + 5, 0)
+        ..lineTo(x, 7)
+        ..close();
+      canvas.drawPath(head, Paint()..color = AuraTheme.mint);
+    }
   }
 
   @override
   bool shouldRepaint(covariant _TimelineRulerPainter oldDelegate) =>
       oldDelegate.pixelsPerSecond != pixelsPerSecond ||
-      oldDelegate.totalSeconds != totalSeconds;
+      oldDelegate.totalSeconds != totalSeconds ||
+      oldDelegate.sampleRate != sampleRate ||
+      oldDelegate.playheadFrame != playheadFrame;
 }
 
 class _TrackWaveformPainter extends CustomPainter {
@@ -1733,6 +1753,7 @@ class _TrackWaveformPainter extends CustomPainter {
     required this.sampleRate,
     required this.pixelsPerSecond,
     required this.selectedClipId,
+    required this.playheadFrame,
   });
 
   final AudioTrack track;
@@ -1740,6 +1761,7 @@ class _TrackWaveformPainter extends CustomPainter {
   final int sampleRate;
   final double pixelsPerSecond;
   final String? selectedClipId;
+  final int? playheadFrame;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -1855,6 +1877,17 @@ class _TrackWaveformPainter extends CustomPainter {
       )..layout(maxWidth: math.max(20.0, rect.width - 12).toDouble());
       title.paint(canvas, Offset(rect.left + 6, rect.top + 4));
     }
+
+    final frame = playheadFrame;
+    if (frame != null) {
+      final x = (frame / sampleRate * pixelsPerSecond)
+          .clamp(0.0, size.width)
+          .toDouble();
+      final playheadPaint = Paint()
+        ..color = AuraTheme.mint
+        ..strokeWidth = 2;
+      canvas.drawLine(Offset(x, 0), Offset(x, size.height), playheadPaint);
+    }
   }
 
   String _clipName(String path) {
@@ -1870,5 +1903,6 @@ class _TrackWaveformPainter extends CustomPainter {
       oldDelegate.waveforms != waveforms ||
       oldDelegate.sampleRate != sampleRate ||
       oldDelegate.pixelsPerSecond != pixelsPerSecond ||
-      oldDelegate.selectedClipId != selectedClipId;
+      oldDelegate.selectedClipId != selectedClipId ||
+      oldDelegate.playheadFrame != playheadFrame;
 }
