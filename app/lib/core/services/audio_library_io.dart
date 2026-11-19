@@ -159,6 +159,7 @@ class FileAudioLibraryService implements AudioLibraryService {
         modifiedAt: stat.modified,
         sizeBytes: stat.size,
         duration: duration,
+        frameCount: frames,
         sampleRate: sampleRate,
         channels: channels,
         bitsPerSample: bitsPerSample,
