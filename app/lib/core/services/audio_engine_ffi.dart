@@ -279,6 +279,15 @@ class FfiAudioCaptureSession implements AudioCaptureSession {
   bool get hasError => _stopped || _api.captureStatus(_handle) != 0;
 
   @override
+  Future<void> pause() async {
+    if (_stopped) return;
+    final status = _api.capturePause(_handle);
+    if (status != 0) {
+      throw AudioEngineUnavailable(_api.lastError());
+    }
+  }
+
+  @override
   Future<Float32List> readFrames({int maxFrames = 2048}) async {
     if (_stopped) {
       throw const AudioEngineUnavailable('The microphone capture is stopped.');
@@ -328,6 +337,10 @@ class _NativeApi {
         _captureStart =
             library.lookupFunction<_CaptureStartNative, _CaptureStartDart>(
           'aura_audio_capture_start',
+        ),
+        _capturePause =
+            library.lookupFunction<_CapturePauseNative, _CapturePauseDart>(
+          'aura_audio_capture_pause',
         ),
         _captureRead =
             library.lookupFunction<_CaptureReadNative, _CaptureReadDart>(
@@ -393,6 +406,7 @@ class _NativeApi {
     Pointer<Uint32>,
     Pointer<Uint16>,
   ) _captureStart;
+  final int Function(Pointer<Void>) _capturePause;
   final int Function(Pointer<Void>, Pointer<Float>, int) _captureRead;
   final int Function(Pointer<Void>) _captureDroppedFrames;
   final int Function(Pointer<Void>) _captureStatus;
@@ -449,6 +463,7 @@ class _NativeApi {
     Pointer<Uint16> channels,
   ) =>
       _captureStart(deviceId, bufferMilliseconds, sampleRate, channels);
+  int capturePause(Pointer<Void> handle) => _capturePause(handle);
   int captureRead(Pointer<Void> handle, Pointer<Float> output, int maxFrames) =>
       _captureRead(handle, output, maxFrames);
   int captureDroppedFrames(Pointer<Void> handle) =>
@@ -580,6 +595,9 @@ typedef _CaptureStartDart = Pointer<Void> Function(
   Pointer<Uint32>,
   Pointer<Uint16>,
 );
+
+typedef _CapturePauseNative = Int32 Function(Pointer<Void>);
+typedef _CapturePauseDart = int Function(Pointer<Void>);
 
 typedef _CaptureReadNative = Uint32 Function(
   Pointer<Void>,
