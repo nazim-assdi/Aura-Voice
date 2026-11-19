@@ -2112,7 +2112,7 @@ class _TimelineRulerPainter extends CustomPainter {
     final line = Paint()
       ..color = Colors.white.withValues(alpha: 0.10)
       ..strokeWidth = 1;
-    final textStyle = const TextStyle(
+    const textStyle = TextStyle(
       color: Colors.white54,
       fontSize: 10,
     );
