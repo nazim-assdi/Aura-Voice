@@ -80,6 +80,19 @@ uint64_t aura_audio_capture_dropped_frames(const AuraAudioCaptureHandle *handle)
 uint32_t aura_audio_capture_status(const AuraAudioCaptureHandle *handle);
 void aura_audio_capture_stop(AuraAudioCaptureHandle *handle);
 
+/* Offline WAV audition through the default audio output device. */
+typedef struct AuraAudioPlaybackHandle AuraAudioPlaybackHandle;
+
+AuraAudioPlaybackHandle *aura_audio_playback_start_wav(
+    const uint8_t *wav_data,
+    size_t wav_len,
+    uint32_t *out_sample_rate,
+    uint64_t *out_total_frames
+);
+uint64_t aura_audio_playback_position_frames(const AuraAudioPlaybackHandle *handle);
+uint32_t aura_audio_playback_status(const AuraAudioPlaybackHandle *handle);
+void aura_audio_playback_stop(AuraAudioPlaybackHandle *handle);
+
 #ifdef __cplusplus
 }
 #endif
