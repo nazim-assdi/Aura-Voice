@@ -26,6 +26,9 @@ jobs:
       - name: Check native library
         working-directory: native/audio_engine
         run: cargo check --all-targets
+      - name: Build shared library
+        working-directory: native/audio_engine
+        run: cargo build --release
       - name: Run deterministic audio tests
         working-directory: native/audio_engine
         run: cargo test --all-targets
