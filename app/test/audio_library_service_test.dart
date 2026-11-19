@@ -111,8 +111,11 @@ void main() {
     });
 
     test('refuses to delete a WAV outside the managed directory', () async {
+      final folderToken = temporaryDirectory.path
+          .split(Platform.pathSeparator)
+          .last;
       final outside = File(
-        '${temporaryDirectory.parent.path}${Platform.pathSeparator}outside.wav',
+        '${temporaryDirectory.parent.path}${Platform.pathSeparator}outside-$folderToken.wav',
       );
       await outside.writeAsBytes([1, 2, 3]);
       final recording = AudioLibraryRecording(
