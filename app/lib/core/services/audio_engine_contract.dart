@@ -49,6 +49,17 @@ abstract interface class AudioCaptureSession {
   Future<void> stop();
 }
 
+/// Handle for an operating-system audio playback stream.
+abstract interface class AudioPlaybackSession {
+  int get sampleRate;
+  int get totalFrames;
+  int get positionFrames;
+  bool get isComplete;
+  bool get hasError;
+
+  Future<void> stop();
+}
+
 /// Abstraction over the optional native audio engine.
 abstract interface class AudioEngineService {
   bool get isAvailable;
@@ -69,6 +80,14 @@ abstract interface class AudioEngineService {
   Future<AudioCaptureSession> startCapture({
     String? deviceId,
     int bufferMilliseconds = 1000,
+  });
+
+  /// Plays a PCM or IEEE-float WAV through the default OS output device.
+  ///
+  /// The output device must support the WAV's sample rate. The native engine
+  /// reports a clear error instead of playing at the wrong speed.
+  Future<AudioPlaybackSession> startPlayback({
+    required Uint8List wavBytes,
   });
 }
 
