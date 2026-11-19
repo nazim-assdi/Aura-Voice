@@ -42,6 +42,8 @@ abstract interface class AudioCaptureSession {
   int get droppedFrames;
   bool get hasError;
 
+  Future<void> pause();
+
   Future<Float32List> readFrames({int maxFrames = 2048});
 
   Future<void> stop();
