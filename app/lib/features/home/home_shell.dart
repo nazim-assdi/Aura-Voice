@@ -1,6 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 
 import '../../core/services/api_client.dart';
+import '../../core/services/audio_engine_service.dart';
 import '../../core/theme/aura_theme.dart';
 
 class HomeShell extends StatefulWidget {
@@ -82,6 +83,8 @@ class DashboardPage extends StatelessWidget {
               }),
               const SizedBox(height: 24),
               const _ApiStatusPanel(),
+              const SizedBox(height: 12),
+              const _NativeEngineStatusPanel(),
               const SizedBox(height: 12),
               const Wrap(spacing: 10, runSpacing: 10, children: [
                 _FeaturePill(label: 'Dubbing & Localization'),
@@ -257,6 +260,67 @@ class _ApiStatusPanel extends StatelessWidget {
       ),
     ]),
   );
+}
+
+class _NativeEngineStatusPanel extends StatefulWidget {
+  const _NativeEngineStatusPanel({super.key});
+
+  @override
+  State<_NativeEngineStatusPanel> createState() =>
+      _NativeEngineStatusPanelState();
+}
+
+class _NativeEngineStatusPanelState extends State<_NativeEngineStatusPanel> {
+  late final AudioEngineService _engine;
+
+  @override
+  void initState() {
+    super.initState();
+    _engine = createAudioEngineService();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ready = _engine.isAvailable;
+    return Container(
+      padding: const EdgeInsets.all(17),
+      decoration: BoxDecoration(
+        color: AuraTheme.panel,
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            Icons.memory_rounded,
+            color: ready ? AuraTheme.mint : AuraTheme.muted,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Native offline audio engine',
+                  style: Theme.of(context).textTheme.titleSmall,
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  ready
+                      ? 'Renderer library detected'
+                      : 'Renderer library not installed in this build',
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodySmall
+                      ?.copyWith(color: AuraTheme.muted),
+                ),
+              ],
+            ),
+          ),
+          _StatusChip(label: ready ? 'ENGINE READY' : 'NOT LINKED'),
+        ],
+      ),
+    );
+  }
 }
 
 class StudioPage extends StatelessWidget {
