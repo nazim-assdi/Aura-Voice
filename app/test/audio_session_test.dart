@@ -26,6 +26,8 @@ void main() {
                 durationFrames: 192000,
                 gain: 0.85,
                 pan: -0.1,
+                fadeInFrames: 1200,
+                fadeOutFrames: 2400,
               ),
             ],
           ),
@@ -50,6 +52,8 @@ void main() {
       expect(restored.tracks.first.clips.single.startFrame, 24000);
       expect(restored.tracks.first.clips.single.durationFrames, 192000);
       expect(restored.tracks.first.clips.single.gain, 0.85);
+      expect(restored.tracks.first.clips.single.fadeInFrames, 1200);
+      expect(restored.tracks.first.clips.single.fadeOutFrames, 2400);
       expect(restored.markers.single.frame, 48000);
       expect(restored.tracks[1].muted, isTrue);
     });
@@ -62,6 +66,17 @@ void main() {
           startFrame: 0,
           sourceStartFrame: 0,
           durationFrames: 0,
+        ),
+        throwsArgumentError,
+      );
+      expect(
+        () => AudioClip(
+          id: 'bad-fade',
+          mediaId: 'asset',
+          startFrame: 0,
+          sourceStartFrame: 0,
+          durationFrames: 10,
+          fadeInFrames: 11,
         ),
         throwsArgumentError,
       );
