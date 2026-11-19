@@ -140,7 +140,8 @@ See [docs/PRO_VOICE_STUDIO_ARCHITECTURE.md](docs/PRO_VOICE_STUDIO_ARCHITECTURE.m
 - [x] Flutter media-file access, waveform editor, multitrack project workflow and non-destructive DAW editing controls (source implemented; end-to-end CI verification pending).
 - [x] Native microphone device discovery/capture, real-time-safe ring, Flutter input meters and streamed local 24-bit PCM WAV recording (end-to-end CI verification pending).
 - [ ] Record Booth UI, capture-to-WAV/session writing, continuous ring draining, playback and device monitoring.
-- [ ] Native realtime audio graph, DSP effects and restoration.
+- [x] Initial callback-driven native realtime multitrack mixer with sample-frame transport and selected-clip looping (physical-device and dense-session performance validation pending).
+- [ ] Optimized block scheduler, dynamic graph updates, DSP effects and restoration.
 - [ ] Production multilingual TTS and optional local inference.
 - [ ] Secure, consent-based voice profile management.
 - [ ] Transcription, dubbing, translation review and subtitle export.
