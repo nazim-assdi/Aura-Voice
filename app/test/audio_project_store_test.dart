@@ -107,6 +107,25 @@ void main() {
       expect(await store.listProjects(), hasLength(1));
     });
 
+    test('finds saved sessions that reference a source WAV', () async {
+      await store.save(makeSession());
+
+      final references =
+          await store.findProjectsUsingMedia('/local/recordings/take.wav');
+
+      expect(references, hasLength(1));
+      expect(references.single.title, 'Voice Over Test');
+    });
+
+    test('returns no references for unrelated media paths', () async {
+      await store.save(makeSession());
+
+      expect(
+        await store.findProjectsUsingMedia('/local/recordings/other.wav'),
+        isEmpty,
+      );
+    });
+
     test('deletes a project manifest from the managed folder', () async {
       final path = await store.save(makeSession());
 
