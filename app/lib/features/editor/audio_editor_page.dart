@@ -163,6 +163,17 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
     return !hasAudibleSolo || track.solo;
   }
 
+  bool get _hasAudibleClip {
+    final hasAudibleSolo =
+        _session.tracks.any((track) => track.solo && !track.muted);
+    return _session.tracks.any(
+      (track) =>
+          !track.muted &&
+          (!hasAudibleSolo || track.solo) &&
+          track.clips.any((clip) => !clip.muted),
+    );
+  }
+
   int get _sessionEndFrame {
     var end = 0;
     for (final track in _session.tracks) {
@@ -868,8 +879,8 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
     if (_rendering) return;
     await _stopPlayback();
     if (!mounted) return;
-    if (_session.tracks.every((track) => track.clips.isEmpty)) {
-      setState(() => _message = 'Add at least one audio clip before playback.');
+    if (!_hasAudibleClip) {
+      setState(() => _message = 'No audible clips. Unmute a track or clip, or change solo mode before playback.');
       return;
     }
     setState(() {
@@ -881,8 +892,12 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
       final assets = <String, Uint8List>{};
       var totalAssetBytes = 0;
       const maximumRealtimeInputBytes = 536870912;
+      final hasAudibleSolo =
+          _session.tracks.any((track) => track.solo && !track.muted);
       for (final track in _session.tracks) {
+        if (track.muted || (hasAudibleSolo && !track.solo)) continue;
         for (final clip in track.clips) {
+          if (clip.muted) continue;
           if (!assets.containsKey(clip.mediaId)) {
             final bytes = await readAudioFile(clip.mediaId);
             if (bytes.length > maximumRealtimeInputBytes - totalAssetBytes) {
