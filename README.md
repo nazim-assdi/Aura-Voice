@@ -137,7 +137,7 @@ See [docs/PRO_VOICE_STUDIO_ARCHITECTURE.md](docs/PRO_VOICE_STUDIO_ARCHITECTURE.m
 - [x] Voice-studio dashboard, versioned sample-frame session model and serialization tests.
 - [x] Initial offline PCM WAV renderer with multitrack mixing, gain/pan, mute/solo, fades and WAV export (native CI verification pending).
 - [ ] Verify the new desktop native-library packaging and Flutter-to-Rust render call through CI.
-- [ ] Flutter media-file access, waveform editor and session-to-render UI workflow.
+- [x] Flutter media-file access, waveform editor, multitrack project workflow and non-destructive DAW editing controls (source implemented; end-to-end CI verification pending).
 - [x] Native microphone device discovery/capture, real-time-safe ring, Flutter input meters and streamed local 24-bit PCM WAV recording (end-to-end CI verification pending).
 - [ ] Record Booth UI, capture-to-WAV/session writing, continuous ring draining, playback and device monitoring.
 - [ ] Native realtime audio graph, DSP effects and restoration.
