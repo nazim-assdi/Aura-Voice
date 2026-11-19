@@ -157,8 +157,9 @@ class FfiAudioEngineService implements AudioEngineService {
       totalBytes += entry.value.length;
       copiedAssets[entry.key] = Uint8List.fromList(entry.value);
     }
+    final sessionJson = session.toJson();
     final result = await Isolate.run(
-      () => _startRealtimePlaybackInWorker(session.toJson(), copiedAssets),
+      () => _startRealtimePlaybackInWorker(sessionJson, copiedAssets),
     );
     return FfiAudioPlaybackSession(
       api: api,
