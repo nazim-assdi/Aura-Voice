@@ -964,6 +964,26 @@ mod tests {
     }
 
     #[test]
+    fn playback_cursor_observes_a_seek_at_the_next_frame_boundary() {
+        let position = AtomicUsize::new(4);
+        let paused = AtomicBool::new(false);
+        let looping = AtomicBool::new(false);
+        let start = AtomicUsize::new(0);
+        let end = AtomicUsize::new(100);
+
+        assert_eq!(
+            claim_playback_frame(&position, &paused, &looping, &start, &end),
+            Some(4)
+        );
+        position.store(73, Ordering::Release);
+        assert_eq!(
+            claim_playback_frame(&position, &paused, &looping, &start, &end),
+            Some(73)
+        );
+        assert_eq!(position.load(Ordering::Acquire), 74);
+    }
+
+    #[test]
     fn ring_round_trips_stereo_frames_without_interleaving() {
         let ring = FloatRing::new(16, 2).unwrap();
         ring.push_interleaved(&[0.1, -0.1, 0.2, -0.2], 2);
