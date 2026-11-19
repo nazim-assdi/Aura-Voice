@@ -570,7 +570,7 @@ struct RealtimeClip {
     source_start_frame: usize,
     duration_frames: usize,
     source_channels: usize,
-    samples: Arc<[f32]>,
+    asset: Arc<AudioBuffer>,
     gain: f32,
     left_pan_gain: f32,
     right_pan_gain: f32,
@@ -622,7 +622,7 @@ impl RealtimeMixer {
 
                 match (clip.source_channels, self.channels) {
                     (1, 1) => {
-                        let sample = clip.samples[source_index] * gain;
+                        let sample = clip.asset.samples()[source_index] * gain;
                         left += sample;
                         right += sample;
                     }
@@ -633,7 +633,7 @@ impl RealtimeMixer {
                     }
                     (2, 1) => {
                         let mono = (clip.samples[source_index]
-                            + clip.samples[source_index + 1]) * 0.5;
+                            + clip.asset.samples()[source_index + 1]) * 0.5;
                         let sample = mono * gain;
                         left += sample;
                         right += sample;
@@ -662,6 +662,33 @@ pub(crate) fn build_realtime_mixer(
     session: &MixSession,
     assets: &HashMap<String, AudioBuffer>,
 ) -> Result<Arc<RealtimeMixer>, AudioError> {
+    // This borrowed form is useful for deterministic unit tests. The FFI
+    // playback path uses the owned form below to avoid duplicating PCM data.
+    let shared = assets
+        .iter()
+        .map(|(id, asset)| (id.clone(), Arc::new(asset.clone())))
+        .collect::<HashMap<_, _>>();
+    build_realtime_mixer_shared(session, &shared)
+}
+
+/// Moves decoded WAV buffers into shared immutable allocations. The engine
+/// builder handle relinquishes its asset map as soon as playback is created,
+/// so source PCM is not copied a second time for a realtime session.
+pub(crate) fn build_realtime_mixer_owned(
+    session: &MixSession,
+    assets: HashMap<String, AudioBuffer>,
+) -> Result<Arc<RealtimeMixer>, AudioError> {
+    let shared = assets
+        .into_iter()
+        .map(|(id, asset)| (id, Arc::new(asset)))
+        .collect::<HashMap<_, _>>();
+    build_realtime_mixer_shared(session, &shared)
+}
+
+fn build_realtime_mixer_shared(
+    session: &MixSession,
+    assets: &HashMap<String, Arc<AudioBuffer>>,
+) -> Result<Arc<RealtimeMixer>, AudioError> {
     validate_audio_format(session.sample_rate, session.channels)?;
     if !session.master_gain.is_finite() || session.master_gain < 0.0 {
         return Err(AudioError::InvalidArgument(
@@ -670,7 +697,6 @@ pub(crate) fn build_realtime_mixer(
     }
 
     let has_solo = session.tracks.iter().any(|track| track.solo && !track.muted);
-    let mut decoded_samples: HashMap<String, Arc<[f32]>> = HashMap::new();
     let mut realtime_tracks = Vec::with_capacity(session.tracks.len());
     let mut output_frames = 0_usize;
 
@@ -712,9 +738,9 @@ pub(crate) fn build_realtime_mixer(
             let asset = assets
                 .get(&clip.media_id)
                 .ok_or_else(|| AudioError::AssetNotFound(clip.media_id.clone()))?;
-            if asset.sample_rate != session.sample_rate {
+            if asset.sample_rate() != session.sample_rate {
                 return Err(AudioError::SampleRateMismatch {
-                    asset_rate: asset.sample_rate,
+                    asset_rate: asset.sample_rate(),
                     session_rate: session.sample_rate,
                 });
             }
@@ -742,11 +768,6 @@ pub(crate) fn build_realtime_mixer(
             let duration_frames = usize::try_from(clip.duration_frames)
                 .map_err(|_| AudioError::SizeOverflow)?;
             let source_channels = usize::from(asset.channels());
-
-            let samples = decoded_samples
-                .entry(clip.media_id.clone())
-                .or_insert_with(|| Arc::<[f32]>::from(asset.samples().to_vec()))
-                .clone();
 
             let combined_pan = (track.pan + clip.pan).clamp(-1.0, 1.0);
             let (left_pan_gain, right_pan_gain) =
@@ -778,7 +799,7 @@ pub(crate) fn build_realtime_mixer(
                 source_start_frame,
                 duration_frames,
                 source_channels,
-                samples,
+                asset: Arc::clone(asset),
                 gain: clip.gain,
                 left_pan_gain,
                 right_pan_gain,
@@ -1109,7 +1130,9 @@ pub unsafe extern "C" fn aura_engine_realtime_playback_start(
         }
         // SAFETY: Caller supplies a live engine handle and writable output slot.
         let engine = unsafe { &*handle };
-        let mixer = build_realtime_mixer(&engine.session, &engine.assets)?;
+        let engine = unsafe { &mut *handle };
+        let assets = std::mem::take(&mut engine.assets);
+        let mixer = build_realtime_mixer_owned(&engine.session, assets)?;
         let total_frames = mixer.total_frames;
         let playback = device_io::start_realtime_playback(mixer)?;
         // SAFETY: The pointer was checked above and is writable by the ABI contract.
@@ -1418,8 +1441,8 @@ mod tests {
         session.tracks.push(track);
 
         let mixer = build_realtime_mixer(&session, &assets).unwrap();
-        let first = &mixer.tracks[0].clips[0].samples;
-        let second = &mixer.tracks[0].clips[1].samples;
+        let first = &mixer.tracks[0].clips[0].asset;
+        let second = &mixer.tracks[0].clips[1].asset;
         assert!(Arc::ptr_eq(first, second));
         assert_eq!(mixer.mix_frame(0).0, 0.25);
         assert_eq!(mixer.mix_frame(4).0, 0.25);
