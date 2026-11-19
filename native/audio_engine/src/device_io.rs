@@ -16,7 +16,7 @@ use std::sync::Arc;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{DeviceId, SampleFormat, Stream};
 
-use crate::{set_ffi_error, AudioError};
+use crate::{set_ffi_error, AudioError, RealtimeMixer};
 
 struct FloatRing {
     slots: Box<[UnsafeCell<f32>]>,
@@ -633,6 +633,202 @@ fn build_playback_stream(
         }
     };
     Ok(stream)
+}
+
+
+
+/// Builds an OS output stream whose callback mixes the session directly from
+/// immutable, pre-decoded clip buffers. No full-session WAV is created.
+fn build_realtime_playback_stream(
+    device: &cpal::Device,
+    config: cpal::StreamConfig,
+    format: SampleFormat,
+    mixer: Arc<RealtimeMixer>,
+    output_channels: usize,
+    position_frames: Arc<AtomicUsize>,
+    paused: Arc<AtomicBool>,
+    loop_enabled: Arc<AtomicBool>,
+    loop_start_frames: Arc<AtomicUsize>,
+    loop_end_frames: Arc<AtomicUsize>,
+    stream_error: Arc<AtomicU32>,
+) -> Result<Stream, AudioError> {
+    let total_frames = usize::try_from(mixer.total_frames)
+        .map_err(|_| AudioError::SizeOverflow)?;
+    let error_state = Arc::clone(&stream_error);
+    let on_error = move |_error: cpal::Error| {
+        error_state.store(1, Ordering::Release);
+    };
+
+    macro_rules! build_output {
+        ($sample:ty, $convert:expr) => {{
+            let callback_mixer = Arc::clone(&mixer);
+            let callback_position = Arc::clone(&position_frames);
+            let callback_paused = Arc::clone(&paused);
+            let callback_loop_enabled = Arc::clone(&loop_enabled);
+            let callback_loop_start = Arc::clone(&loop_start_frames);
+            let callback_loop_end = Arc::clone(&loop_end_frames);
+            let callback_error = Arc::clone(&stream_error);
+            device
+                .build_output_stream::<$sample, _, _>(
+                    config,
+                    move |data: &mut [$sample], _| {
+                        let channels = output_channels;
+                        if channels == 0 {
+                            callback_error.store(1, Ordering::Release);
+                            return;
+                        }
+
+                        let frames = data.len() / channels;
+                        for output_frame in 0..frames {
+                            let timeline_frame = claim_playback_frame(
+                                &callback_position,
+                                &callback_paused,
+                                &callback_loop_enabled,
+                                &callback_loop_start,
+                                &callback_loop_end,
+                            );
+                            let (left, right) = match timeline_frame {
+                                Some(frame) if frame < total_frames => {
+                                    callback_mixer.mix_frame(frame)
+                                }
+                                _ => (0.0, 0.0),
+                            };
+                            let output_start = output_frame * channels;
+                            if channels == 1 {
+                                let mono = if callback_mixer.channels == 1 {
+                                    left
+                                } else {
+                                    (left + right) * 0.5
+                                };
+                                data[output_start] = ($convert)(mono);
+                            } else {
+                                data[output_start] = ($convert)(left);
+                                data[output_start + 1] = ($convert)(right);
+                                for channel in 2..channels {
+                                    data[output_start + channel] = ($convert)(0.0);
+                                }
+                            }
+                        }
+                        for sample in data.iter_mut().skip(frames * channels) {
+                            *sample = ($convert)(0.0);
+                        }
+                    },
+                    on_error,
+                    None,
+                )
+                .map_err(|error| {
+                    AudioError::InvalidArgument(format!(
+                        "cannot open realtime multitrack output stream: {error}"
+                    ))
+                })?
+        }};
+    }
+
+    let stream = match format {
+        SampleFormat::F32 => build_output!(f32, |sample: f32| sample),
+        SampleFormat::F64 => build_output!(f64, |sample: f32| sample as f64),
+        SampleFormat::I16 => build_output!(i16, |sample: f32| {
+            (sample.clamp(-1.0, 1.0) * 32767.0).round() as i16
+        }),
+        SampleFormat::U16 => build_output!(u16, |sample: f32| {
+            (sample.clamp(-1.0, 1.0) * 32767.5 + 32767.5).round() as u16
+        }),
+        SampleFormat::I32 => build_output!(i32, |sample: f32| {
+            (sample.clamp(-1.0, 1.0) * 2_147_483_647.0).round() as i32
+        }),
+        SampleFormat::U32 => build_output!(u32, |sample: f32| {
+            (sample.clamp(-1.0, 1.0) as f64 * 2_147_483_647.5 + 2_147_483_647.5)
+                .round() as u32
+        }),
+        SampleFormat::I8 => build_output!(i8, |sample: f32| {
+            (sample.clamp(-1.0, 1.0) * 127.0).round() as i8
+        }),
+        SampleFormat::U8 => build_output!(u8, |sample: f32| {
+            (sample.clamp(-1.0, 1.0) * 127.5 + 127.5).round() as u8
+        }),
+        unsupported => {
+            return Err(AudioError::InvalidArgument(format!(
+                "output device sample format {unsupported} is not supported yet"
+            )));
+        }
+    };
+    Ok(stream)
+}
+
+/// Starts the immutable session snapshot through the default OS output device.
+/// The returned handle uses the same transport controls as WAV playback.
+pub(crate) fn start_realtime_playback(
+    mixer: Arc<RealtimeMixer>,
+) -> Result<*mut AuraAudioPlaybackHandle, AudioError> {
+    if mixer.total_frames == 0 {
+        return Err(AudioError::InvalidArgument(
+            "realtime playback requires at least one audible clip frame".into(),
+        ));
+    }
+
+    let host = cpal::default_host();
+    let device = host
+        .default_output_device()
+        .ok_or_else(|| AudioError::InvalidArgument(
+            "no default audio output device is available".into(),
+        ))?;
+    let supported = device
+        .supported_output_configs()
+        .map_err(|error| AudioError::InvalidArgument(format!(
+            "cannot query output configurations: {error}"
+        )))?
+        .filter(|range| range.channels() >= mixer.channels)
+        .filter_map(|range| range.try_with_sample_rate(cpal::SampleRate(mixer.sample_rate)))
+        .next()
+        .ok_or_else(|| AudioError::InvalidArgument(format!(
+            "the default output device does not support {} Hz playback",
+            mixer.sample_rate
+        )))?;
+
+    let output_channels = usize::from(supported.channels());
+    if output_channels == 0 {
+        return Err(AudioError::InvalidArgument(
+            "output device reports zero channels".into(),
+        ));
+    }
+    let format = supported.sample_format();
+    let config = supported.config();
+    let position_frames = Arc::new(AtomicUsize::new(0));
+    let paused = Arc::new(AtomicBool::new(false));
+    let loop_enabled = Arc::new(AtomicBool::new(false));
+    let loop_start_frames = Arc::new(AtomicUsize::new(0));
+    let loop_end_frames = Arc::new(AtomicUsize::new(0));
+    let stream_error = Arc::new(AtomicU32::new(0));
+
+    let stream = build_realtime_playback_stream(
+        &device,
+        config,
+        format,
+        mixer,
+        output_channels,
+        Arc::clone(&position_frames),
+        Arc::clone(&paused),
+        Arc::clone(&loop_enabled),
+        Arc::clone(&loop_start_frames),
+        Arc::clone(&loop_end_frames),
+        Arc::clone(&stream_error),
+    )?;
+    stream.play().map_err(|error| AudioError::InvalidArgument(format!(
+        "cannot start realtime multitrack playback: {error}"
+    )))?;
+
+    let handle = Box::new(AuraAudioPlaybackHandle {
+        _stream: stream,
+        total_frames: mixer.total_frames,
+        drain_frames: u64::from(mixer.sample_rate) / 4,
+        position_frames,
+        paused,
+        loop_enabled,
+        loop_start_frames,
+        loop_end_frames,
+        stream_error,
+    });
+    Ok(Box::into_raw(handle))
 }
 
 /// Starts playing a PCM/IEEE-float WAV through the operating system's default
