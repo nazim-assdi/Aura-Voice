@@ -1,10 +1,22 @@
-# Aura Voice AI
+# Aura Voice Studio
 
-**Premium omni-voice and emotion studio · Hybrid cloud + optional on-device engines**
+**Professional voice production · Multitrack audio · AI speech · Dubbing · Restoration · Mixing & mastering**
 
-> Status: early development scaffold (v0.1.0). This repository establishes the product architecture and a runnable UI/API foundation. Voice cloning, production TTS, real-time call routing, watermark embedding, and app-store-ready signing are not implemented yet.
+> Status: early development foundation (v0.1.0). The repository currently contains a Flutter app shell, FastAPI health/capabilities endpoints, a provider contract and tests. Real recording, production TTS, voice cloning, multitrack editing, DSP, dubbing and mastering are still in development.
 
-Aura Voice AI is designed as a cross-platform voice workspace for Android, iOS, Windows, macOS, Linux, and Web. The hybrid architecture keeps the interface independent from speech engines so local and hosted providers can be added without rewriting the app.
+Aura Voice Studio is a voice-only product. It is **not a video editor**. The goal is a professional voice-production workstation for recording, editing, generating, restoring, dubbing, mixing and mastering speech and audio. The full production workspace is desktop-first (Windows, macOS and Linux), with Android and iOS support for recording, AI voice workflows, review and lightweight editing.
+
+## Product workspaces
+
+- **Record:** microphone selection, input monitoring, meters, take lanes, punch-in/out and recording scripts.
+- **Multitrack Editor:** waveforms, clip editing, fades, crossfades, comping, automation, routing and non-destructive sessions.
+- **Voice Processing:** EQ, compressor, de-esser, gate, limiter, noise cleanup, reverb, delay and pitch/time tools.
+- **AI Voice Studio:** multilingual TTS, script editor, pronunciation dictionary, voice styles and authorized voice profiles.
+- **Dubbing & Localization:** transcription, translation review, speaker segments, timing alignment and SRT/VTT export.
+- **Mix & Master:** buses, sends, loudness/true-peak meters, reference tracks, stems and export presets.
+- **Live Voice (desktop):** low-latency microphone effects and OS-specific virtual audio routing.
+
+A feature is only advertised as ready after its real engine is integrated and tested. UI controls must not pretend to process or generate audio when no provider is available.
 
 ## Repository layout
 
@@ -13,40 +25,36 @@ Aura Voice AI is designed as a cross-platform voice workspace for Android, iOS, 
 ├── app/                         # Flutter client
 │   └── lib/
 │       ├── core/                # theme, API client and configuration
-│       └── features/             # dashboard and studio navigation
+│       └── features/            # voice workspace modules
 ├── backend/                     # FastAPI service
 │   ├── app/
 │   │   ├── api/v1/              # versioned HTTP endpoints
 │   │   ├── core/                # settings
-│   │   └── engines/             # provider contract and registry
+│   │   └── engines/             # speech provider contract and registry
 │   └── tests/
+├── docs/                        # product and engineering plans
 ├── .github/workflows/           # checks and platform build pipelines
-├── docker-compose.yml
-└── SECURITY.md
+└── docker-compose.yml
 ```
 
-## What works in this foundation
+## What works in the current foundation
 
-- Flutter app shell with premium dark visual system and responsive dashboard/navigation.
-- API connectivity indicator and a FastAPI health endpoint.
-- Versioned capabilities endpoint describing which engines are actually available.
-- Provider interface and a safe `none` provider that reports speech generation as unavailable instead of returning fake audio.
-- Backend tests, Docker development setup, and CI build jobs for Android, iOS (unsigned), Windows, macOS, Linux, and Web.
+- Flutter shell with a premium dark theme and responsive navigation.
+- FastAPI health endpoint and versioned capabilities endpoint.
+- Speech-provider interface and a safe unavailable provider that fails instead of returning fake audio.
+- Backend tests, Docker development setup and CI workflows for the configured platform targets.
 
 ## What is not implemented yet
 
-- Speech synthesis or voice cloning model inference.
-- Voice sample recording/upload, identity verification, and durable consent records.
-- Emotion/accent controls connected to a model.
-- Real-time microphone/call routing or virtual audio devices.
-- Audio editing, dubbing, subtitle export, and cryptographic watermark embedding.
-- Signed installers, Apple provisioning, and store submissions.
-
-These capabilities are intentionally not represented as completed features. The next milestones are listed below.
+- Real microphone capture, monitoring, multi-track editing or audio export.
+- Production audio DSP, noise restoration, effects graph or mastering.
+- Production TTS inference, voice profile enrollment or voice cloning.
+- Speech recognition, translation/dubbing alignment and subtitle export.
+- Desktop virtual audio routing, signed installers and app-store releases.
 
 ## Run the Flutter client
 
-Install the Flutter stable SDK for your operating system, then:
+Install Flutter stable, then:
 
 ```bash
 cd app
@@ -55,7 +63,7 @@ flutter pub get
 flutter run
 ```
 
-To point the client at a backend, pass the API base URL at build/run time:
+Configure the API base URL at run time:
 
 ```bash
 flutter run --dart-define=AURA_API_BASE_URL=http://127.0.0.1:8000
@@ -70,7 +78,7 @@ Requires Python 3.11 or newer.
 ```bash
 cd backend
 python -m venv .venv
-# Windows PowerShell: .venv\Scripts\Activate.ps1
+# Windows PowerShell: .venv\\Scripts\\Activate.ps1
 # macOS/Linux: source .venv/bin/activate
 python -m pip install -r requirements-dev.txt
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
@@ -86,52 +94,34 @@ From the repository root:
 docker compose up --build
 ```
 
-Copy `.env.example` to `.env` before configuring environment-specific values. Never commit real API keys or private audio.
+Copy `.env.example` to `.env` before configuring environment-specific values. Never commit API keys, private recordings or voice samples.
 
-## Build targets
+## Technical direction
 
-The GitHub Actions workflow creates platform artifacts on pushes and pull requests:
-
-| Target | Output |
-|---|---|
-| Android | Release APK and AAB |
-| iOS | Unsigned iOS app bundle (requires Apple signing for install/distribution) |
-| Windows | Release app folder packaged as ZIP |
-| macOS | Release app bundle packaged as ZIP |
-| Linux | Release bundle packaged as TAR.GZ |
-| Web | Static web build packaged as ZIP |
-
-Desktop build outputs are not automatically installers. Store releases and signed installers require platform-specific certificates, packaging, and review.
-
-## Hybrid engine design
-
-The client talks to the versioned API, not directly to a model. The backend exposes an engine contract under `backend/app/engines/`. A provider should only be marked ready after its model is installed, its license is reviewed, and an inference smoke test passes.
-
-Recommended integration order:
-
-1. Add one reliable multilingual TTS provider behind the engine contract.
-2. Add optional local inference adapters after measuring device RAM, CPU/GPU use, latency, and supported languages.
-3. Add voice-profile enrollment only with explicit, recorded permission from the voice owner and authenticated account ownership.
-4. Add emotion/accent conditioning only for models that support it; do not imply sliders change a voice until inference is wired.
-5. Add live routing as a separate desktop/OS integration, not as a universal Flutter feature.
-
-Model weights are deliberately not committed. They can be large, licensed, and may contain sensitive assets.
+- Flutter for the responsive UI and project workflows.
+- A native Rust/C++ audio engine behind a stable FFI for realtime capture, playback, DSP and multitrack mixing.
+- FastAPI for optional cloud AI providers, accounts, consent and synchronization. Local recording/editing must not depend on cloud availability.
+- Tested audio libraries for decoding, resampling, DSP and encoding; codec and dependency licenses must be reviewed before distribution.
+- A versioned non-destructive session format using exact sample-frame positions.
+- Offline model packs are optional and must be benchmarked for RAM, CPU/GPU use, latency, language coverage and license.
 
 ## Responsible voice use
 
-Aura Voice AI must be used only with voices the user owns or is explicitly authorized to use. Before any voice-profile enrollment or cloning feature ships, implement authenticated accounts, a clear permission flow, revocation/deletion, audit records, abuse reporting, rate limits, and provenance disclosure. Do not build impersonation, fraud, or non-consensual cloning workflows. See [SECURITY.md](SECURITY.md).
+Aura Voice must only generate or clone voices the user owns or is explicitly authorized to use. Before voice profiles or cloning ship, implement authenticated ownership, explicit recorded consent, revocation, deletion, audit records, abuse reporting, rate limits and provenance disclosure. Do not build impersonation, fraud or non-consensual cloning workflows. See [SECURITY.md](SECURITY.md).
 
-## Development roadmap
+## Roadmap
 
-- [x] Monorepo, premium Flutter shell, API health/capabilities, provider contract, tests and build automation.
-- [ ] Add authenticated user/session foundation and persistent consent records.
-- [ ] Integrate and benchmark the first cloud TTS engine.
-- [ ] Add optional offline TTS adapter and downloadable model packs.
-- [ ] Implement voice profile management with consent, deletion and access controls.
-- [ ] Add audio editor, translation/dubbing pipeline and export formats.
-- [ ] Add provenance watermarking and verification.
-- [ ] Implement desktop live-audio routing; assess mobile OS constraints separately.
+See [docs/PRO_VOICE_STUDIO_ARCHITECTURE.md](docs/PRO_VOICE_STUDIO_ARCHITECTURE.md) for the detailed feature requirements, engineering design and acceptance gates.
+
+- [x] Flutter/FastAPI foundation, health/capabilities and safe provider contract.
+- [ ] Professional voice-studio workspace and project/session model.
+- [ ] Real recording, playback, waveform and multitrack editing.
+- [ ] Native audio graph, DSP and restoration.
+- [ ] Production multilingual TTS and optional local inference.
+- [ ] Secure, consent-based voice profile management.
+- [ ] Transcription, dubbing, translation review and subtitle export.
+- [ ] Mixing, loudness mastering, stems and desktop live routing.
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md). Keep API contracts versioned, add tests for behavior, and document model/license requirements with every new engine.
+Keep API contracts versioned, add tests for behavior and document model/license requirements with every engine integration. Work directly on the repository's `main` branch.
