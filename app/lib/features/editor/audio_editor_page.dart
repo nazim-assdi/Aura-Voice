@@ -540,10 +540,19 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
     });
     try {
       final assets = <String, Uint8List>{};
+      var totalAssetBytes = 0;
+      const maximumRenderInputBytes = 536870912;
       for (final track in _session.tracks) {
         for (final clip in track.clips) {
           if (!assets.containsKey(clip.mediaId)) {
-            assets[clip.mediaId] = await readAudioFile(clip.mediaId);
+            final bytes = await readAudioFile(clip.mediaId);
+            if (bytes.length > maximumRenderInputBytes - totalAssetBytes) {
+              throw const AudioEngineUnavailable(
+                'The current offline preview is limited to 512 MiB of source WAV data per render. Split the session or use smaller source files.',
+              );
+            }
+            totalAssetBytes += bytes.length;
+            assets[clip.mediaId] = bytes;
           }
         }
       }
@@ -553,6 +562,11 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
         bitDepth: _session.bitDepth,
       );
       if (!mounted) return;
+      if (result.wavBytes.length > 536870912) {
+        throw const AudioEngineUnavailable(
+          'The rendered mix is larger than the 512 MiB preview limit. Reduce the session length or render fewer tracks at once.',
+        );
+      }
       final playback = await _engine.startPlayback(wavBytes: result.wavBytes);
       if (!mounted) {
         await playback.stop();
