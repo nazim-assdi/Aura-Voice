@@ -86,6 +86,16 @@ abstract interface class AudioEngineService {
     int? bitDepth,
   });
 
+  /// Starts direct callback-driven multitrack playback from a session.
+  ///
+  /// Source WAVs are decoded and the playback graph is prepared before opening
+  /// the output device. The native callback mixes clip buffers at the current
+  /// sample frame; it does not render a complete intermediate WAV.
+  Future<AudioPlaybackSession> startRealtimePlayback({
+    required AudioSession session,
+    required Map<String, Uint8List> assetWavs,
+  });
+
   /// Returns the current OS microphone devices using stable platform ids.
   Future<List<AudioInputDevice>> listInputDevices();
 
