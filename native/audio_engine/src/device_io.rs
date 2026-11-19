@@ -475,6 +475,7 @@ pub unsafe extern "C" fn aura_audio_capture_stop(handle: *mut AuraAudioCaptureHa
 pub struct AuraAudioPlaybackHandle {
     _stream: Stream,
     total_frames: u64,
+    drain_frames: u64,
     position_frames: Arc<AtomicUsize>,
     stream_error: Arc<AtomicU32>,
 }
@@ -664,6 +665,7 @@ pub unsafe extern "C" fn aura_audio_playback_start_wav(
         Ok::<_, AudioError>(Box::into_raw(Box::new(AuraAudioPlaybackHandle {
             _stream: stream,
             total_frames: total_frames as u64,
+            drain_frames: u64::from(sample_rate) / 4,
             position_frames,
             stream_error,
         })))
@@ -712,7 +714,8 @@ pub unsafe extern "C" fn aura_audio_playback_status(
     if playback.stream_error.load(Ordering::Acquire) != 0 {
         return 2;
     }
-    if playback.position_frames.load(Ordering::Acquire) as u64 >= playback.total_frames {
+    let drained_until = playback.total_frames.saturating_add(playback.drain_frames);
+    if playback.position_frames.load(Ordering::Acquire) as u64 >= drained_until {
         1
     } else {
         0
