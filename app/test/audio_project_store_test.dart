@@ -176,6 +176,29 @@ void main() {
       expect(await backup.exists(), isFalse);
     });
 
+    test('refuses to load a project symlink that points outside the Projects folder', () async {
+      if (Platform.isWindows) return;
+      final folderToken = temporaryDirectory.path
+          .split(Platform.pathSeparator)
+          .last;
+      final outside = File(
+        '${temporaryDirectory.parent.path}${Platform.pathSeparator}linked-outside-$folderToken.aura.json',
+      );
+      await outside.writeAsString('{}');
+      final link = Link(
+        '${temporaryDirectory.path}${Platform.pathSeparator}linked.aura.json',
+      );
+      await link.create(outside.path);
+
+      await expectLater(
+        store.load(link.path),
+        throwsA(isA<AudioProjectStoreUnavailable>()),
+      );
+      expect(await outside.exists(), isTrue);
+      await link.delete();
+      await outside.delete();
+    });
+
     test('ignores damaged project manifests while listing', () async {
       await store.save(makeSession());
       await File(
