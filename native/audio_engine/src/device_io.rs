@@ -474,7 +474,6 @@ pub unsafe extern "C" fn aura_audio_capture_stop(handle: *mut AuraAudioCaptureHa
 /// Opaque playback stream backed by a decoded WAV asset.
 pub struct AuraAudioPlaybackHandle {
     _stream: Stream,
-    sample_rate: u32,
     total_frames: u64,
     position_frames: Arc<AtomicUsize>,
     stream_error: Arc<AtomicU32>,
@@ -665,7 +664,6 @@ pub unsafe extern "C" fn aura_audio_playback_start_wav(
         }
         Ok::<_, AudioError>(Box::into_raw(Box::new(AuraAudioPlaybackHandle {
             _stream: stream,
-            sample_rate,
             total_frames: total_frames as u64,
             position_frames,
             stream_error,
