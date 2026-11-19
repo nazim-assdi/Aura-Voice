@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 import 'dart:math' as math;
 import 'dart:ui' show FontFeature;
 
@@ -7,6 +6,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../../core/services/api_client.dart';
 import '../../core/services/audio_engine_service.dart';
+import '../../core/services/audio_file_service.dart';
 import '../../core/services/audio_recording_service.dart';
 import '../../core/theme/aura_theme.dart';
 
@@ -625,17 +625,7 @@ class _StudioPageState extends State<StudioPage> {
     if (path == null || _capture != null) return;
     await _stopPlayback();
     try {
-      final file = File(path);
-      if (!await file.exists()) {
-        throw const AudioEngineUnavailable('The saved WAV file no longer exists.');
-      }
-      final length = await file.length();
-      if (length > 536870912) {
-        throw const AudioEngineUnavailable(
-          'Preview is limited to WAV files smaller than 512 MiB.',
-        );
-      }
-      final bytes = await file.readAsBytes();
+      final bytes = await readAudioFile(path);
       final playback = await _engine.startPlayback(wavBytes: bytes);
       if (!mounted) {
         await playback.stop();
@@ -929,7 +919,7 @@ class _StudioPageState extends State<StudioPage> {
                       ),
                 ),
               ],
-if (_savedPath != null) ...[
+              if (_savedPath != null) ...[
                 const SizedBox(height: 12),
                 Container(
                   padding: const EdgeInsets.all(14),
@@ -998,7 +988,8 @@ if (_savedPath != null) ...[
                     ],
                   ),
                 ),
-              ],           ]),
+              ],
+            ]),
           ),
         ),
       ],
