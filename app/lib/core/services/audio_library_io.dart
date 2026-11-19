@@ -133,21 +133,24 @@ class FileAudioLibraryService implements AudioLibraryService {
           sampleRate == null ||
           bitsPerSample == null ||
           blockAlign == null ||
-          dataBytes == null ||
-          channels! < 1 ||
-          channels! > 8 ||
-          sampleRate! < 8000 ||
-          sampleRate! > 384000 ||
-          blockAlign! <= 0 ||
-          dataBytes! % blockAlign! != 0 ||
+          dataBytes == null) {
+        throw const FormatException('Unsupported or incomplete WAV metadata.');
+      }
+
+      if (channels < 1 ||
+          channels > 8 ||
+          sampleRate < 8000 ||
+          sampleRate > 384000 ||
+          blockAlign <= 0 ||
+          dataBytes % blockAlign != 0 ||
           !((formatTag == 1 && [8, 16, 24, 32].contains(bitsPerSample)) ||
               (formatTag == 3 && bitsPerSample == 32))) {
         throw const FormatException('Unsupported or incomplete WAV metadata.');
       }
 
-      final frames = dataBytes! ~/ blockAlign!;
+      final frames = dataBytes ~/ blockAlign;
       final duration = Duration(
-        microseconds: (frames * 1000000 / sampleRate!).round(),
+        microseconds: (frames * 1000000 / sampleRate).round(),
       );
       final stat = await file.stat();
       return AudioLibraryRecording(
@@ -156,9 +159,9 @@ class FileAudioLibraryService implements AudioLibraryService {
         modifiedAt: stat.modified,
         sizeBytes: stat.size,
         duration: duration,
-        sampleRate: sampleRate!,
-        channels: channels!,
-        bitsPerSample: bitsPerSample!,
+        sampleRate: sampleRate,
+        channels: channels,
+        bitsPerSample: bitsPerSample,
       );
     } finally {
       await random.close();
