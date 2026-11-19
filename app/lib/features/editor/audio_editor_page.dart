@@ -817,6 +817,9 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
         muted: track.muted,
         solo: track.solo,
         armed: track.armed,
+        highPassHz: track.highPassHz,
+        compressorThreshold: track.compressorThreshold,
+        compressorRatio: track.compressorRatio,
         clips: [
           for (final item in track.clips)
             if (item.id == clip.id) ...parts else item,
@@ -886,6 +889,9 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
         muted: track.muted,
         solo: track.solo,
         armed: track.armed,
+        highPassHz: track.highPassHz,
+        compressorThreshold: track.compressorThreshold,
+        compressorRatio: track.compressorRatio,
         clips: [
           for (final item in track.clips)
             if (item.id == clip.id)
@@ -938,6 +944,9 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
         muted: !track.muted,
         solo: track.solo,
         armed: track.armed,
+        highPassHz: track.highPassHz,
+        compressorThreshold: track.compressorThreshold,
+        compressorRatio: track.compressorRatio,
         clips: track.clips,
       ),
     );
@@ -954,6 +963,9 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
         muted: track.muted,
         solo: !track.solo,
         armed: track.armed,
+        highPassHz: track.highPassHz,
+        compressorThreshold: track.compressorThreshold,
+        compressorRatio: track.compressorRatio,
         clips: track.clips,
       ),
     );
