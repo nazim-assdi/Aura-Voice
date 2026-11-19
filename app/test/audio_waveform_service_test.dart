@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:aura_voice_ai/core/services/audio_recording_io.dart';
 import 'package:aura_voice_ai/core/services/audio_waveform_io.dart';
+import 'package:aura_voice_ai/core/services/audio_waveform_service.dart';
 
 void main() {
   group('FileAudioWaveformService', () {
