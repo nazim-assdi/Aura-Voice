@@ -1,6 +1,6 @@
 # Aura Voice Studio
 
-**Professional voice production · Multitrack audio · AI speech · Dubbing · Restoration · Mixing & mastering**
+**Professional voice production · Recording · WAV preview · Multitrack audio · AI speech · Dubbing · Restoration · Mixing & mastering**
 
 > Status: early development foundation (v0.1.0). The repository currently contains a Flutter app shell, FastAPI health/capabilities endpoints, a provider contract and tests. Real recording, production TTS, voice cloning, multitrack editing, DSP, dubbing and mastering are still in development.
 
