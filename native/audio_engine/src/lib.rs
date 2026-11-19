@@ -497,17 +497,18 @@ pub fn render_mix(
     let sample_count = frame_count.checked_mul(usize::from(session.channels))
         .ok_or(AudioError::SizeOverflow)?;
     let mut mixed = vec![0.0_f32; sample_count];
+    let mut track_mix = vec![0.0_f32; sample_count];
 
     for (track, clips) in resolved {
+        track_mix.fill(0.0);
         for (clip, asset) in clips {
-            let total_gain = track.gain * clip.gain * session.master_gain;
             let combined_pan = (track.pan + clip.pan).clamp(-1.0, 1.0);
             let duration = clip.duration_frames;
             for offset in 0..duration {
                 let source_frame = clip.source_start_frame + offset;
                 let destination_frame = clip.start_frame + offset;
                 let fade = fade_envelope(offset, duration, clip.fade_in_frames, clip.fade_out_frames);
-                let gain = total_gain * fade;
+                let gain = clip.gain * fade;
                 let source_index = usize::try_from(source_frame)
                     .map_err(|_| AudioError::SizeOverflow)? * usize::from(asset.channels);
                 let destination_index = usize::try_from(destination_frame)
@@ -515,16 +516,16 @@ pub fn render_mix(
 
                 match (asset.channels, session.channels) {
                     (1, 1) => {
-                        mixed[destination_index] += asset.samples[source_index] * gain;
+                        track_mix[destination_index] += asset.samples[source_index] * gain;
                     }
                     (1, 2) => {
                         let angle = (f64::from(combined_pan) + 1.0) * std::f64::consts::FRAC_PI_4;
-                        mixed[destination_index] += asset.samples[source_index] * gain * angle.cos() as f32;
-                        mixed[destination_index + 1] += asset.samples[source_index] * gain * angle.sin() as f32;
+                        track_mix[destination_index] += asset.samples[source_index] * gain * angle.cos() as f32;
+                        track_mix[destination_index + 1] += asset.samples[source_index] * gain * angle.sin() as f32;
                     }
                     (2, 1) => {
                         let mono = (asset.samples[source_index] + asset.samples[source_index + 1]) * 0.5;
-                        mixed[destination_index] += mono * gain;
+                        track_mix[destination_index] += mono * gain;
                     }
                     (2, 2) => {
                         let left = asset.samples[source_index];
@@ -535,12 +536,23 @@ pub fn render_mix(
                         let right_gain = if combined_pan < 0.0 {
                             (f64::from(-combined_pan) * std::f64::consts::FRAC_PI_2).cos() as f32
                         } else { 1.0 };
-                        mixed[destination_index] += left * gain * left_gain;
-                        mixed[destination_index + 1] += right * gain * right_gain;
+                        track_mix[destination_index] += left * gain * left_gain;
+                        track_mix[destination_index + 1] += right * gain * right_gain;
                     }
                     _ => unreachable!("audio buffers and sessions are validated as mono or stereo"),
                 }
             }
+        }
+
+        process_track_dsp_buffer(
+            &mut track_mix,
+            session.sample_rate,
+            session.channels,
+            track,
+            session.master_gain,
+        )?;
+        for (output, track_sample) in mixed.iter_mut().zip(track_mix.iter()) {
+            *output += *track_sample;
         }
     }
 
@@ -561,6 +573,67 @@ pub fn render_mix(
         sample_peak,
         clipped_samples,
     })
+}
+
+
+/// Processes one track's complete offline buffer through the same high-pass
+/// and linked-stereo compressor used by the callback mixer.
+fn process_track_dsp_buffer(
+    samples: &mut [f32],
+    sample_rate: u32,
+    channels: u16,
+    track: &Track,
+    master_gain: f32,
+) -> Result<(), AudioError> {
+    let alpha = validate_track_dsp(
+        sample_rate,
+        track.high_pass_hz,
+        track.compressor_threshold,
+        track.compressor_ratio,
+    )?;
+    let channel_count = usize::from(channels);
+    if channel_count == 0 || samples.len() % channel_count != 0 {
+        return Err(AudioError::InvalidArgument(
+            "track DSP received an invalid interleaved buffer".into(),
+        ));
+    }
+
+    let attack = 1.0 - (-1.0 / (0.010 * sample_rate as f32)).exp();
+    let release = 1.0 - (-1.0 / (0.100 * sample_rate as f32)).exp();
+    let mut previous_input = [0.0_f32; 2];
+    let mut previous_output = [0.0_f32; 2];
+    let mut envelope = 0.0_f32;
+
+    for frame in samples.chunks_exact_mut(channel_count) {
+        if alpha < 0.999_999 {
+            for channel in 0..channel_count {
+                let input = frame[channel];
+                let filtered = alpha
+                    * (previous_output[channel] + input - previous_input[channel]);
+                previous_input[channel] = input;
+                previous_output[channel] = filtered;
+                frame[channel] = filtered;
+            }
+        }
+
+        let peak = frame.iter().fold(0.0_f32, |value, sample| value.max(sample.abs()));
+        let coefficient = if peak > envelope { attack } else { release };
+        envelope += coefficient * (peak - envelope);
+        let compression_gain = if track.compressor_ratio > 1.0
+            && envelope > track.compressor_threshold
+        {
+            let compressed = track.compressor_threshold
+                + (envelope - track.compressor_threshold) / track.compressor_ratio;
+            compressed / envelope.max(0.000_001)
+        } else {
+            1.0
+        };
+
+        for sample in frame {
+            *sample *= track.gain * master_gain * compression_gain;
+        }
+    }
+    Ok(())
 }
 
 fn fade_envelope(offset: u64, duration: u64, fade_in: u64, fade_out: u64) -> f32 {
