@@ -616,7 +616,6 @@ pub(crate) struct RealtimeRenderState {
     next_frame: Option<usize>,
     graph_identity: usize,
     track_scratch: Vec<f32>,
-    output_scratch: Vec<f32>,
 }
 
 impl RealtimeRenderState {
@@ -627,7 +626,6 @@ impl RealtimeRenderState {
             next_frame: None,
             graph_identity: 0,
             track_scratch: vec![0.0; MAX_REALTIME_TRACKS * 2],
-            output_scratch: vec![0.0; MAX_REALTIME_BLOCK_FRAMES * 2],
         }
     }
 
