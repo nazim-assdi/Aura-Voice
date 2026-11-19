@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:ffi';
 import 'dart:io';
 import 'dart:isolate';
@@ -17,6 +18,76 @@ class FfiAudioEngineService implements AudioEngineService {
 
   @override
   bool get isAvailable => _api != null;
+
+  @override
+  Future<List<AudioInputDevice>> listInputDevices() async {
+    final api = _api;
+    if (api == null) {
+      throw const AudioEngineUnavailable(
+        'Native Aura audio library is not available on this platform.',
+      );
+    }
+    final pointer = api.listInputDevices();
+    if (pointer == nullptr) {
+      throw AudioEngineUnavailable(api.lastError());
+    }
+    try {
+      final decoded = jsonDecode(pointer.toDartString()) as List<dynamic>;
+      return decoded
+          .map((item) => Map<String, dynamic>.from(item as Map))
+          .map(
+            (item) => AudioInputDevice(
+              id: item['id'] as String,
+              name: item['name'] as String,
+              isDefault: item['isDefault'] as bool? ?? false,
+              channels: item['channels'] as int? ?? 0,
+              sampleRate: item['sampleRate'] as int? ?? 0,
+            ),
+          )
+          .toList(growable: false);
+    } finally {
+      api.freeString(pointer);
+    }
+  }
+
+  @override
+  Future<AudioCaptureSession> startCapture({
+    String? deviceId,
+    int bufferMilliseconds = 1000,
+  }) async {
+    final api = _api;
+    if (api == null) {
+      throw const AudioEngineUnavailable(
+        'Native Aura audio library is not available on this platform.',
+      );
+    }
+    final nativeId = deviceId?.toNativeUtf8() ?? nullptr;
+    final sampleRate = calloc<Uint32>();
+    final channels = calloc<Uint16>();
+    try {
+      final handle = api.captureStart(
+        nativeId,
+        bufferMilliseconds,
+        sampleRate,
+        channels,
+      );
+      if (handle == nullptr) {
+        throw AudioEngineUnavailable(api.lastError());
+      }
+      return FfiAudioCaptureSession(
+        api: api,
+        handle: handle,
+        sampleRate: sampleRate.value,
+        channels: channels.value,
+      );
+    } finally {
+      if (nativeId != nullptr) {
+        calloc.free(nativeId);
+      }
+      calloc.free(sampleRate);
+      calloc.free(channels);
+    }
+  }
 
   @override
   Future<AudioRenderResult> renderSession({
@@ -181,9 +252,101 @@ void _checkStatus(_NativeApi api, int status) {
   }
 }
 
+class FfiAudioCaptureSession implements AudioCaptureSession {
+  FfiAudioCaptureSession({
+    required _NativeApi api,
+    required Pointer<Void> handle,
+    required this.sampleRate,
+    required this.channels,
+  })  : _api = api,
+        _handle = handle;
+
+  final _NativeApi _api;
+  Pointer<Void> _handle;
+  bool _stopped = false;
+
+  @override
+  final int sampleRate;
+
+  @override
+  final int channels;
+
+  @override
+  int get droppedFrames =>
+      _stopped ? 0 : _api.captureDroppedFrames(_handle);
+
+  @override
+  bool get hasError => _stopped || _api.captureStatus(_handle) != 0;
+
+  @override
+  Future<Float32List> readFrames({int maxFrames = 2048}) async {
+    if (_stopped) {
+      throw const AudioEngineUnavailable('The microphone capture is stopped.');
+    }
+    if (maxFrames <= 0 || maxFrames > 65536) {
+      throw ArgumentError.value(
+        maxFrames,
+        'maxFrames',
+        'Must be between 1 and 65536.',
+      );
+    }
+    final sampleCount = maxFrames * channels;
+    final output = calloc<Float>(sampleCount);
+    try {
+      final frames = _api.captureRead(_handle, output, maxFrames);
+      if (frames == 0) {
+        return Float32List(0);
+      }
+      return Float32List.fromList(
+        output.asTypedList(frames * channels),
+      );
+    } finally {
+      calloc.free(output);
+    }
+  }
+
+  @override
+  Future<void> stop() async {
+    if (!_stopped) {
+      _api.captureStop(_handle);
+      _handle = nullptr;
+      _stopped = true;
+    }
+  }
+}
+
 class _NativeApi {
   _NativeApi(DynamicLibrary library)
-      : _abiVersion = library.lookupFunction<_AbiNative, _AbiDart>(
+      : _listInputDevices =
+            library.lookupFunction<_ListInputDevicesNative, _ListInputDevicesDart>(
+          'aura_audio_input_devices_json',
+        ),
+        _freeString =
+            library.lookupFunction<_FreeStringNative, _FreeStringDart>(
+          'aura_audio_string_free',
+        ),
+        _captureStart =
+            library.lookupFunction<_CaptureStartNative, _CaptureStartDart>(
+          'aura_audio_capture_start',
+        ),
+        _captureRead =
+            library.lookupFunction<_CaptureReadNative, _CaptureReadDart>(
+          'aura_audio_capture_read',
+        ),
+        _captureDroppedFrames = library.lookupFunction<
+            _CaptureDroppedFramesNative,
+            _CaptureDroppedFramesDart>(
+          'aura_audio_capture_dropped_frames',
+        ),
+        _captureStatus =
+            library.lookupFunction<_CaptureStatusNative, _CaptureStatusDart>(
+          'aura_audio_capture_status',
+        ),
+        _captureStop =
+            library.lookupFunction<_CaptureStopNative, _CaptureStopDart>(
+          'aura_audio_capture_stop',
+        ),
+        _abiVersion = library.lookupFunction<_AbiNative, _AbiDart>(
           'aura_engine_abi_version',
         ),
         _create = library.lookupFunction<_CreateNative, _CreateDart>(
@@ -221,6 +384,19 @@ class _NativeApi {
       );
     }
   }
+
+  final Pointer<Utf8> Function() _listInputDevices;
+  final void Function(Pointer<Utf8>) _freeString;
+  final Pointer<Void> Function(
+    Pointer<Utf8>,
+    int,
+    Pointer<Uint32>,
+    Pointer<Uint16>,
+  ) _captureStart;
+  final int Function(Pointer<Void>, Pointer<Float>, int) _captureRead;
+  final int Function(Pointer<Void>) _captureDroppedFrames;
+  final int Function(Pointer<Void>) _captureStatus;
+  final void Function(Pointer<Void>) _captureStop;
 
   final int Function() _abiVersion;
   final Pointer<Void> Function(int, int) _create;
@@ -263,6 +439,22 @@ class _NativeApi {
   ) _renderWav;
   final void Function(Pointer<Uint8>, int) _freeBuffer;
   final Pointer<Utf8> Function() _lastError;
+
+  Pointer<Utf8> listInputDevices() => _listInputDevices();
+  void freeString(Pointer<Utf8> value) => _freeString(value);
+  Pointer<Void> captureStart(
+    Pointer<Utf8> deviceId,
+    int bufferMilliseconds,
+    Pointer<Uint32> sampleRate,
+    Pointer<Uint16> channels,
+  ) =>
+      _captureStart(deviceId, bufferMilliseconds, sampleRate, channels);
+  int captureRead(Pointer<Void> handle, Pointer<Float> output, int maxFrames) =>
+      _captureRead(handle, output, maxFrames);
+  int captureDroppedFrames(Pointer<Void> handle) =>
+      _captureDroppedFrames(handle);
+  int captureStatus(Pointer<Void> handle) => _captureStatus(handle);
+  void captureStop(Pointer<Void> handle) => _captureStop(handle);
 
   Pointer<Void> create(int sampleRate, int channels) =>
       _create(sampleRate, channels);
@@ -369,6 +561,45 @@ DynamicLibrary _openPlatformLibrary() {
   }
   return DynamicLibrary.open(fileName);
 }
+
+typedef _ListInputDevicesNative = Pointer<Utf8> Function();
+typedef _ListInputDevicesDart = Pointer<Utf8> Function();
+
+typedef _FreeStringNative = Void Function(Pointer<Utf8>);
+typedef _FreeStringDart = void Function(Pointer<Utf8>);
+
+typedef _CaptureStartNative = Pointer<Void> Function(
+  Pointer<Utf8>,
+  Uint32,
+  Pointer<Uint32>,
+  Pointer<Uint16>,
+);
+typedef _CaptureStartDart = Pointer<Void> Function(
+  Pointer<Utf8>,
+  int,
+  Pointer<Uint32>,
+  Pointer<Uint16>,
+);
+
+typedef _CaptureReadNative = Uint32 Function(
+  Pointer<Void>,
+  Pointer<Float>,
+  Uint32,
+);
+typedef _CaptureReadDart = int Function(
+  Pointer<Void>,
+  Pointer<Float>,
+  int,
+);
+
+typedef _CaptureDroppedFramesNative = Uint64 Function(Pointer<Void>);
+typedef _CaptureDroppedFramesDart = int Function(Pointer<Void>);
+
+typedef _CaptureStatusNative = Uint32 Function(Pointer<Void>);
+typedef _CaptureStatusDart = int Function(Pointer<Void>);
+
+typedef _CaptureStopNative = Void Function(Pointer<Void>);
+typedef _CaptureStopDart = void Function(Pointer<Void>);
 
 typedef _AbiNative = Uint32 Function();
 typedef _AbiDart = int Function();
