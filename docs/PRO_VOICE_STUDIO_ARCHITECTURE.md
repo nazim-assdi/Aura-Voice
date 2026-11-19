@@ -160,19 +160,21 @@ This repository is currently an early Flutter/FastAPI foundation. The UI shell, 
 - Professional Voice Studio dashboard with an honest native-library availability indicator.
 - Rust offline PCM WAV engine: PCM 8/16/24/32 and IEEE float32 WAV import; mono/stereo buffers; sample-frame clip placement; multitrack mixing; track/clip/master gain; panning; mute/solo; linear fades; sample-peak and overload reporting; PCM 16/24/32 WAV export.
 - CPAL microphone input enumeration with persistent device ids and default-input identification.
+- CPAL PCM WAV playback through the default output device, including sample-rate compatibility negotiation, common PCM output format conversion, playback position, completion/error status and stop.
 - CPAL mono/stereo microphone capture stream with preallocated lock-free SPSC ring, dropped-frame counter and stream-error status.
-- C ABI functions for listing inputs and starting, reading, monitoring and stopping live capture; Dart FFI wrappers expose device listing and captured sample reads.
+- C ABI functions for listing inputs, starting/pausing/reading/stopping capture, and starting/querying/stopping WAV playback; Dart FFI wrappers expose capture and playback session handles.
+- Flutter Studio UI for one-take local 24-bit PCM WAV recording, live Peak/RMS meters, a dropped-frame warning, and Play/Stop preview with progress.
 - Versioned C ABI, public C header, engine error reporting and an end-to-end Rust FFI unit test.
 - Flutter FFI adapter with ABI checks, asset/track/clip marshaling, output-buffer ownership handling, worker-isolate rendering and a web/unsupported-platform fallback.
 - Desktop build workflow steps to compile and copy the native shared library beside Linux, Windows and macOS executables.
 
 ### Still not implemented
-- Recording take metadata and session asset registration, pause/resume/punch-in and playback/monitoring.
-- Audio output streams, input-to-output monitoring, playback transport, device reconnect and end-to-end latency measurements.
+- Take management, non-destructive session asset registration, pause/resume/punch-in and multitrack playback transport.
+- Output-device selection, seek/pause/loop transport, live input-to-output monitoring, device reconnect and end-to-end latency measurements.
 - Sample-rate conversion and additional microphone sample formats.
 - Android/iOS native audio library packaging and native app linking.
 - In-app media-file import UX, waveform display/editor and session-to-render controls.
 - Sample-rate conversion, compressed MP3/AAC/FLAC decoders, realtime DSP and waveform cache.
 - Production TTS, voice cloning, transcription, translation, dubbing and mastering workflows.
 
-All code and build configuration are committed to `main`. CI still needs to pass before treating the CPAL capture module, C ABI, Dart FFI adapter and desktop bundling steps as verified end to end. Microphone input selection and live peak/RMS meters are now available in the Studio UI when a compatible native library and microphone are present. The input-check mode intentionally discards samples; saved recording, WAV/session writing, playback and output monitoring remain unavailable.
+All code and build configuration are committed to `main`. CI still needs to pass before treating the CPAL capture/playback modules, C ABI, Dart FFI adapter and desktop bundling steps as verified end to end. On a desktop build with the matching native library, Studio can capture a microphone take into a standalone local 24-bit PCM WAV, show Peak/RMS meters and dropped-frame warnings, and play the saved WAV through the default output device. The complete session editor, multitrack preview, output-device selection, seek/pause and live input monitoring remain unavailable.
