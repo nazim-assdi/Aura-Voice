@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'dart:ui' show FontFeature;
 
 import 'package:material_ui/material_ui.dart';
@@ -452,7 +453,7 @@ class _StudioPageState extends State<StudioPage> {
       }
       final rms = samples.isEmpty
           ? _rms * 0.82
-          : _sqrt(sumSquares / samples.length);
+          : math.sqrt(sumSquares / samples.length);
       setState(() {
         _peak = samples.isEmpty ? _peak * 0.82 : peak;
         _rms = rms;
@@ -823,14 +824,4 @@ class _ComingSoonPage extends StatelessWidget {
       ),
     ),
   );
-}
-
-
-double _sqrt(double value) {
-  if (value <= 0) return 0;
-  var estimate = value < 1 ? 1.0 : value;
-  for (var i = 0; i < 12; i++) {
-    estimate = (estimate + value / estimate) / 2;
-  }
-  return estimate;
 }
