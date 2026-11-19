@@ -439,7 +439,7 @@ class _StudioPageState extends State<StudioPage> {
     }
   }
 
-  Future<void> _startInputCheck() async {
+  Future<void> _startRecording() async {
     if (_starting || _capture != null) return;
     setState(() {
       _starting = true;
@@ -492,6 +492,7 @@ class _StudioPageState extends State<StudioPage> {
     final capture = _capture;
     if (capture == null || _polling) return;
     _polling = true;
+    var stopAfterPoll = false;
     try {
       final samples = await capture.readFrames(maxFrames: 4096);
       if (!identical(capture, _capture)) return;
@@ -513,39 +514,44 @@ class _StudioPageState extends State<StudioPage> {
       final rms = samples.isEmpty
           ? _rms * 0.82
           : math.sqrt(sumSquares / samples.length);
+      final streamFailed = capture.hasError;
       setState(() {
         _peak = samples.isEmpty ? _peak * 0.82 : peak;
         _rms = rms;
         _capturedFrames += samples.length ~/ capture.channels;
         _droppedFrames = capture.droppedFrames;
-        if (capture.hasError) {
-          _message = 'The input device reported an audio stream error. Stop and reconnect the microphone.';
+        if (streamFailed) {
+          _message = 'The input device reported an audio stream error. The take is being finalized.';
           _meterTimer?.cancel();
         }
       });
+      stopAfterPoll = streamFailed;
     } catch (error) {
       if (mounted) {
-        setState(() => _message = error.toString());
-        _meterTimer?.cancel();
+        setState(() => _message = 'Recording stopped: $error');
       }
+      _meterTimer?.cancel();
+      stopAfterPoll = true;
     } finally {
       _polling = false;
     }
+    if (stopAfterPoll && mounted) {
+      unawaited(_stopRecording());
+    }
   }
 
-  Future<void> _stopInputCheck() async {
+  Future<void> _stopRecording() async {
     _meterTimer?.cancel();
     _meterTimer = null;
     final capture = _capture;
     var paused = capture == null;
+    String? warning;
     if (capture != null) {
       try {
         await capture.pause();
         paused = true;
       } catch (error) {
-        if (mounted) {
-          setState(() => _message = 'Input pause warning: $error');
-        }
+        warning = 'The input stream could not be paused cleanly: $error';
       }
     }
     while (_polling) {
@@ -565,28 +571,33 @@ class _StudioPageState extends State<StudioPage> {
         }
       }
     } catch (error) {
-      _message = 'Some buffered audio could not be saved: $error';
+      warning = 'Some buffered audio could not be saved: $error';
     } finally {
       if (capture != null) await capture.stop();
     }
     try {
       if (writer != null) path = await writer.finish();
     } catch (error) {
-      _message = 'The recording could not be finalized: $error';
+      warning = 'The recording could not be finalized: $error';
       if (writer != null) await writer.discard();
+    }
+    if (_droppedFrames > 0) {
+      warning ??= 'Recording saved with $_droppedFrames dropped frames; this take may contain a short gap.';
+    }
+    if (capture != null && !paused) {
+      warning ??= 'Only the samples already written were saved because the input stream could not pause.';
     }
     if (mounted) {
       setState(() {
         _peak = 0;
         _rms = 0;
         _savedPath = path;
-        if (path != null) {
-          _message = 'Recording saved successfully.';
-        }
+        _message = path != null
+            ? (warning ?? 'Recording saved successfully.')
+            : (warning ?? 'No recording file was saved.');
       });
     }
   }
-
   String get _elapsed {
     if (_sampleRate <= 0) return '00:00';
     final totalSeconds = _capturedFrames ~/ _sampleRate;
@@ -737,7 +748,7 @@ class _StudioPageState extends State<StudioPage> {
                           child: FilledButton.icon(
                             onPressed: _starting || listening || _devices.isEmpty
                                 ? null
-                                : _startInputCheck,
+                                : _startRecording,
                             icon: _starting
                                 ? const SizedBox(
                                     width: 16,
@@ -756,7 +767,7 @@ class _StudioPageState extends State<StudioPage> {
                         if (listening) ...[
                           const SizedBox(width: 10),
                           OutlinedButton.icon(
-                            onPressed: _stopInputCheck,
+                            onPressed: _stopRecording,
                             icon: const Icon(Icons.stop_rounded),
                             label: const Text('Finish & save'),
                             style: OutlinedButton.styleFrom(
