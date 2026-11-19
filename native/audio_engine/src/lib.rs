@@ -650,7 +650,7 @@ mod tests {
         let report = render_mix(&session, &assets).unwrap();
         assert_eq!(report.audio.samples(), &[0.0, 0.5, 0.5, 0.0]);
 
-        session.master_gain = 2.0;
+        session.master_gain = 3.0;
         let overloaded = render_mix(&session, &assets).unwrap();
         assert!(overloaded.sample_peak > 1.0);
         assert_eq!(overloaded.clipped_samples, 2);
