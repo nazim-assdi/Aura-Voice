@@ -41,6 +41,8 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
 
   String? _selectedTrackId;
   String? _selectedClipId;
+  String? _dragTrackId;
+  String? _dragClipId;
   String? _projectPath;
   String? _message;
   AudioPlaybackSession? _playback;
@@ -308,6 +310,51 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
       _selectedTrackId = trackId;
       _selectedClipId = clipId;
     });
+  }
+
+  void _beginClipDrag(AudioTrack track, double localX) {
+    final frame = (localX / _pixelsPerSecond * _session.sampleRate).round();
+    AudioClip? hit;
+    for (final clip in track.clips.reversed) {
+      if (frame >= clip.startFrame &&
+          frame <= clip.startFrame + clip.durationFrames) {
+        hit = clip;
+        break;
+      }
+    }
+    if (hit == null) {
+      _dragTrackId = null;
+      _dragClipId = null;
+      return;
+    }
+    setState(() {
+      _selectedTrackId = track.id;
+      _selectedClipId = hit!.id;
+      _dragTrackId = track.id;
+      _dragClipId = hit.id;
+    });
+  }
+
+  void _dragClipByPixels(double deltaX) {
+    if (_dragTrackId == null ||
+        _dragClipId == null ||
+        deltaX == 0 ||
+        _selectedTrackId != _dragTrackId ||
+        _selectedClipId != _dragClipId) {
+      return;
+    }
+    final clip = _selectedClip;
+    if (clip == null) return;
+    final deltaFrames =
+        (deltaX / _pixelsPerSecond * _session.sampleRate).round();
+    if (deltaFrames == 0) return;
+    final nextFrame = math.max(0, clip.startFrame + deltaFrames).toInt();
+    _updateSelectedClip(startFrame: nextFrame);
+  }
+
+  void _endClipDrag() {
+    _dragTrackId = null;
+    _dragClipId = null;
   }
 
   void _updateSelectedClip({
@@ -677,6 +724,12 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
                                   }
                                   _selectClip(track.id, hit?.id);
                                 },
+                                onHorizontalDragStart: (details) =>
+                                    _beginClipDrag(track, details.localPosition.dx),
+                                onHorizontalDragUpdate: (details) =>
+                                    _dragClipByPixels(details.delta.dx),
+                                onHorizontalDragEnd: (_) => _endClipDrag(),
+                                onHorizontalDragCancel: _endClipDrag,
                                 child: CustomPaint(
                                   size: Size(timelineWidth, 112),
                                   painter: _TrackWaveformPainter(
