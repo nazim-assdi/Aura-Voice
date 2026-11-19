@@ -801,6 +801,11 @@ impl RealtimeMixer {
             state.reset_for(self, start_frame);
         }
 
+        let attack_coefficient =
+            1.0 - (-1.0 / (0.010 * self.sample_rate as f32)).exp();
+        let release_coefficient =
+            1.0 - (-1.0 / (0.100 * self.sample_rate as f32)).exp();
+
         for output_frame in 0..frames {
             let timeline_frame = start_frame.saturating_add(output_frame);
             while let Some(event) = self.events.get(state.event_cursor).copied() {
@@ -855,10 +860,51 @@ impl RealtimeMixer {
 
             let mut left = 0.0_f32;
             let mut right = 0.0_f32;
-            for track_index in 0..self.tracks.len() {
+            for (track_index, track) in self.tracks.iter().enumerate() {
                 let offset = track_index * 2;
-                left += state.track_scratch[offset];
-                right += state.track_scratch[offset + 1];
+                let mut track_left = state.track_scratch[offset];
+                let mut track_right = state.track_scratch[offset + 1];
+
+                if track.high_pass_alpha < 0.999_999 {
+                    let filter_offset = track_index * 4;
+                    let previous_input_left = state.filter_state[filter_offset];
+                    let previous_output_left = state.filter_state[filter_offset + 1];
+                    let previous_input_right = state.filter_state[filter_offset + 2];
+                    let previous_output_right = state.filter_state[filter_offset + 3];
+                    let filtered_left = track.high_pass_alpha
+                        * (previous_output_left + track_left - previous_input_left);
+                    let filtered_right = track.high_pass_alpha
+                        * (previous_output_right + track_right - previous_input_right);
+                    state.filter_state[filter_offset] = track_left;
+                    state.filter_state[filter_offset + 1] = filtered_left;
+                    state.filter_state[filter_offset + 2] = track_right;
+                    state.filter_state[filter_offset + 3] = filtered_right;
+                    track_left = filtered_left;
+                    track_right = filtered_right;
+                }
+
+                let envelope = state.compressor_envelope[track_index];
+                let peak = track_left.abs().max(track_right.abs());
+                let coefficient = if peak > envelope {
+                    attack_coefficient
+                } else {
+                    release_coefficient
+                };
+                let next_envelope = envelope + coefficient * (peak - envelope);
+                state.compressor_envelope[track_index] = next_envelope;
+                let compression_gain = if track.compressor_ratio > 1.0
+                    && next_envelope > track.compressor_threshold
+                {
+                    let compressed = track.compressor_threshold
+                        + (next_envelope - track.compressor_threshold)
+                            / track.compressor_ratio;
+                    compressed / next_envelope.max(0.000_001)
+                } else {
+                    1.0
+                };
+
+                left += track_left * track.gain * compression_gain;
+                right += track_right * track.gain * compression_gain;
             }
             left *= self.master_gain;
             right *= self.master_gain;
@@ -909,6 +955,33 @@ pub(crate) fn build_realtime_mixer_owned(
     build_realtime_mixer_shared(session, &shared)
 }
 
+
+fn validate_track_dsp(
+    sample_rate: u32,
+    high_pass_hz: f32,
+    compressor_threshold: f32,
+    compressor_ratio: f32,
+) -> Result<f32, AudioError> {
+    let nyquist = sample_rate as f32 * 0.5;
+    if !high_pass_hz.is_finite()
+        || high_pass_hz < 0.0
+        || high_pass_hz >= nyquist
+        || !compressor_threshold.is_finite()
+        || !(0.001..=1.0).contains(&compressor_threshold)
+        || !compressor_ratio.is_finite()
+        || !(1.0..=20.0).contains(&compressor_ratio)
+    {
+        return Err(AudioError::InvalidArgument(
+            "track DSP expects high-pass below Nyquist, threshold 0.001..1.0 and compressor ratio 1..20".into(),
+        ));
+    }
+    if high_pass_hz == 0.0 {
+        Ok(1.0)
+    } else {
+        Ok((-2.0 * std::f32::consts::PI * high_pass_hz / sample_rate as f32).exp())
+    }
+}
+
 fn build_realtime_mixer_shared(
     session: &MixSession,
     assets: &HashMap<String, Arc<AudioBuffer>>,
@@ -932,6 +1005,12 @@ fn build_realtime_mixer_shared(
     let mut output_frames = 0_usize;
 
     for track in &session.tracks {
+        let high_pass_alpha = validate_track_dsp(
+            session.sample_rate,
+            track.high_pass_hz,
+            track.compressor_threshold,
+            track.compressor_ratio,
+        )?;
         if track.id.trim().is_empty()
             || !track.gain.is_finite()
             || track.gain < 0.0
@@ -954,7 +1033,12 @@ fn build_realtime_mixer_shared(
             )));
         }
         let track_index = realtime_tracks.len();
-        realtime_tracks.push(RealtimeTrack { gain: track.gain });
+        realtime_tracks.push(RealtimeTrack {
+            gain: track.gain,
+            high_pass_alpha,
+            compressor_threshold: track.compressor_threshold,
+            compressor_ratio: track.compressor_ratio,
+        });
 
         for clip in &track.clips {
             if clip.id.trim().is_empty()
