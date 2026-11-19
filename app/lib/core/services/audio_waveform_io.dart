@@ -116,7 +116,8 @@ class FileAudioWaveformService implements AudioWaveformService {
         throw const FormatException('WAV contains no audio frames.');
       }
 
-      final framesPerBucket = (totalFrames / peakCount).ceil().clamp(1, totalFrames);
+      final framesPerBucket =
+          (totalFrames / peakCount).ceil().clamp(1, totalFrames).toInt();
       final peaks = <double>[];
       var currentPeak = 0.0;
       var framesInBucket = 0;
@@ -154,7 +155,7 @@ class FileAudioWaveformService implements AudioWaveformService {
           framesRead++;
           if (framesInBucket >= framesPerBucket ||
               framesRead == totalFrames) {
-            peaks.add(currentPeak.clamp(0.0, 1.0));
+            peaks.add(currentPeak.clamp(0.0, 1.0).toDouble());
             currentPeak = 0;
             framesInBucket = 0;
           }
