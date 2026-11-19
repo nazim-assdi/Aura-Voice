@@ -160,6 +160,7 @@ This repository is currently an early Flutter/FastAPI foundation. The UI shell, 
 - Professional Voice Studio dashboard with an honest native-library availability indicator.
 - Rust offline PCM WAV engine: PCM 8/16/24/32 and IEEE float32 WAV import; mono/stereo buffers; sample-frame clip placement; multitrack mixing; track/clip/master gain; panning; mute/solo; linear fades; sample-peak and overload reporting; PCM 16/24/32 WAV export.
 - CPAL microphone input enumeration with persistent device ids and default-input identification.
+- CPAL WAV playback through the default output device, using a compatible device-supported sample-rate configuration, common device format conversion, playback position, completion/error status and explicit stop.
 - CPAL PCM WAV playback through the default output device, including sample-rate compatibility negotiation, common PCM output format conversion, playback position, completion/error status and stop.
 - CPAL mono/stereo microphone capture stream with preallocated lock-free SPSC ring, dropped-frame counter and stream-error status.
 - C ABI functions for listing inputs, starting/pausing/reading/stopping capture, and starting/querying/stopping WAV playback; Dart FFI wrappers expose capture and playback session handles.
