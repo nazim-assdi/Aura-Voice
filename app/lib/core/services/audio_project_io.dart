@@ -80,6 +80,7 @@ class FileAudioProjectStore implements AudioProjectStore {
   Future<List<AudioProjectSummary>> listProjects() async {
     final directory = Directory(_directoryPath);
     if (!await directory.exists()) return const [];
+    await _recoverBackups(directory);
     final summaries = <AudioProjectSummary>[];
     await for (final entity in directory.list(followLinks: false)) {
       if (entity is! File ||
@@ -107,6 +108,30 @@ class FileAudioProjectStore implements AudioProjectStore {
     }
     summaries.sort((a, b) => b.modifiedAt.compareTo(a.modifiedAt));
     return summaries;
+  }
+
+  Future<void> _recoverBackups(Directory directory) async {
+    await for (final entity in directory.list(followLinks: false)) {
+      if (entity is! File ||
+          !entity.path.toLowerCase().endsWith('.aura.json.backup')) {
+        continue;
+      }
+      final backup = entity;
+      final targetPath = backup.path.substring(
+        0,
+        backup.path.length - '.backup'.length,
+      );
+      final target = File(targetPath);
+      try {
+        if (await target.exists()) {
+          await backup.delete();
+        } else {
+          await backup.rename(target.path);
+        }
+      } on FileSystemException {
+        // A recovery file may be locked or changed by another process.
+      }
+    }
   }
 
   @override
