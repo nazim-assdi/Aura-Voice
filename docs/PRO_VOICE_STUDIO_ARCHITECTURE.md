@@ -6,7 +6,7 @@
 
 The full production workspace is desktop-first (Windows, macOS and Linux). Android and iOS provide voice recording, script/TTS workflows, review, light edits and project handoff. A consistent project format keeps sessions portable across supported platforms.
 
-This repository is an early Flutter/FastAPI/native-engine foundation. In addition to the UI and API shell, source now includes single-take microphone capture to a local 24-bit PCM WAV file and saved-WAV audition through the default output. Full session-based multitrack recording/editing, production TTS, voice cloning, DSP, dubbing and mastering are not yet implemented. Roadmap items below are requirements, not claims of completed functionality.
+This repository is an early Flutter/FastAPI/native-engine foundation. Source includes local 24-bit PCM recording and audition plus a non-destructive, sample-frame multitrack editor with waveform clips, trim handles, split, overlapping crossfade, snap grid, timeline zoom, bounded undo/redo and debounced project autosave. Real-time multitrack transport, full DSP, production TTS, voice cloning, dubbing and mastering are not yet implemented. Roadmap items below distinguish delivered source features from remaining requirements.
 
 ## Product principles
 
@@ -166,7 +166,7 @@ This repository is an early Flutter/FastAPI/native-engine foundation. In additio
 - Flutter Studio UI for one-take local 24-bit PCM WAV recording, live Peak/RMS meters, a dropped-frame warning, and Play/Stop preview with progress.
 - Local Audio Library with RIFF metadata scan, sample-frame duration, recording search/sort, saved-take playback, true sample-derived waveform preview, rename and confirmed deletion guarded to the canonical recordings directory. Recordings referenced by saved projects are protected.
 - Local JSON session-project store with backup/restore on interrupted replacement, project listing/reopen and source-media reference checks.
-- Early multitrack editor UI with a sample-frame timeline ruler, real waveform clip lanes, add clips to tracks, long-press clip dragging with sample-frame positioning, clip selection and long-press drag, sample-frame split with fade preservation, per-clip Fade In/Fade Out and gain controls, mute, track mute/solo, clip removal, session save/reopen and offline mix rendering/playback.
+- Early non-destructive multitrack editor with a sample-frame ruler and source-range-aware waveforms; long-press body movement and edge-trim handles; sample-frame split; overlapping linear-fade crossfades; configurable 10 ms–1 s snap grid; timeline zoom from 25% to 400%; bounded 100-entry undo/redo history with gesture-level grouping; debounced local autosave; per-clip gain, fades and mute; track mute/solo; session save/reopen; and offline rendered mix audition.
 - Versioned C ABI, public C header, engine error reporting and an end-to-end Rust FFI unit test.
 - Flutter FFI adapter with ABI checks, asset/track/clip marshaling, output-buffer ownership handling, worker-isolate rendering and a web/unsupported-platform fallback.
 - Desktop build workflow steps to compile and copy the native shared library beside Linux, Windows and macOS executables.
@@ -176,8 +176,8 @@ This repository is an early Flutter/FastAPI/native-engine foundation. In additio
 - Output-device selection, seek/pause/loop transport, live input-to-output monitoring, device reconnect and end-to-end latency measurements.
 - Sample-rate conversion and additional microphone sample formats.
 - Android/iOS native audio library packaging and native app linking.
-- Precise clip trim/crossfade editing, undo/redo, autosave, media relinking and a persistent waveform cache.
+- Waveform-cache persistence, portable media relinking, project asset copy/import strategy, crash-recovery snapshots, and edit operations that persist as a journal rather than only in-memory undo history. Current trim is inward-only because source-media end boundaries are not yet stored in the project schema.
 - Sample-rate conversion, compressed MP3/AAC/FLAC decoders, realtime DSP and waveform cache.
 - Production TTS, voice cloning, transcription, translation, dubbing and mastering workflows.
 
-All code and build configuration are committed to `main`. CI still needs to pass before treating the CPAL capture/playback modules, C ABI, Dart FFI adapter, Audio Library, waveform analyzer, project store and desktop bundling steps as verified end to end. On a desktop build with the matching native library, Studio can record a standalone local 24-bit PCM WAV, browse/rename/preview recordings, inspect real sample-derived waveform peaks, build a sample-frame multitrack session and render/play its offline mix. This is an early editor foundation: trim/crossfade tools, undo/redo, autosave, source media relinking, real-time multitrack transport, output-device selection, seek/pause and live input monitoring remain unavailable.
+All code and build configuration are committed to `main`. CI still needs to pass before treating the CPAL capture/playback modules, C ABI, Dart FFI adapter, Audio Library, waveform analyzer, project store and desktop bundling steps as verified end to end. On a desktop build with the matching native library, Studio can record a standalone local 24-bit PCM WAV, browse/rename/preview recordings, inspect source-aligned waveform slices, build and edit sample-frame multitrack sessions, autosave the project and render/play an offline mix. The editor remains early-stage: trimming is inward-only, undo history is in-memory and bounded, waveform cache persistence/media relinking, real-time multitrack transport, output-device selection, seek/pause and live input monitoring remain unavailable.
