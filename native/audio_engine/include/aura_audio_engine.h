@@ -33,6 +33,16 @@ int32_t aura_engine_add_track(
     uint8_t solo
 );
 
+/* Track-level realtime DSP. 0 Hz disables the high-pass filter;
+ * threshold is a linear amplitude in 0.001..=1.0 and ratio is 1..=20. */
+int32_t aura_engine_set_track_dsp(
+    AuraEngineHandle *handle,
+    const char *track_id,
+    float high_pass_hz,
+    float compressor_threshold,
+    float compressor_ratio
+);
+
 int32_t aura_engine_add_clip(
     AuraEngineHandle *handle,
     const char *track_id,
