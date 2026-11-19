@@ -168,7 +168,7 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
   }
 
   double get _timelineWidth =>
-      math.max(900.0, _totalSeconds * 76.0 * _timelineZoom).toDouble();
+      math.max(240.0, _totalSeconds * 76.0 * _timelineZoom).toDouble();
 
   int _snapFrame(int frame) {
     if (!_snapEnabled) return frame;
@@ -282,7 +282,9 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
       if (mounted) setState(() => _message = 'Autosave failed: $error');
     } finally {
       _autosaving = false;
-      if (mounted && _editRevision > _autosavedRevision) _scheduleAutosave();
+      // Retry only when a newer edit arrived during this save. A persistent
+      // storage error should be shown once, not retried forever in the UI.
+      if (mounted && _editRevision > revision) _scheduleAutosave();
     }
   }
 
@@ -412,9 +414,9 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
     final clip = AudioClip(
       id: 'clip-${DateTime.now().microsecondsSinceEpoch}',
       mediaId: selected.path,
-      startFrame: track.clips.isEmpty
-          ? 0
-          : endFrame + (_session.sampleRate ~/ 2),
+      startFrame: _snapFrame(
+        track.clips.isEmpty ? 0 : endFrame + (_session.sampleRate ~/ 2),
+      ),
       sourceStartFrame: 0,
       durationFrames: selected.frameCount,
     );
@@ -771,12 +773,14 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
     _autosaveTimer?.cancel();
     final revision = _editRevision;
     final snapshot = _cloneSession(_session);
+    var saveSucceeded = false;
     setState(() {
       _saving = true;
       _message = null;
     });
     try {
       final path = await _projects.save(snapshot);
+      saveSucceeded = true;
       if (mounted) {
         setState(() {
           _projectPath = path;
@@ -789,7 +793,7 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
     } finally {
       if (mounted) {
         setState(() => _saving = false);
-        if (_editRevision > _autosavedRevision) _scheduleAutosave();
+        if (saveSucceeded && _editRevision > revision) _scheduleAutosave();
       }
     }
   }
@@ -1438,6 +1442,15 @@ class _SelectedClipPanel extends StatelessWidget {
                   icon: const Icon(Icons.delete_outline_rounded, color: Color(0xFFE58A8A)),
                 ),
               ],
+            ),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                'Long-press a white clip edge to trim inward · original WAV stays untouched',
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color: AuraTheme.muted,
+                    ),
+              ),
             ),
             _ClipValueSlider(
               label: 'Gain',
