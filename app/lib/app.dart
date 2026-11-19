@@ -7,7 +7,7 @@ class AuraVoiceApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => MaterialApp(
-        title: 'Aura Voice AI',
+        title: 'Aura Voice Studio',
         debugShowCheckedModeBanner: false,
         theme: AuraTheme.dark,
         home: const HomeShell(),
