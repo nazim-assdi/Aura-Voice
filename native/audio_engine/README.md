@@ -1,6 +1,6 @@
 # Aura Audio Engine
 
-The native-engine foundation for Aura Voice Studio combines deterministic offline PCM WAV rendering with CPAL-based live microphone capture, exposed through Rust and C ABIs.
+The native-engine foundation for Aura Voice Studio combines deterministic offline PCM WAV rendering, CPAL-based microphone capture and CPAL-based WAV playback, exposed through Rust and a versioned C ABI.
 
 ## Implemented
 
@@ -17,6 +17,8 @@ The native-engine foundation for Aura Voice Studio combines deterministic offlin
 - Live mono/stereo microphone capture at the input device's default sample rate.
 - A preallocated SPSC sample ring. The audio callback does not allocate, lock, or write files; overflow is reported as dropped frames.
 - C ABI capture start/pause/read/status/stop lifecycle and Dart FFI wrappers for device listing and capture reads.
+- Native WAV playback via the default output device, with exact sample-rate matching, realtime output callbacks, playback position/status and stop.
+- Studio Play/Stop preview controls for saved local takes, plus elapsed-time and progress display.
 
 ## Build the shared library
 
@@ -39,4 +41,4 @@ cargo test --all-targets
 
 ## Current limitations
 
-Live capture is an input-stream foundation, not yet a complete recording booth. The Flutter studio does not yet expose record/arm/pause controls, continuously drain the capture ring into a project asset, write captured PCM to WAV, or provide live monitor playback. Capture uses the device's default rate/format; unsupported sample formats, resampling, device reconnect recovery, loopback and realtime DSP remain future work. The offline mixer still accepts mono/stereo WAV assets only.
+The current Record Booth is a single-take recorder, not a full session recorder. It records to a standalone 24-bit PCM WAV file in the user's Documents folder and can audition that saved file through the default output device. Output-device selection, seek/pause, repeat/loop, live input-to-output monitoring, multitrack playback, waveform display, session asset registration, resampling, compressed formats and realtime DSP remain future work. WAV preview loads the entire file into memory and is limited to 256 MiB in the Flutter app; the system output device must support the file sample rate. Device reconnect and low-latency measurements also remain future work.
