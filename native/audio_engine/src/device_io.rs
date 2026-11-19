@@ -704,8 +704,9 @@ fn build_realtime_playback_stream(
     device: &cpal::Device,
     config: cpal::StreamConfig,
     format: SampleFormat,
-    mixer: Arc<RealtimeMixer>,
+    graph: Arc<RealtimeGraph>,
     output_channels: usize,
+    drain_frames: usize,
     position_frames: Arc<AtomicUsize>,
     paused: Arc<AtomicBool>,
     loop_enabled: Arc<AtomicBool>,
@@ -713,10 +714,6 @@ fn build_realtime_playback_stream(
     loop_end_frames: Arc<AtomicUsize>,
     stream_error: Arc<AtomicU32>,
 ) -> Result<Stream, AudioError> {
-    let total_frames = usize::try_from(mixer.total_frames)
-        .map_err(|_| AudioError::SizeOverflow)?;
-    let drain_frames = usize::try_from(u64::from(mixer.sample_rate) / 4)
-        .map_err(|_| AudioError::SizeOverflow)?;
     let error_state = Arc::clone(&stream_error);
     let on_error = move |_error: cpal::Error| {
         error_state.store(1, Ordering::Release);
@@ -724,14 +721,14 @@ fn build_realtime_playback_stream(
 
     macro_rules! build_output {
         ($sample:ty, $convert:expr) => {{
-            let callback_mixer = Arc::clone(&mixer);
+            let callback_graph = Arc::clone(&graph);
             let callback_position = Arc::clone(&position_frames);
             let callback_paused = Arc::clone(&paused);
             let callback_loop_enabled = Arc::clone(&loop_enabled);
             let callback_loop_start = Arc::clone(&loop_start_frames);
             let callback_loop_end = Arc::clone(&loop_end_frames);
             let callback_error = Arc::clone(&stream_error);
-            let mut render_state = RealtimeRenderState::new(&callback_mixer);
+            let mut render_state = RealtimeRenderState::new();
             let mut block_buffer = [0.0_f32; MAX_REALTIME_BLOCK_FRAMES * 2];
 
             device
@@ -749,6 +746,18 @@ fn build_realtime_playback_stream(
                         while output_offset < output_frames {
                             let requested = (output_frames - output_offset)
                                 .min(MAX_REALTIME_BLOCK_FRAMES);
+                            // The guard pins one immutable graph snapshot for
+                            // this block. Publishing a new graph never blocks
+                            // this callback; it takes effect at the next block.
+                            let graph_guard = callback_graph.load();
+                            let mixer = graph_guard.mixer();
+                            let total_frames = match usize::try_from(mixer.total_frames) {
+                                Ok(value) => value,
+                                Err(_) => {
+                                    callback_error.store(1, Ordering::Release);
+                                    break;
+                                }
+                            };
                             let claim = claim_playback_block(
                                 &callback_position,
                                 &callback_paused,
@@ -771,12 +780,10 @@ fn build_realtime_playback_stream(
                                 break;
                             };
 
-                            // Blocks wholly beyond the session tail are part
-                            // of the device drain window and stay silent.
-                            let render_channels = usize::from(callback_mixer.channels);
+                            let render_channels = usize::from(mixer.channels);
                             let sample_count = block_frames * render_channels;
                             let mixed = &mut block_buffer[..sample_count];
-                            callback_mixer.render_block(
+                            mixer.render_block(
                                 &mut render_state,
                                 start_frame,
                                 mixed,
@@ -867,6 +874,14 @@ pub(crate) fn start_realtime_playback(
         ));
     }
 
+    let graph = RealtimeGraph::new(mixer);
+    let initial = graph.load();
+    let sample_rate = initial.mixer().sample_rate;
+    let channels = initial.mixer().channels;
+    let total_frames = usize::try_from(initial.mixer().total_frames)
+        .map_err(|_| AudioError::SizeOverflow)?;
+    drop(initial);
+
     let host = cpal::default_host();
     let device = host
         .default_output_device()
@@ -878,12 +893,11 @@ pub(crate) fn start_realtime_playback(
         .map_err(|error| AudioError::InvalidArgument(format!(
             "cannot query output configurations: {error}"
         )))?
-        .filter(|range| range.channels() >= mixer.channels)
-        .filter_map(|range| range.try_with_sample_rate(mixer.sample_rate))
+        .filter(|range| range.channels() >= channels)
+        .filter_map(|range| range.try_with_sample_rate(sample_rate))
         .next()
         .ok_or_else(|| AudioError::InvalidArgument(format!(
-            "the default output device does not support {} Hz playback",
-            mixer.sample_rate
+            "the default output device does not support {sample_rate} Hz playback"
         )))?;
 
     let output_channels = usize::from(supported.channels());
@@ -900,15 +914,15 @@ pub(crate) fn start_realtime_playback(
     let loop_start_frames = Arc::new(AtomicUsize::new(0));
     let loop_end_frames = Arc::new(AtomicUsize::new(0));
     let stream_error = Arc::new(AtomicU32::new(0));
+    let drain_frames = (sample_rate / 4) as usize;
 
-    let total_frames = mixer.total_frames;
-    let sample_rate = mixer.sample_rate;
     let stream = build_realtime_playback_stream(
         &device,
         config,
         format,
-        Arc::clone(&mixer),
+        Arc::clone(&graph),
         output_channels,
+        drain_frames,
         Arc::clone(&position_frames),
         Arc::clone(&paused),
         Arc::clone(&loop_enabled),
@@ -923,7 +937,8 @@ pub(crate) fn start_realtime_playback(
     let handle = Box::new(AuraAudioPlaybackHandle {
         _stream: stream,
         total_frames,
-        drain_frames: u64::from(sample_rate) / 4,
+        drain_frames,
+        realtime_graph: Some(graph),
         position_frames,
         paused,
         loop_enabled,
@@ -1028,8 +1043,9 @@ pub unsafe extern "C" fn aura_audio_playback_start_wav(
         }
         Ok::<_, AudioError>(Box::into_raw(Box::new(AuraAudioPlaybackHandle {
             _stream: stream,
-            total_frames: total_frames as u64,
-            drain_frames: u64::from(sample_rate) / 4,
+            total_frames,
+            drain_frames: (sample_rate / 4) as usize,
+            realtime_graph: None,
             position_frames,
             paused,
             loop_enabled,
