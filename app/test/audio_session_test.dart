@@ -58,6 +58,61 @@ void main() {
       expect(restored.tracks[1].muted, isTrue);
     });
 
+    test('splits a clip into contiguous source and timeline frame ranges', () {
+      final original = AudioClip(
+        id: 'original',
+        mediaId: 'take.wav',
+        startFrame: 1000,
+        sourceStartFrame: 200,
+        durationFrames: 10000,
+        gain: 0.8,
+        pan: -0.2,
+        fadeInFrames: 500,
+        fadeOutFrames: 700,
+      );
+
+      final parts = original.splitAtFrameOffset(
+        4000,
+        firstId: 'left',
+        secondId: 'right',
+      );
+
+      expect(parts, hasLength(2));
+      expect(parts.first.startFrame, 1000);
+      expect(parts.first.sourceStartFrame, 200);
+      expect(parts.first.durationFrames, 4000);
+      expect(parts.first.fadeInFrames, 500);
+      expect(parts.first.fadeOutFrames, 0);
+      expect(parts.last.startFrame, 5000);
+      expect(parts.last.sourceStartFrame, 4200);
+      expect(parts.last.durationFrames, 6000);
+      expect(parts.last.fadeInFrames, 0);
+      expect(parts.last.fadeOutFrames, 700);
+      expect(parts.every((clip) => clip.mediaId == 'take.wav'), isTrue);
+      expect(parts.every((clip) => clip.gain == 0.8 && clip.pan == -0.2), isTrue);
+    });
+
+    test('rejects split points that cut through an edge fade', () {
+      final original = AudioClip(
+        id: 'original',
+        mediaId: 'take.wav',
+        startFrame: 0,
+        sourceStartFrame: 0,
+        durationFrames: 1000,
+        fadeInFrames: 600,
+        fadeOutFrames: 600,
+      );
+
+      expect(
+        () => original.splitAtFrameOffset(
+          500,
+          firstId: 'left',
+          secondId: 'right',
+        ),
+        throwsArgumentError,
+      );
+    });
+
     test('rejects invalid clip durations and sample rates', () {
       expect(
         () => AudioClip(
