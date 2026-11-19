@@ -1,4 +1,6 @@
 import 'dart:typed_data';
 
-/// Reads a local audio file for native preview or import.
-Future<Uint8List> readAudioFile(String path);
+/// Contract implemented by native and unsupported-platform audio readers.
+abstract interface class AudioFileReader {
+  Future<Uint8List> read(String path);
+}
