@@ -134,7 +134,7 @@ See [docs/PRO_VOICE_STUDIO_ARCHITECTURE.md](docs/PRO_VOICE_STUDIO_ARCHITECTURE.m
 - [x] Initial offline PCM WAV renderer with multitrack mixing, gain/pan, mute/solo, fades and WAV export (native CI verification pending).
 - [ ] Verify the new desktop native-library packaging and Flutter-to-Rust render call through CI.
 - [ ] Flutter media-file access, waveform editor and session-to-render UI workflow.
-- [x] Native microphone device discovery and capture API with a bounded realtime-safe ring (end-to-end CI verification pending).
+- [x] Native microphone device discovery/capture, real-time-safe ring, Flutter input meters and streamed local 24-bit PCM WAV recording (end-to-end CI verification pending).
 - [ ] Record Booth UI, capture-to-WAV/session writing, continuous ring draining, playback and device monitoring.
 - [ ] Native realtime audio graph, DSP effects and restoration.
 - [ ] Production multilingual TTS and optional local inference.
