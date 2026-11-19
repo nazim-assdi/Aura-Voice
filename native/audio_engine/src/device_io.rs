@@ -18,7 +18,7 @@ use cpal::{DeviceId, SampleFormat, Stream};
 
 use crate::{
     set_ffi_error, AudioError, RealtimeMixer, RealtimeRenderState,
-    MAX_REALTIME_BLOCK_FRAMES,
+    MAX_REALTIME_BLOCK_FRAMES, RealtimeGraph,
 };
 
 struct FloatRing {
@@ -477,8 +477,9 @@ pub unsafe extern "C" fn aura_audio_capture_stop(handle: *mut AuraAudioCaptureHa
 /// Opaque OS output stream for standalone WAV or realtime session playback.
 pub struct AuraAudioPlaybackHandle {
     _stream: Stream,
-    total_frames: u64,
-    drain_frames: u64,
+    total_frames: usize,
+    drain_frames: usize,
+    realtime_graph: Option<Arc<RealtimeGraph>>,
     position_frames: Arc<AtomicUsize>,
     paused: Arc<AtomicBool>,
     loop_enabled: Arc<AtomicBool>,
@@ -1065,7 +1066,7 @@ pub unsafe extern "C" fn aura_audio_playback_position_frames(
     // SAFETY: Caller must provide a live playback handle.
     let playback = unsafe { &*handle };
     (playback.position_frames.load(Ordering::Acquire) as u64)
-        .min(playback.total_frames)
+        .min(playback.total_frames as u64)
 }
 
 /// Returns 0 while active (playing, paused or looping), 1 when complete, and 2 after an output stream error.
@@ -1086,7 +1087,7 @@ pub unsafe extern "C" fn aura_audio_playback_status(
     {
         return 0;
     }
-    let drained_until = playback.total_frames.saturating_add(playback.drain_frames);
+    let drained_until = playback.total_frames.saturating_add(playback.drain_frames) as u64;
     if playback.position_frames.load(Ordering::Acquire) as u64 >= drained_until {
         1
     } else {
@@ -1136,7 +1137,7 @@ pub unsafe extern "C" fn aura_audio_playback_seek(
     }
     // SAFETY: Caller must pass a live playback handle and not stop it concurrently.
     let playback = unsafe { &*handle };
-    if frame > playback.total_frames {
+    if frame > playback.total_frames as u64 {
         set_ffi_error("seek frame is beyond the end of the audio");
         return -2;
     }
@@ -1165,7 +1166,7 @@ pub unsafe extern "C" fn aura_audio_playback_set_loop(
     // SAFETY: Caller must pass a live playback handle and not stop it concurrently.
     let playback = unsafe { &*handle };
     if enabled == 1 {
-        if start_frame >= end_frame || end_frame > playback.total_frames {
+        if start_frame >= end_frame || end_frame > playback.total_frames as u64 {
             set_ffi_error("loop range must be non-empty and inside the audio duration");
             return -2;
         }
