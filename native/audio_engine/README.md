@@ -16,7 +16,7 @@ The native-engine foundation for Aura Voice Studio combines deterministic offlin
 - Flutter Record Booth input meters and local 24-bit PCM WAV writer with streamed chunk writes and finalized RIFF headers.
 - Live mono/stereo microphone capture at the input device's default sample rate.
 - A preallocated SPSC sample ring. The audio callback does not allocate, lock, or write files; overflow is reported as dropped frames.
-- C ABI capture start/read/status/stop lifecycle and Dart FFI wrappers for device listing and capture reads.
+- C ABI capture start/pause/read/status/stop lifecycle and Dart FFI wrappers for device listing and capture reads.
 
 ## Build the shared library
 
