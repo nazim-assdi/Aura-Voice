@@ -172,6 +172,9 @@ class AudioTrack {
     this.muted = false,
     this.solo = false,
     this.armed = false,
+    this.highPassHz = 0,
+    this.compressorThreshold = 1,
+    this.compressorRatio = 1,
     List<AudioClip> clips = const [],
   }) : clips = List.unmodifiable(clips) {
     if (id.trim().isEmpty || name.trim().isEmpty) {
@@ -182,6 +185,31 @@ class AudioTrack {
     }
     if (!pan.isFinite || pan < -1 || pan > 1) {
       throw ArgumentError.value(pan, 'pan', 'Must be between -1.0 and 1.0.');
+    }
+    if (!highPassHz.isFinite || highPassHz < 0) {
+      throw ArgumentError.value(
+        highPassHz,
+        'highPassHz',
+        'Must be a finite non-negative cutoff in Hz; 0 disables the filter.',
+      );
+    }
+    if (!compressorThreshold.isFinite ||
+        compressorThreshold < 0.001 ||
+        compressorThreshold > 1) {
+      throw ArgumentError.value(
+        compressorThreshold,
+        'compressorThreshold',
+        'Must be a linear amplitude between 0.001 and 1.0.',
+      );
+    }
+    if (!compressorRatio.isFinite ||
+        compressorRatio < 1 ||
+        compressorRatio > 20) {
+      throw ArgumentError.value(
+        compressorRatio,
+        'compressorRatio',
+        'Must be between 1:1 and 20:1.',
+      );
     }
     final clipIds = this.clips.map((clip) => clip.id).toSet();
     if (clipIds.length != this.clips.length) {
@@ -197,6 +225,9 @@ class AudioTrack {
   final bool muted;
   final bool solo;
   final bool armed;
+  final double highPassHz;
+  final double compressorThreshold;
+  final double compressorRatio;
   final List<AudioClip> clips;
 
   Map<String, Object> toJson() => {
@@ -208,6 +239,9 @@ class AudioTrack {
         'muted': muted,
         'solo': solo,
         'armed': armed,
+        'highPassHz': highPassHz,
+        'compressorThreshold': compressorThreshold,
+        'compressorRatio': compressorRatio,
         'clips': clips.map((clip) => clip.toJson()).toList(),
       };
 
@@ -223,6 +257,11 @@ class AudioTrack {
         muted: json['muted'] as bool? ?? false,
         solo: json['solo'] as bool? ?? false,
         armed: json['armed'] as bool? ?? false,
+        highPassHz: (json['highPassHz'] as num?)?.toDouble() ?? 0,
+        compressorThreshold:
+            (json['compressorThreshold'] as num?)?.toDouble() ?? 1,
+        compressorRatio:
+            (json['compressorRatio'] as num?)?.toDouble() ?? 1,
         clips: (json['clips'] as List<dynamic>? ?? const [])
             .map((item) => AudioClip.fromJson(Map<String, dynamic>.from(item as Map)))
             .toList(),
