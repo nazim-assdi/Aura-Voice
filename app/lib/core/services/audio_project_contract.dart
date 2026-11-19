@@ -25,6 +25,9 @@ abstract interface class AudioProjectStore {
 
   Future<List<AudioProjectSummary>> listProjects();
 
+  /// Finds projects whose clips reference a local media path.
+  Future<List<AudioProjectSummary>> findProjectsUsingMedia(String mediaPath);
+
   Future<void> delete(String path);
 }
 
