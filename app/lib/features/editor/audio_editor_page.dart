@@ -546,6 +546,9 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
       _dragClipId = hit.id;
       _lastDragX = localX;
     });
+    if (_loopEnabled && _playback != null) {
+      unawaited(_syncLoopToSelection());
+    }
   }
 
   void _dragClipToLocalX(double localX) {
