@@ -561,7 +561,10 @@ class _StudioPageState extends State<StudioPage> {
       } catch (error) {
         warning = 'Some buffered audio could not be saved: $error';
       } finally {
-        if (capture != null) await capture.stop();
+        if (capture != null) {
+          _droppedFrames = capture.droppedFrames;
+          await capture.stop();
+        }
       }
       try {
         if (writer != null) path = await writer.finish();
