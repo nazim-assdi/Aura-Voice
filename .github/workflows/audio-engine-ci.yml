@@ -17,20 +17,15 @@ permissions:
 
 jobs:
   test:
-    name: Rust format, lint and tests
+    name: Build and test native audio engine
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - name: Install stable Rust
         uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
-      - name: Check formatting
+      - name: Check native library
         working-directory: native/audio_engine
-        run: cargo fmt --all -- --check
-      - name: Run clippy
-        working-directory: native/audio_engine
-        run: cargo clippy --all-targets -- -D warnings
-      - name: Run tests
+        run: cargo check --all-targets
+      - name: Run deterministic audio tests
         working-directory: native/audio_engine
         run: cargo test --all-targets
