@@ -45,7 +45,7 @@ class FileAudioLibraryService implements AudioLibraryService {
     AudioLibraryRecording recording,
     String newName,
   ) async {
-    _assertManagedPath(recording.path);
+    await _assertManagedPath(recording.path);
     final normalized = _normalizeName(newName);
     if (normalized.isEmpty) {
       throw const AudioLibraryUnavailable('Enter a valid recording name.');
@@ -187,15 +187,20 @@ class FileAudioLibraryService implements AudioLibraryService {
     );
   }
 
-  void _assertManagedPath(String path) {
-    final root = Directory(_directoryPath).absolute.path;
-    final candidate = File(path).absolute.path;
+  Future<void> _assertManagedPath(String path) async {
+    final file = File(path);
+    if (!_isManagedWav(path) || !await file.exists()) {
+      throw const AudioLibraryUnavailable(
+        'Only existing WAV recordings can be changed.',
+      );
+    }
+    final root = await Directory(_directoryPath).resolveSymbolicLinks();
+    final candidate = await file.resolveSymbolicLinks();
     final separator = Platform.pathSeparator;
     final normalizedRoot = Platform.isWindows ? root.toLowerCase() : root;
     final normalizedCandidate =
         Platform.isWindows ? candidate.toLowerCase() : candidate;
-    if (!normalizedCandidate.startsWith('$normalizedRoot$separator') ||
-        !_isManagedWav(candidate)) {
+    if (!normalizedCandidate.startsWith('$normalizedRoot$separator')) {
       throw const AudioLibraryUnavailable(
         'Only WAV recordings inside the Aura Voice Studio library can be changed.',
       );
