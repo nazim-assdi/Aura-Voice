@@ -132,7 +132,7 @@ See [docs/PRO_VOICE_STUDIO_ARCHITECTURE.md](docs/PRO_VOICE_STUDIO_ARCHITECTURE.m
 - [x] Flutter/FastAPI foundation, health/capabilities and safe provider contract.
 - [x] Voice-studio dashboard, versioned sample-frame session model and serialization tests.
 - [x] Initial offline PCM WAV renderer with multitrack mixing, gain/pan, mute/solo, fades and WAV export (native CI verification pending).
-- [ ] Package the compiled native library into desktop application bundles and verify the Flutter-to-Rust render call end to end.
+- [ ] Verify the new desktop native-library packaging and Flutter-to-Rust render call through CI.
 - [ ] Flutter media-file access, waveform editor and session-to-render UI workflow.
 - [ ] Real microphone capture, low-latency playback and device monitoring.
 - [ ] Native realtime audio graph, DSP effects and restoration.
