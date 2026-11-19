@@ -1,26 +1,37 @@
 # Aura Audio Engine
 
-The first native-engine milestone for Aura Voice Studio is a dependency-free Rust library for deterministic **offline PCM WAV rendering**.
+The first native-engine milestone for Aura Voice Studio is a dependency-free Rust library for deterministic offline PCM WAV rendering, exposed through both a Rust API and a C ABI.
 
-## Implemented in this milestone
+## Implemented
 
-- Decode RIFF/WAVE PCM integer audio at 8/16/24/32 bits and IEEE float32 audio.
-- Validate mono/stereo sample buffers, sample rates and frame alignment.
-- Arrange clips on exact sample-frame positions.
-- Mix multiple tracks with clip/track/master gain, pan, mute and solo.
-- Apply linear clip fade-in and fade-out envelopes.
-- Report sample peak and samples exceeding full scale before export.
-- Export interleaved PCM WAV at 16/24/32 bits.
+- Decode PCM integer WAV (8/16/24/32-bit) and IEEE float32 WAV.
+- Validate mono/stereo buffers, sample rates and frame alignment.
+- Arrange clips at exact sample-frame positions.
+- Mix tracks using clip/track/master gain, pan, mute, solo and clip fades.
+- Report sample peak and samples over full scale before export.
+- Export integer PCM WAV at 16/24/32-bit.
+- C ABI for creating/destroying render sessions, loading WAV assets, adding tracks/clips, rendering output and releasing returned buffers.
+- Public C header at `include/aura_audio_engine.h`.
 
-## Deliberate limits
-
-This crate does not yet capture a microphone, play audio through a device, resample, decode compressed MP3/AAC/FLAC, provide realtime effects, or perform true-peak/loudness analysis. Assets must be decoded to the session sample rate before mixing. Export does not silently normalize; it reports overload and clamps only when quantizing the WAV file.
-
-## Run tests
+## Build the shared library
 
 ```bash
-cd native/audio_engine
-cargo test
+cargo build --release
 ```
 
-This is the offline render core only. Platform audio I/O and the stable Flutter FFI bridge are separate upcoming milestones.
+Outputs are written under `target/release`:
+- Windows: `aura_audio_engine.dll`
+- macOS: `libaura_audio_engine.dylib`
+- Linux: `libaura_audio_engine.so`
+
+The shared library must be placed beside the Flutter desktop executable (or on the platform loader path). The Flutter service checks the ABI version before calling it.
+
+## Test
+
+```bash
+cargo test --all-targets
+```
+
+## Current limitations
+
+The engine is an offline renderer, not a live recording engine. It does not yet capture microphone input, play through audio devices, resample, decode compressed MP3/AAC/FLAC, or provide realtime DSP. Input assets must already be WAV and match the session sample rate. The current mixer supports mono/stereo output.
