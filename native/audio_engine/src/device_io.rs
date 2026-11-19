@@ -386,6 +386,33 @@ pub unsafe extern "C" fn aura_audio_capture_start(
     }
 }
 
+/// Pauses the input stream while keeping buffered frames available to read.
+#[no_mangle]
+pub unsafe extern "C" fn aura_audio_capture_pause(
+    handle: *mut AuraAudioCaptureHandle,
+) -> i32 {
+    if handle.is_null() {
+        set_ffi_error("capture handle is null");
+        return -1;
+    }
+    // SAFETY: Caller guarantees a live handle and no concurrent stop operation.
+    let capture = unsafe { &*handle };
+    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| capture._stream.pause())) {
+        Ok(Ok(())) => {
+            set_ffi_error("");
+            0
+        }
+        Ok(Err(error)) => {
+            set_ffi_error(&error.to_string());
+            -1
+        }
+        Err(_) => {
+            set_ffi_error("failed to pause microphone capture");
+            -2
+        }
+    }
+}
+
 /// Reads up to max_frames from the capture ring. Returns actual frames read.
 #[no_mangle]
 pub unsafe extern "C" fn aura_audio_capture_read(
