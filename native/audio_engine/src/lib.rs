@@ -1393,6 +1393,34 @@ pub unsafe extern "C" fn aura_engine_realtime_playback_start(
     }
 }
 
+/// Atomically publishes a newly prepared session graph to a running
+/// multitrack playback stream. Source WAV decoding and graph validation happen
+/// before publication; the output callback switches at the next block boundary.
+#[no_mangle]
+pub unsafe extern "C" fn aura_audio_playback_replace_session(
+    playback: *mut device_io::AuraAudioPlaybackHandle,
+    session_handle: *mut AuraEngineHandle,
+    out_total_frames: *mut u64,
+) -> i32 {
+    ffi_status(|| {
+        if playback.is_null() || session_handle.is_null() || out_total_frames.is_null() {
+            return Err(AudioError::InvalidArgument(
+                "playback, session and output pointers must not be null".into(),
+            ));
+        }
+        // SAFETY: Caller supplies live playback/session handles and a writable output slot.
+        let engine = unsafe { &mut *session_handle };
+        let assets = std::mem::take(&mut engine.assets);
+        let mixer = build_realtime_mixer_owned(&engine.session, assets)?;
+        let total_frames = unsafe {
+            device_io::replace_realtime_session(playback, mixer)?
+        };
+        // SAFETY: Output pointer was validated and is writable by the C ABI contract.
+        unsafe { *out_total_frames = total_frames; }
+        Ok(())
+    })
+}
+
 /// Frees a buffer allocated by aura_engine_render_wav.
 ///
 /// # Safety
