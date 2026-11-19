@@ -1774,12 +1774,13 @@ class _WaveformPainter extends CustomPainter {
     final slotWidth = size.width / peaks.length;
     final paint = Paint()
       ..color = AuraTheme.mint
-      ..strokeWidth = math.max(1.0, slotWidth * 0.64)
+      ..strokeWidth = math.max(1.0, slotWidth * 0.64).toDouble()
       ..strokeCap = StrokeCap.round;
 
     for (var index = 0; index < peaks.length; index++) {
       final peak = peaks[index].clamp(0.0, 1.0).toDouble();
-      final halfHeight = math.max(1.0, peak * (size.height * 0.46));
+      final halfHeight =
+          math.max(1.0, peak * (size.height * 0.46)).toDouble();
       final x = (index + 0.5) * slotWidth;
       canvas.drawLine(
         Offset(x, centerY - halfHeight),
