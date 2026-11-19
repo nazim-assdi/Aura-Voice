@@ -1282,6 +1282,22 @@ class _LibraryPageState extends State<LibraryPage> {
   }
 
   Future<void> _rename(AudioLibraryRecording recording) async {
+    try {
+      final references = await _projects.findProjectsUsingMedia(recording.path);
+      if (references.isNotEmpty) {
+        if (mounted) {
+          setState(() {
+            _message =
+                'Cannot rename this recording yet. It is used by ${references.length} saved session(s): '
+                '${references.map((item) => item.title).join(', ')}.';
+          });
+        }
+        return;
+      }
+    } catch (error) {
+      if (mounted) setState(() => _message = error.toString());
+      return;
+    }
     if (_playingPath == recording.path) await _stopPlayback();
     final controller = TextEditingController(text: recording.name);
     final name = await showDialog<String>(
@@ -1421,8 +1437,17 @@ class _LibraryPageState extends State<LibraryPage> {
       ),
     );
     if (confirmed != true || !mounted) return;
-    if (_playingPath == recording.path) await _stopPlayback();
     try {
+      final references = await _projects.findProjectsUsingMedia(recording.path);
+      if (references.isNotEmpty) {
+        setState(() {
+          _message =
+              'Cannot delete this recording yet. It is used by ${references.length} saved session(s): '
+              '${references.map((item) => item.title).join(', ')}.';
+        });
+        return;
+      }
+      if (_playingPath == recording.path) await _stopPlayback();
       await _library.deleteRecording(recording);
       if (!mounted) return;
       setState(() {
