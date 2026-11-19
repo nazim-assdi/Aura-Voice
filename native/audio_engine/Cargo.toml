@@ -1,0 +1,14 @@
+[package]
+name = "aura-audio-engine"
+version = "0.1.0"
+edition = "2021"
+description = "Deterministic PCM audio session renderer for Aura Voice Studio"
+license = "MIT"
+
+[lib]
+name = "aura_audio_engine"
+path = "src/lib.rs"
+
+[profile.release]
+lto = true
+codegen-units = 1
