@@ -253,6 +253,16 @@ AudioRenderResult _renderInWorker(
             track.solo ? 1 : 0,
           ),
         );
+        _checkStatus(
+          api,
+          api.setTrackDsp(
+            handle,
+            id,
+            track.highPassHz,
+            track.compressorThreshold,
+            track.compressorRatio,
+          ),
+        );
       } finally {
         calloc.free(id);
       }
@@ -375,6 +385,16 @@ Map<String, int> _startRealtimePlaybackInWorker(
             track.solo ? 1 : 0,
           ),
         );
+        _checkStatus(
+          api,
+          api.setTrackDsp(
+            handle,
+            trackId,
+            track.highPassHz,
+            track.compressorThreshold,
+            track.compressorRatio,
+          ),
+        );
       } finally {
         calloc.free(trackId);
       }
@@ -472,6 +492,16 @@ int _replaceRealtimeSessionInWorker(
             track.pan,
             track.muted ? 1 : 0,
             track.solo ? 1 : 0,
+          ),
+        );
+        _checkStatus(
+          api,
+          api.setTrackDsp(
+            builder,
+            trackId,
+            track.highPassHz,
+            track.compressorThreshold,
+            track.compressorRatio,
           ),
         );
       } finally {
@@ -836,6 +866,10 @@ class _NativeApi {
         _addTrack = library.lookupFunction<_AddTrackNative, _AddTrackDart>(
           'aura_engine_add_track',
         ),
+        _setTrackDsp =
+            library.lookupFunction<_SetTrackDspNative, _SetTrackDspDart>(
+          'aura_engine_set_track_dsp',
+        ),
         _addClip = library.lookupFunction<_AddClipNative, _AddClipDart>(
           'aura_engine_add_clip',
         ),
@@ -907,6 +941,13 @@ class _NativeApi {
     int,
     int,
   ) _addTrack;
+  final int Function(
+    Pointer<Void>,
+    Pointer<Utf8>,
+    double,
+    double,
+    double,
+  ) _setTrackDsp;
   final int Function(
     Pointer<Void>,
     Pointer<Utf8>,
@@ -1006,6 +1047,21 @@ class _NativeApi {
     int solo,
   ) =>
       _addTrack(handle, id, gain, pan, muted, solo);
+
+  int setTrackDsp(
+    Pointer<Void> handle,
+    Pointer<Utf8> id,
+    double highPassHz,
+    double compressorThreshold,
+    double compressorRatio,
+  ) =>
+      _setTrackDsp(
+        handle,
+        id,
+        highPassHz,
+        compressorThreshold,
+        compressorRatio,
+      );
 
   int addClip(
     Pointer<Void> handle,
@@ -1234,6 +1290,21 @@ typedef _AddTrackDart = int Function(
   double,
   int,
   int,
+);
+
+typedef _SetTrackDspNative = Int32 Function(
+  Pointer<Void>,
+  Pointer<Utf8>,
+  Float,
+  Float,
+  Float,
+);
+typedef _SetTrackDspDart = int Function(
+  Pointer<Void>,
+  Pointer<Utf8>,
+  double,
+  double,
+  double,
 );
 
 typedef _AddClipNative = Int32 Function(
