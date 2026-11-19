@@ -56,6 +56,19 @@ abstract interface class AudioPlaybackSession {
   int get positionFrames;
   bool get isComplete;
   bool get hasError;
+  bool get isPaused;
+
+  Future<void> pause();
+  Future<void> resume();
+  Future<void> seek(int frame);
+
+  /// Enables or disables a sample-frame loop range. When enabled,
+  /// [startFrame] must be lower than [endFrame] and inside the rendered mix.
+  Future<void> setLoopRange({
+    required int startFrame,
+    required int endFrame,
+    required bool enabled,
+  });
 
   Future<void> stop();
 }
