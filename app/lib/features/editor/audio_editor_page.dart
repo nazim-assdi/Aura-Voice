@@ -1854,7 +1854,7 @@ class _TrackDspPanel extends StatelessWidget {
               const SizedBox(width: 7),
               Expanded(
                 child: Text(
-                  '\${track.name} · Track Processing',
+                  '${track.name} · Track Processing',
                   style: Theme.of(context).textTheme.labelLarge?.copyWith(
                         fontWeight: FontWeight.w700,
                       ),
@@ -1876,7 +1876,7 @@ class _TrackDspPanel extends StatelessWidget {
             max: maxHighPass,
             valueLabel: highPass == 0
                 ? 'Off'
-                : '\${highPass.round()} Hz',
+                : '${highPass.round()} Hz',
             onChanged: onHighPassChanged,
             onChangeStart: onTransactionStart,
             onChangeEnd: onTransactionEnd,
@@ -1887,7 +1887,7 @@ class _TrackDspPanel extends StatelessWidget {
             min: 0.001,
             max: 1,
             valueLabel:
-                '\${(track.compressorThreshold * 100).toStringAsFixed(1)}%',
+                '${(track.compressorThreshold * 100).toStringAsFixed(1)}%',
             onChanged: onThresholdChanged,
             onChangeStart: onTransactionStart,
             onChangeEnd: onTransactionEnd,
@@ -1899,7 +1899,7 @@ class _TrackDspPanel extends StatelessWidget {
             max: 20,
             valueLabel: track.compressorRatio == 1
                 ? 'Off · 1:1'
-                : '\${track.compressorRatio.toStringAsFixed(1)}:1',
+                : '${track.compressorRatio.toStringAsFixed(1)}:1',
             onChanged: onRatioChanged,
             onChangeStart: onTransactionStart,
             onChangeEnd: onTransactionEnd,
