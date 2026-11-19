@@ -80,10 +80,17 @@ uint64_t aura_audio_capture_dropped_frames(const AuraAudioCaptureHandle *handle)
 uint32_t aura_audio_capture_status(const AuraAudioCaptureHandle *handle);
 void aura_audio_capture_stop(AuraAudioCaptureHandle *handle);
 
-/* Decoded WAV output through the default device.
- * Supports sample-frame pause/resume, seek and loop-range controls.
- * The multitrack session is still rendered offline before this stream starts. */
+/* Default-device playback. Session playback mixes clips directly in the CPAL
+ * callback; standalone WAV preview decodes one WAV before starting output.
+ * Both streams support sample-frame pause/resume, seek and loop-range controls. */
 typedef struct AuraAudioPlaybackHandle AuraAudioPlaybackHandle;
+
+/* Starts direct callback-driven playback of the registered session.
+ * Decoded clip buffers are mixed on the audio callback; no mix WAV is rendered. */
+AuraAudioPlaybackHandle *aura_engine_realtime_playback_start(
+    AuraEngineHandle *handle,
+    uint64_t *out_total_frames
+);
 
 AuraAudioPlaybackHandle *aura_audio_playback_start_wav(
     const uint8_t *wav_data,
