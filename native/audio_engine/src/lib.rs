@@ -1129,7 +1129,6 @@ pub unsafe extern "C" fn aura_engine_realtime_playback_start(
             ));
         }
         // SAFETY: Caller supplies a live engine handle and writable output slot.
-        let engine = unsafe { &*handle };
         let engine = unsafe { &mut *handle };
         let assets = std::mem::take(&mut engine.assets);
         let mixer = build_realtime_mixer_owned(&engine.session, assets)?;
