@@ -50,6 +50,8 @@ class FileAudioRecordingWriter implements AudioRecordingWriter {
 
     _sampleRate = sampleRate;
     _channels = channels;
+    _dataBytes = 0;
+    _finished = false;
     final directory = Directory(
       directoryPath ?? _requestedDirectoryPath ?? _defaultRecordingDirectory(),
     );
