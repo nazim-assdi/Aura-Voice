@@ -101,6 +101,12 @@ jobs:
           flutter create --platforms=linux .
           flutter pub get
           flutter build linux --release
+      - name: Install stable Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Build and bundle native audio engine
+        run: |
+          cargo build --manifest-path native/audio_engine/Cargo.toml --release
+          cp native/audio_engine/target/release/libaura_audio_engine.so app/build/linux/x64/release/bundle/
       - name: Package Linux bundle
         run: |
           cd app/build/linux/x64/release/bundle
@@ -125,6 +131,13 @@ jobs:
           flutter create --platforms=windows .
           flutter pub get
           flutter build windows --release
+      - name: Install stable Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Build and bundle native audio engine
+        shell: pwsh
+        run: |
+          cargo build --manifest-path native/audio_engine/Cargo.toml --release
+          Copy-Item native/audio_engine/target/release/aura_audio_engine.dll app/build/windows/x64/runner/Release/
       - name: Package Windows bundle
         shell: pwsh
         run: Compress-Archive -Path app/build/windows/x64/runner/Release/* -DestinationPath aura-voice-windows-x64.zip -Force
@@ -149,6 +162,12 @@ jobs:
           flutter pub get
           flutter build macos --release
           flutter build ios --release --no-codesign
+      - name: Install stable Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Build and bundle native audio engine in macOS app
+        run: |
+          cargo build --manifest-path native/audio_engine/Cargo.toml --release
+          cp native/audio_engine/target/release/libaura_audio_engine.dylib app/build/macos/Build/Products/Release/aura_voice_ai.app/Contents/MacOS/
       - name: Package macOS app
         run: ditto -c -k --sequesterRsrc --keepParent app/build/macos/Build/Products/Release/aura_voice_ai.app aura-voice-macos.zip
       - name: Package unsigned iOS app
