@@ -7,6 +7,7 @@ import 'package:material_ui/material_ui.dart';
 import '../../core/services/api_client.dart';
 import '../../core/services/audio_engine_service.dart';
 import '../../core/services/audio_file_service.dart';
+import '../../core/services/audio_library_service.dart';
 import '../../core/services/audio_recording_service.dart';
 import '../../core/theme/aura_theme.dart';
 
@@ -1105,12 +1106,16 @@ class _LibraryPageState extends State<LibraryPage> {
     switch (_sortBy) {
       case 'name':
         items.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+        break;
       case 'longest':
         items.sort((a, b) => b.duration.compareTo(a.duration));
+        break;
       case 'largest':
         items.sort((a, b) => b.sizeBytes.compareTo(a.sizeBytes));
+        break;
       default:
         items.sort((a, b) => b.modifiedAt.compareTo(a.modifiedAt));
+        break;
     }
     return items;
   }
