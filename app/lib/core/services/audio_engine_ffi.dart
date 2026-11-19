@@ -430,6 +430,103 @@ Map<String, int> _startRealtimePlaybackInWorker(
   }
 }
 
+int _replaceRealtimeSessionInWorker(
+  int playbackAddress,
+  Map<String, Object> sessionJson,
+  Map<String, Uint8List> assetWavs,
+) {
+  final api = _NativeApi.open();
+  final session = AudioSession.fromJson(
+    Map<String, dynamic>.from(sessionJson),
+  );
+  final builder = api.create(session.sampleRate, session.channels);
+  if (builder == nullptr) {
+    throw AudioEngineUnavailable(api.lastError());
+  }
+
+  try {
+    for (final entry in assetWavs.entries) {
+      final id = entry.key.toNativeUtf8();
+      final data = calloc<Uint8>(entry.value.length);
+      try {
+        data.asTypedList(entry.value.length).setAll(0, entry.value);
+        _checkStatus(
+          api,
+          api.addWavAsset(builder, id, data, entry.value.length),
+        );
+      } finally {
+        calloc.free(data);
+        calloc.free(id);
+      }
+    }
+
+    for (final track in session.tracks) {
+      final trackId = track.id.toNativeUtf8();
+      try {
+        _checkStatus(
+          api,
+          api.addTrack(
+            builder,
+            trackId,
+            track.gain,
+            track.pan,
+            track.muted ? 1 : 0,
+            track.solo ? 1 : 0,
+          ),
+        );
+      } finally {
+        calloc.free(trackId);
+      }
+
+      for (final clip in track.clips) {
+        final nativeTrackId = track.id.toNativeUtf8();
+        final clipId = clip.id.toNativeUtf8();
+        final assetId = clip.mediaId.toNativeUtf8();
+        try {
+          _checkStatus(
+            api,
+            api.addClip(
+              builder,
+              nativeTrackId,
+              clipId,
+              assetId,
+              clip.startFrame,
+              clip.sourceStartFrame,
+              clip.durationFrames,
+              clip.gain,
+              clip.pan,
+              clip.muted ? 1 : 0,
+              clip.fadeInFrames,
+              clip.fadeOutFrames,
+            ),
+          );
+        } finally {
+          calloc.free(nativeTrackId);
+          calloc.free(clipId);
+          calloc.free(assetId);
+        }
+      }
+    }
+
+    final totalFrames = calloc<Uint64>();
+    try {
+      _checkStatus(
+        api,
+        api.playbackReplaceSession(
+          Pointer<Void>.fromAddress(playbackAddress),
+          builder,
+          totalFrames,
+        ),
+      );
+      return totalFrames.value;
+    } finally {
+      calloc.free(totalFrames);
+    }
+  } finally {
+    api.destroy(builder);
+  }
+}
+
 void _checkStatus(_NativeApi api, int status) {
   if (status != 0) {
     throw AudioEngineUnavailable(api.lastError());
@@ -441,20 +538,22 @@ class FfiAudioPlaybackSession implements AudioPlaybackSession {
     required _NativeApi api,
     required Pointer<Void> handle,
     required this.sampleRate,
-    required this.totalFrames,
+    required int totalFrames,
   })  : _api = api,
-        _handle = handle;
+        _handle = handle,
+        _totalFrames = totalFrames;
 
   final _NativeApi _api;
   Pointer<Void> _handle;
   bool _stopped = false;
   bool _paused = false;
+  int _totalFrames;
 
   @override
   final int sampleRate;
 
   @override
-  final int totalFrames;
+  int get totalFrames => _totalFrames;
 
   @override
   int get positionFrames =>
@@ -523,6 +622,35 @@ class FfiAudioPlaybackSession implements AudioPlaybackSession {
       enabled ? 1 : 0,
     );
     if (status != 0) throw AudioEngineUnavailable(_api.lastError());
+  }
+
+  @override
+  Future<void> replaceSession({
+    required AudioSession session,
+    required Map<String, Uint8List> assetWavs,
+  }) async {
+    _checkActive();
+    var totalBytes = 0;
+    const maximumRealtimeInputBytes = 536870912;
+    final workerAssets = <String, Uint8List>{};
+    for (final entry in assetWavs.entries) {
+      if (entry.value.length > maximumRealtimeInputBytes - totalBytes) {
+        throw const AudioEngineUnavailable(
+          'Realtime graph updates are limited to 512 MiB of source WAV data per session.',
+        );
+      }
+      totalBytes += entry.value.length;
+      workerAssets[entry.key] = entry.value;
+    }
+    final sessionJson = session.toJson();
+    final nextTotalFrames = await Isolate.run(
+      () => _replaceRealtimeSessionInWorker(
+        _handle.address,
+        sessionJson,
+        workerAssets,
+      ),
+    );
+    _totalFrames = nextTotalFrames;
   }
 
   @override
@@ -631,6 +759,11 @@ class _NativeApi {
             _PlaybackStartWavNative,
             _PlaybackStartWavDart>(
           'aura_audio_playback_start_wav',
+        ),
+        _playbackReplaceSession = library.lookupFunction<
+            _PlaybackReplaceSessionNative,
+            _PlaybackReplaceSessionDart>(
+          'aura_audio_playback_replace_session',
         ),
         _playbackPositionFrames = library.lookupFunction<
             _PlaybackPositionFramesNative,
@@ -742,6 +875,8 @@ class _NativeApi {
     Pointer<Uint32>,
     Pointer<Uint64>,
   ) _playbackStartWav;
+  final int Function(Pointer<Void>, Pointer<Void>, Pointer<Uint64>)
+      _playbackReplaceSession;
   final int Function(Pointer<Void>) _playbackPositionFrames;
   final int Function(Pointer<Void>) _playbackStatus;
   final int Function(Pointer<Void>) _playbackPause;
@@ -819,6 +954,13 @@ class _NativeApi {
     Pointer<Uint64> totalFrames,
   ) =>
       _playbackStartWav(bytes, length, sampleRate, totalFrames);
+  int playbackReplaceSession(
+    Pointer<Void> playback,
+    Pointer<Void> builder,
+    Pointer<Uint64> totalFrames,
+  ) =>
+      _playbackReplaceSession(playback, builder, totalFrames);
+
   int playbackPositionFrames(Pointer<Void> handle) =>
       _playbackPositionFrames(handle);
   int playbackStatus(Pointer<Void> handle) => _playbackStatus(handle);
@@ -987,6 +1129,17 @@ typedef _PlaybackStartWavDart = Pointer<Void> Function(
   Pointer<Uint8>,
   int,
   Pointer<Uint32>,
+  Pointer<Uint64>,
+);
+
+typedef _PlaybackReplaceSessionNative = Int32 Function(
+  Pointer<Void>,
+  Pointer<Void>,
+  Pointer<Uint64>,
+);
+typedef _PlaybackReplaceSessionDart = int Function(
+  Pointer<Void>,
+  Pointer<Void>,
   Pointer<Uint64>,
 );
 
