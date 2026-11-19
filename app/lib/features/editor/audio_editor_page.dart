@@ -14,11 +14,18 @@ import '../session/models/audio_session.dart';
 
 class AudioEditorPage extends StatefulWidget {
   const AudioEditorPage({
-    required this.initialRecording,
+    this.initialRecording,
+    this.initialSession,
+    this.initialProjectPath,
     super.key,
-  });
+  }) : assert(
+          (initialRecording == null) != (initialSession == null),
+          'Provide either an initial recording or an existing session.',
+        );
 
-  final AudioLibraryRecording initialRecording;
+  final AudioLibraryRecording? initialRecording;
+  final AudioSession? initialSession;
+  final String? initialProjectPath;
 
   @override
   State<AudioEditorPage> createState() => _AudioEditorPageState();
@@ -51,33 +58,50 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
     _projects = createAudioProjectStore();
     _waveforms = createAudioWaveformService();
 
-    final recording = widget.initialRecording;
-    final trackId = 'track-${DateTime.now().microsecondsSinceEpoch}';
-    final clip = AudioClip(
-      id: 'clip-${DateTime.now().microsecondsSinceEpoch}',
-      mediaId: recording.path,
-      startFrame: 0,
-      sourceStartFrame: 0,
-      durationFrames: recording.frameCount,
-    );
-    _session = AudioSession(
-      id: 'project-${DateTime.now().microsecondsSinceEpoch}',
-      title: recording.name,
-      sampleRate: recording.sampleRate,
-      channels: recording.channels,
-      bitDepth: 24,
-      tracks: [
-        AudioTrack(
-          id: trackId,
-          name: 'Voice 1',
-          kind: AudioTrackKind.voice,
-          clips: [clip],
-        ),
-      ],
-    );
-    _selectedTrackId = trackId;
-    _selectedClipId = clip.id;
-    unawaited(_loadWaveform(recording.path));
+    final existingSession = widget.initialSession;
+    if (existingSession != null) {
+      _session = existingSession;
+      _projectPath = widget.initialProjectPath;
+      if (_session.tracks.isNotEmpty) {
+        _selectedTrackId = _session.tracks.first.id;
+        if (_session.tracks.first.clips.isNotEmpty) {
+          _selectedClipId = _session.tracks.first.clips.first.id;
+        }
+      }
+      for (final track in _session.tracks) {
+        for (final clip in track.clips) {
+          unawaited(_loadWaveform(clip.mediaId));
+        }
+      }
+    } else {
+      final recording = widget.initialRecording!;
+      final trackId = 'track-${DateTime.now().microsecondsSinceEpoch}';
+      final clip = AudioClip(
+        id: 'clip-${DateTime.now().microsecondsSinceEpoch}',
+        mediaId: recording.path,
+        startFrame: 0,
+        sourceStartFrame: 0,
+        durationFrames: recording.frameCount,
+      );
+      _session = AudioSession(
+        id: 'project-${DateTime.now().microsecondsSinceEpoch}',
+        title: recording.name,
+        sampleRate: recording.sampleRate,
+        channels: recording.channels,
+        bitDepth: 24,
+        tracks: [
+          AudioTrack(
+            id: trackId,
+            name: 'Voice 1',
+            kind: AudioTrackKind.voice,
+            clips: [clip],
+          ),
+        ],
+      );
+      _selectedTrackId = trackId;
+      _selectedClipId = clip.id;
+      unawaited(_loadWaveform(recording.path));
+    }
   }
 
   @override
