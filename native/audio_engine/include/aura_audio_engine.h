@@ -80,7 +80,9 @@ uint64_t aura_audio_capture_dropped_frames(const AuraAudioCaptureHandle *handle)
 uint32_t aura_audio_capture_status(const AuraAudioCaptureHandle *handle);
 void aura_audio_capture_stop(AuraAudioCaptureHandle *handle);
 
-/* Offline WAV audition through the default audio output device. */
+/* Decoded WAV output through the default device.
+ * Supports sample-frame pause/resume, seek and loop-range controls.
+ * The multitrack session is still rendered offline before this stream starts. */
 typedef struct AuraAudioPlaybackHandle AuraAudioPlaybackHandle;
 
 AuraAudioPlaybackHandle *aura_audio_playback_start_wav(
