@@ -265,7 +265,7 @@ fn parse_wav(bytes: &[u8]) -> Result<(u16, u16, u32, u16, &[u8]), AudioError> {
         return Err(AudioError::InvalidWave("RIFF size exceeds available data".into()));
     }
 
-    let mut format: Option<(u16, u16, u32, u16, u16)> = None;
+    let mut format: Option<(u16, u16, u32, u16)> = None;
     let mut audio_data: Option<&[u8]> = None;
     let mut offset = 12_usize;
 
@@ -286,20 +286,22 @@ fn parse_wav(bytes: &[u8]) -> Result<(u16, u16, u32, u16, &[u8]), AudioError> {
                 if chunk_size < 16 {
                     return Err(AudioError::InvalidWave("fmt chunk is shorter than 16 bytes".into()));
                 }
-                format = Some((
-                    read_u16(bytes, chunk_start)?,
-                    read_u16(bytes, chunk_start + 2)?,
-                    read_u32(bytes, chunk_start + 4)?,
-                    read_u32(bytes, chunk_start + 8)? as u16,
-                    read_u16(bytes, chunk_start + 14)?,
-                ));
-                let expected_align = u32::from(read_u16(bytes, chunk_start + 2)?)
-                    .checked_mul(u32::from(read_u16(bytes, chunk_start + 14)? / 8))
+                let format_tag = read_u16(bytes, chunk_start)?;
+                let channel_count = read_u16(bytes, chunk_start + 2)?;
+                let sample_rate = read_u32(bytes, chunk_start + 4)?;
+                let byte_rate = read_u32(bytes, chunk_start + 8)?;
+                let actual_align = read_u16(bytes, chunk_start + 12)?;
+                let bits_per_sample = read_u16(bytes, chunk_start + 14)?;
+                let expected_align = channel_count
+                    .checked_mul(bits_per_sample / 8)
                     .ok_or(AudioError::SizeOverflow)?;
-                let actual_align = u32::from(read_u16(bytes, chunk_start + 12)?);
-                if expected_align != actual_align {
-                    return Err(AudioError::InvalidWave("inconsistent block alignment".into()));
+                let expected_byte_rate = sample_rate
+                    .checked_mul(u32::from(expected_align))
+                    .ok_or(AudioError::SizeOverflow)?;
+                if expected_align != actual_align || expected_byte_rate != byte_rate {
+                    return Err(AudioError::InvalidWave("inconsistent WAV byte rate or block alignment".into()));
                 }
+                format = Some((format_tag, channel_count, sample_rate, bits_per_sample));
             }
             b"data" if audio_data.is_none() => {
                 audio_data = Some(&bytes[chunk_start..chunk_end]);
@@ -310,11 +312,9 @@ fn parse_wav(bytes: &[u8]) -> Result<(u16, u16, u32, u16, &[u8]), AudioError> {
         offset = chunk_end.checked_add(chunk_size & 1).ok_or(AudioError::SizeOverflow)?;
     }
 
-    let (format_tag, channels, sample_rate, _byte_rate_low, bits_per_sample) =
+    let (format_tag, channels, sample_rate, bits_per_sample) =
         format.ok_or(AudioError::MissingWaveChunk("fmt"))?;
     let data = audio_data.ok_or(AudioError::MissingWaveChunk("data"))?;
-    let byte_rate = read_u32(bytes, 12 + 8)?;
-    let _ = byte_rate;
     Ok((format_tag, channels, sample_rate, bits_per_sample, data))
 }
 
