@@ -59,6 +59,9 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
   int _transportTotalFrames = 0;
   int? _seekPreviewFrame;
   Timer? _autosaveTimer;
+  Timer? _realtimeGraphTimer;
+  bool _publishingRealtimeGraph = false;
+  bool _realtimeGraphDirty = false;
   bool _autosaving = false;
   int _editRevision = 0;
   int _autosavedRevision = -1;
@@ -130,6 +133,7 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
   void dispose() {
     _playbackTimer?.cancel();
     _autosaveTimer?.cancel();
+    _realtimeGraphTimer?.cancel();
     final playback = _playback;
     _playback = null;
     if (playback != null) unawaited(playback.stop());
@@ -245,6 +249,7 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
       _editRevision++;
     });
     _scheduleAutosave();
+    _scheduleRealtimeGraphUpdate();
   }
 
   void _restoreHistorySession(AudioSession restored) {
@@ -261,6 +266,7 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
       _editRevision++;
     });
     _scheduleAutosave();
+    _scheduleRealtimeGraphUpdate();
   }
 
   void _undo() {
@@ -277,6 +283,114 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
     _pushHistory(_undoStack, _cloneSession(_session));
     _restoreHistorySession(_redoStack.removeLast());
     setState(() => _message = 'Redo complete.');
+  }
+
+  void _scheduleRealtimeGraphUpdate() {
+    if (_playback == null || !mounted) return;
+    _realtimeGraphDirty = true;
+    _realtimeGraphTimer?.cancel();
+    _realtimeGraphTimer = Timer(
+      const Duration(milliseconds: 180),
+      () => unawaited(_publishRealtimeGraphUpdate()),
+    );
+  }
+
+  Future<Map<String, Uint8List>> _readAudibleAssets(
+    AudioSession session,
+  ) async {
+    final result = <String, Uint8List>{};
+    var totalBytes = 0;
+    const maximumBytes = 536870912;
+    final hasAudibleSolo =
+        session.tracks.any((track) => track.solo && !track.muted);
+    for (final track in session.tracks) {
+      if (track.muted || (hasAudibleSolo && !track.solo)) continue;
+      for (final clip in track.clips) {
+        if (clip.muted || result.containsKey(clip.mediaId)) continue;
+        final bytes = await readAudioFile(clip.mediaId);
+        if (bytes.length > maximumBytes - totalBytes) {
+          throw const AudioEngineUnavailable(
+            'Realtime playback is limited to 512 MiB of source WAV data per session.',
+          );
+        }
+        totalBytes += bytes.length;
+        result[clip.mediaId] = bytes;
+      }
+    }
+    return result;
+  }
+
+  Future<void> _publishRealtimeGraphUpdate() async {
+    final playback = _playback;
+    if (playback == null || !mounted) {
+      _realtimeGraphDirty = false;
+      return;
+    }
+    if (_publishingRealtimeGraph) {
+      _realtimeGraphDirty = true;
+      return;
+    }
+
+    _publishingRealtimeGraph = true;
+    _realtimeGraphDirty = false;
+    final revision = _editRevision;
+    final snapshot = _cloneSession(_session);
+    try {
+      final assets = await _readAudibleAssets(snapshot);
+      if (!mounted || _playback != playback) return;
+      if (revision != _editRevision) {
+        _scheduleRealtimeGraphUpdate();
+        return;
+      }
+
+      await playback.replaceSession(
+        session: snapshot,
+        assetWavs: assets,
+      );
+      if (!mounted || _playback != playback) return;
+
+      if (_loopEnabled) {
+        final selected = _selectedClip;
+        if (selected != null && !_selectedClipIsAudible) {
+          await playback.setLoopRange(
+            startFrame: 0,
+            endFrame: playback.totalFrames,
+            enabled: false,
+          );
+          _loopEnabled = false;
+        } else {
+          final start = selected?.startFrame ?? 0;
+          final end = selected == null
+              ? playback.totalFrames
+              : selected.startFrame + selected.durationFrames;
+          if (start < end && end <= playback.totalFrames) {
+            await playback.setLoopRange(
+              startFrame: start,
+              endFrame: end,
+              enabled: true,
+            );
+          } else {
+            _loopEnabled = false;
+          }
+        }
+      }
+
+      if (mounted && _playback == playback) {
+        setState(() {
+          _transportTotalFrames = playback.totalFrames;
+          _playbackPosition =
+              playback.positionFrames.clamp(0, playback.totalFrames);
+          _message = 'Live mixer updated without stopping playback.';
+        });
+      }
+    } catch (error) {
+      if (mounted && _playback == playback) {
+        setState(() => _message = 'Live mixer update failed: $error');
+      }
+    } finally {
+      _publishingRealtimeGraph = false;
+      if (mounted && _realtimeGraphDirty) _scheduleRealtimeGraphUpdate();
+    }
   }
 
   void _scheduleAutosave() {
