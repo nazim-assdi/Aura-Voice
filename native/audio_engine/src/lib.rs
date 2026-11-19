@@ -87,6 +87,11 @@ impl AudioBuffer {
         &self.samples
     }
 
+    /// Consumes the decoded buffer and transfers its sample allocation.
+    pub fn into_samples(self) -> Vec<f32> {
+        self.samples
+    }
+
     pub fn frame_count(&self) -> u64 {
         (self.samples.len() / usize::from(self.channels)) as u64
     }
