@@ -54,6 +54,10 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
   bool _saving = false;
   bool _rendering = false;
   bool _pollingPlayback = false;
+  bool _transportPaused = false;
+  bool _loopEnabled = false;
+  int _transportTotalFrames = 0;
+  int? _seekPreviewFrame;
   Timer? _autosaveTimer;
   bool _autosaving = false;
   int _editRevision = 0;
@@ -840,6 +844,13 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
         );
       }
       final playback = await _engine.startPlayback(wavBytes: result.wavBytes);
+      if (_loopEnabled) {
+        await playback.setLoopRange(
+          startFrame: 0,
+          endFrame: playback.totalFrames,
+          enabled: true,
+        );
+      }
       if (!mounted) {
         await playback.stop();
         return;
@@ -847,6 +858,9 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
       setState(() {
         _playback = playback;
         _playbackPosition = 0;
+        _transportTotalFrames = playback.totalFrames;
+        _transportPaused = false;
+        _seekPreviewFrame = null;
         _message = result.clippedSamples > 0
             ? 'Mix preview playing · ${result.clippedSamples} clipped samples were detected.'
             : 'Mix preview playing · no clipped samples detected.';
@@ -878,6 +892,7 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
         if (mounted) {
           setState(() {
             _playbackPosition = complete ? playback.totalFrames : position;
+            _transportPaused = false;
             if (failed) _message = 'The audio output device reported a playback error.';
           });
         }
@@ -895,7 +910,95 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
     final playback = _playback;
     _playback = null;
     if (playback != null) await playback.stop();
-    if (mounted) setState(() => _playbackPosition = 0);
+    if (mounted) {
+      setState(() {
+        _playbackPosition = 0;
+        _transportPaused = false;
+        _seekPreviewFrame = null;
+      });
+    }
+  }
+
+  Future<void> _toggleTransportPause() async {
+    final playback = _playback;
+    if (playback == null) return;
+    try {
+      if (_transportPaused) {
+        await playback.resume();
+      } else {
+        await playback.pause();
+      }
+      if (mounted) {
+        setState(() {
+          _transportPaused = !_transportPaused;
+          _message = _transportPaused ? 'Playback paused.' : 'Playback resumed.';
+        });
+      }
+    } catch (error) {
+      if (mounted) setState(() => _message = error.toString());
+    }
+  }
+
+  Future<void> _toggleLoop() async {
+    final enabled = !_loopEnabled;
+    final playback = _playback;
+    try {
+      if (playback != null) {
+        await playback.setLoopRange(
+          startFrame: 0,
+          endFrame: playback.totalFrames,
+          enabled: enabled,
+        );
+      }
+      if (mounted) {
+        setState(() {
+          _loopEnabled = enabled;
+          _message = enabled
+              ? 'Whole-mix loop enabled.'
+              : 'Loop disabled. Playback will stop at the end.';
+        });
+      }
+    } catch (error) {
+      if (mounted) setState(() => _message = error.toString());
+    }
+  }
+
+  void _previewSeek(double frame) {
+    setState(() => _seekPreviewFrame =
+        frame.round().clamp(0, _transportTotalFrames).toInt());
+  }
+
+  Future<void> _commitSeek(double frame) async {
+    final playback = _playback;
+    if (playback == null) return;
+    final target = frame.round().clamp(0, playback.totalFrames).toInt();
+    try {
+      await playback.seek(target);
+      if (mounted) {
+        setState(() {
+          _playbackPosition = target;
+          _seekPreviewFrame = null;
+        });
+      }
+    } catch (error) {
+      if (mounted) {
+        setState(() {
+          _seekPreviewFrame = null;
+          _message = error.toString();
+        });
+      }
+    }
+  }
+
+  String _formatTransportPosition(int frames) {
+    final seconds = frames / _session.sampleRate;
+    final minutes = (seconds ~/ 60).toString().padLeft(2, '0');
+    final wholeSeconds = (seconds.floor() % 60).toString().padLeft(2, '0');
+    final milliseconds = ((seconds - seconds.floor()) * 1000)
+        .round()
+        .toString()
+        .padLeft(3, '0');
+    return '$minutes:$wholeSeconds.$milliseconds';
   }
 
   String _formatDuration(Duration duration) {
@@ -1078,6 +1181,9 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
                                 painter: _TimelineRulerPainter(
                                   pixelsPerSecond: pixelsPerSecond,
                                   totalSeconds: _totalSeconds,
+                                  sampleRate: _session.sampleRate,
+                                  playheadFrame:
+                                      _playback == null ? null : _playbackPosition,
                                 ),
                               ),
                             ),
@@ -1129,6 +1235,8 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
                                     sampleRate: _session.sampleRate,
                                     pixelsPerSecond: pixelsPerSecond,
                                     selectedClipId: _selectedClipId,
+                                    playheadFrame:
+                                        _playback == null ? null : _playbackPosition,
                                   ),
                                 ),
                               ),
@@ -1196,15 +1304,62 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
               ),
             if (_playback != null)
               Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                child: LinearProgressIndicator(
-                  value: _playback!.totalFrames == 0
-                      ? 0
-                      : (_playbackPosition / _playback!.totalFrames)
-                          .clamp(0.0, 1.0)
+                padding: const EdgeInsets.fromLTRB(14, 0, 14, 10),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Row(
+                      children: [
+                        IconButton(
+                          tooltip: _transportPaused ? 'Resume playback' : 'Pause playback',
+                          onPressed: _toggleTransportPause,
+                          icon: Icon(
+                            _transportPaused
+                                ? Icons.play_arrow_rounded
+                                : Icons.pause_rounded,
+                            color: AuraTheme.mint,
+                          ),
+                        ),
+                        IconButton(
+                          tooltip: 'Stop playback',
+                          onPressed: _stopPlayback,
+                          icon: const Icon(Icons.stop_rounded),
+                        ),
+                        IconButton(
+                          tooltip: _loopEnabled ? 'Disable whole-mix loop' : 'Loop whole mix',
+                          onPressed: _toggleLoop,
+                          color: _loopEnabled ? AuraTheme.mint : null,
+                          icon: const Icon(Icons.repeat_rounded),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          _formatTransportPosition(
+                            _seekPreviewFrame ?? _playbackPosition,
+                          ),
+                          style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                                fontFeatures: const [FontFeature.tabularFigures()],
+                              ),
+                        ),
+                        const Spacer(),
+                        Text(
+                          _formatTransportPosition(_transportTotalFrames),
+                          style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                                color: AuraTheme.muted,
+                                fontFeatures: const [FontFeature.tabularFigures()],
+                              ),
+                        ),
+                      ],
+                    ),
+                    Slider(
+                      min: 0,
+                      max: math.max(1, _transportTotalFrames).toDouble(),
+                      value: (_seekPreviewFrame ?? _playbackPosition)
+                          .clamp(0, math.max(1, _transportTotalFrames))
                           .toDouble(),
-                  minHeight: 4,
-                  color: AuraTheme.mint,
+                      onChanged: _previewSeek,
+                      onChangeEnd: _commitSeek,
+                    ),
+                  ],
                 ),
               ),
           ],
