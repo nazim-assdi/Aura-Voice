@@ -22,4 +22,21 @@ class UnavailableAudioEngineService implements AudioEngineService {
       'The native Aura audio library is not installed for this platform yet.',
     );
   }
+
+  @override
+  Future<List<AudioInputDevice>> listInputDevices() {
+    throw const AudioEngineUnavailable(
+      'Microphone device access is not available on this platform.',
+    );
+  }
+
+  @override
+  Future<AudioCaptureSession> startCapture({
+    String? deviceId,
+    int bufferMilliseconds = 1000,
+  }) {
+    throw const AudioEngineUnavailable(
+      'Microphone capture is not available on this platform.',
+    );
+  }
 }
