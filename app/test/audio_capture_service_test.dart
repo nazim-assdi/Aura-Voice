@@ -6,7 +6,7 @@ import 'package:aura_voice_ai/features/session/models/audio_session.dart';
 void main() {
   group('UnavailableAudioEngineService', () {
     const service = UnavailableAudioEngineService();
-    const session = AudioSession(
+    final session = AudioSession(
       id: 'test-session',
       title: 'Test',
       sampleRate: 48000,
