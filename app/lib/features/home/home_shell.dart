@@ -1189,6 +1189,7 @@ class _LibraryPageState extends State<LibraryPage> {
   }
 
   Future<void> _rename(AudioLibraryRecording recording) async {
+    if (_playingPath == recording.path) await _stopPlayback();
     final controller = TextEditingController(text: recording.name);
     final name = await showDialog<String>(
       context: context,
