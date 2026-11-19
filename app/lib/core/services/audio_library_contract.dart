@@ -6,6 +6,7 @@ class AudioLibraryRecording {
     required this.modifiedAt,
     required this.sizeBytes,
     required this.duration,
+    required this.frameCount,
     required this.sampleRate,
     required this.channels,
     required this.bitsPerSample,
@@ -16,6 +17,7 @@ class AudioLibraryRecording {
   final DateTime modifiedAt;
   final int sizeBytes;
   final Duration duration;
+  final int frameCount;
   final int sampleRate;
   final int channels;
   final int bitsPerSample;
