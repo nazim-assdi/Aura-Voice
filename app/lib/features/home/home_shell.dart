@@ -370,15 +370,32 @@ class _StudioPageState extends State<StudioPage> {
 
   Future<void> _finishOnDispose() async {
     final capture = _capture;
-    _capture = null;
     if (capture != null) {
-      await capture.stop();
+      try {
+        await capture.pause();
+      } catch (_) {
+        // Device disconnects can make pause fail; continue shutdown safely.
+      }
     }
     while (_polling) {
       await Future<void>.delayed(const Duration(milliseconds: 2));
     }
+    _capture = null;
     final writer = _writer;
     _writer = null;
+    try {
+      if (capture != null) {
+        while (true) {
+          final remaining = await capture.readFrames(maxFrames: 4096);
+          if (remaining.isEmpty) break;
+          if (writer != null) await writer.append(remaining);
+        }
+      }
+    } catch (_) {
+      // Keep and finalize the valid portion of a partially captured take.
+    } finally {
+      if (capture != null) await capture.stop();
+    }
     if (writer != null) {
       try {
         await writer.finish();
@@ -450,7 +467,7 @@ class _StudioPageState extends State<StudioPage> {
       setState(() {
         _capture = capture;
         _writer = writer;
-        _sampleRate = capture!.sampleRate;
+        _sampleRate = capture.sampleRate;
         _channels = capture.channels;
         _savedPath = null;
       });
@@ -473,7 +490,7 @@ class _StudioPageState extends State<StudioPage> {
     _polling = true;
     try {
       final samples = await capture.readFrames(maxFrames: 4096);
-      if (!mounted || !identical(capture, _capture)) return;
+      if (!identical(capture, _capture)) return;
       if (samples.isNotEmpty) {
         final writer = _writer;
         if (writer == null) {
@@ -516,14 +533,36 @@ class _StudioPageState extends State<StudioPage> {
     _meterTimer?.cancel();
     _meterTimer = null;
     final capture = _capture;
-    _capture = null;
-    if (capture != null) await capture.stop();
+    if (capture != null) {
+      try {
+        await capture.pause();
+      } catch (error) {
+        if (mounted) {
+          setState(() => _message = 'Input pause warning: $error');
+        }
+      }
+    }
     while (_polling) {
       await Future<void>.delayed(const Duration(milliseconds: 2));
     }
+    _capture = null;
     final writer = _writer;
     _writer = null;
     String? path;
+    try {
+      if (capture != null) {
+        while (true) {
+          final remaining = await capture.readFrames(maxFrames: 4096);
+          if (remaining.isEmpty) break;
+          if (writer != null) await writer.append(remaining);
+          _capturedFrames += remaining.length ~/ capture.channels;
+        }
+      }
+    } catch (error) {
+      _message = 'Some buffered audio could not be saved: $error';
+    } finally {
+      if (capture != null) await capture.stop();
+    }
     try {
       if (writer != null) path = await writer.finish();
     } catch (error) {
