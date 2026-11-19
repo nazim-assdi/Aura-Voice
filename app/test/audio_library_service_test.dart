@@ -83,6 +83,17 @@ void main() {
       expect((await library.listRecordings()).single.name, 'Client interview');
     });
 
+    test('keeps the same file when the requested name is unchanged', () async {
+      final path = await createTake();
+      final recording = (await library.listRecordings()).single;
+
+      final renamed = await library.renameRecording(recording, recording.name);
+
+      expect(renamed.path, path);
+      expect(await File(path).exists(), isTrue);
+      expect(await library.listRecordings(), hasLength(1));
+    });
+
     test('resolves duplicate names without overwriting another take', () async {
       final firstPath = await createTake();
       await createTake();
