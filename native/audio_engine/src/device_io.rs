@@ -603,9 +603,7 @@ pub unsafe extern "C" fn aura_audio_playback_start_wav(
         let audio = crate::AudioBuffer::from_wav(bytes)?;
         let source_channels = usize::from(audio.channels());
         let sample_rate = audio.sample_rate();
-        let total_frames = usize::try_from(audio.frame_count())
-            .map_err(|_| AudioError::SizeOverflow)?;
-        if !(1..=2).contains(&source_channels) || total_frames == 0 {
+        if !(1..=2).contains(&source_channels) || audio.frame_count() == 0 {
             return Err(AudioError::InvalidArgument(
                 "playback expects a non-empty mono or stereo WAV".into(),
             ));
@@ -638,7 +636,8 @@ pub unsafe extern "C" fn aura_audio_playback_start_wav(
         }
         let format = supported.sample_format();
         let config = supported.config();
-        let samples = Arc::new(audio.samples().to_vec());
+        let samples = Arc::new(audio.into_samples());
+        let total_frames = samples.len() / source_channels;
         let position_frames = Arc::new(AtomicUsize::new(0));
         let stream_error = Arc::new(AtomicU32::new(0));
         let stream = build_playback_stream(
