@@ -70,6 +70,13 @@ abstract interface class AudioPlaybackSession {
     required bool enabled,
   });
 
+  /// Replaces the active immutable session graph without stopping transport.
+  /// The output callback switches snapshots at the next audio block boundary.
+  Future<void> replaceSession({
+    required AudioSession session,
+    required Map<String, Uint8List> assetWavs,
+  });
+
   Future<void> stop();
 }
 
