@@ -991,6 +991,11 @@ mod tests {
     }
 
     #[test]
+    fn c_abi_reports_version_two_for_device_capture_and_playback() {
+        assert_eq!(aura_engine_abi_version(), 2);
+    }
+
+    #[test]
     fn c_abi_can_create_mix_render_and_release_output() {
         use std::ffi::CString;
 
