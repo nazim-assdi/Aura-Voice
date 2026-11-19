@@ -35,7 +35,7 @@ class FileAudioWaveformService implements AudioWaveformService {
         throw const FormatException('The WAV file is too small.');
       }
 
-      final riff = await random.read(12);
+      final riff = await _readAvailable(random, 12);
       if (riff.length != 12 ||
           _fourCc(riff, 0) != 'RIFF' ||
           _fourCc(riff, 8) != 'WAVE') {
@@ -54,7 +54,7 @@ class FileAudioWaveformService implements AudioWaveformService {
       while (position + 8 <= fileLength &&
           (formatTag == null || dataBytes == null || dataOffset == null)) {
         await random.setPosition(position);
-        final header = await random.read(8);
+        final header = await _readAvailable(random, 8);
         if (header.length != 8) break;
         final id = _fourCc(header, 0);
         final length = ByteData.sublistView(header).getUint32(4, Endian.little);
@@ -69,7 +69,7 @@ class FileAudioWaveformService implements AudioWaveformService {
             throw const FormatException('Unsupported WAV format chunk.');
           }
           await random.setPosition(chunkStart);
-          final format = await random.read(length);
+          final format = await _readAvailable(random, length);
           if (format.length != length) {
             throw const FormatException('Incomplete WAV format chunk.');
           }
@@ -131,7 +131,7 @@ class FileAudioWaveformService implements AudioWaveformService {
         final count = bytesRemaining < bytesPerRead
             ? bytesRemaining
             : bytesPerRead;
-        final chunk = await random.read(count);
+        final chunk = await _readAvailable(random, count);
         if (chunk.isEmpty || chunk.length % blockAlign != 0) {
           throw const FormatException('Incomplete audio data chunk.');
         }
@@ -175,6 +175,21 @@ class FileAudioWaveformService implements AudioWaveformService {
     } finally {
       await random.close();
     }
+  }
+
+  static Future<Uint8List> _readAvailable(
+    RandomAccessFile file,
+    int byteCount,
+  ) async {
+    final builder = BytesBuilder(copy: false);
+    var remaining = byteCount;
+    while (remaining > 0) {
+      final part = await file.read(remaining);
+      if (part.isEmpty) break;
+      builder.add(part);
+      remaining -= part.length;
+    }
+    return builder.takeBytes();
   }
 
   static double _decodeSample(
