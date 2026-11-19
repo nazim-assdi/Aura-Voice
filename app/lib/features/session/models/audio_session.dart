@@ -46,6 +46,50 @@ class AudioClip {
   final int fadeInFrames;
   final int fadeOutFrames;
 
+  /// Splits this clip into two non-destructive source ranges.
+  ///
+  /// Existing edge fades stay at the outside edges. The split point must be
+  /// beyond the fade-in and leave enough frames for the original fade-out.
+  List<AudioClip> splitAtFrameOffset(
+    int frameOffset, {
+    required String firstId,
+    required String secondId,
+  }) {
+    if (frameOffset <= 0 || frameOffset >= durationFrames) {
+      throw RangeError.range(frameOffset, 1, durationFrames - 1, 'frameOffset');
+    }
+    final secondDuration = durationFrames - frameOffset;
+    if (fadeInFrames > frameOffset || fadeOutFrames > secondDuration) {
+      throw ArgumentError(
+        'The split point must leave the original fade-in and fade-out on the outside clip edges.',
+      );
+    }
+    return [
+      AudioClip(
+        id: firstId,
+        mediaId: mediaId,
+        startFrame: startFrame,
+        sourceStartFrame: sourceStartFrame,
+        durationFrames: frameOffset,
+        gain: gain,
+        pan: pan,
+        muted: muted,
+        fadeInFrames: fadeInFrames,
+      ),
+      AudioClip(
+        id: secondId,
+        mediaId: mediaId,
+        startFrame: startFrame + frameOffset,
+        sourceStartFrame: sourceStartFrame + frameOffset,
+        durationFrames: secondDuration,
+        gain: gain,
+        pan: pan,
+        muted: muted,
+        fadeOutFrames: fadeOutFrames,
+      ),
+    ];
+  }
+
   Map<String, Object> toJson() => {
         'id': id,
         'mediaId': mediaId,
