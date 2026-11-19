@@ -8,6 +8,7 @@
 //! audio through an atomic sample-frame cursor and performs no file I/O.
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
 pub mod device_io;
 use std::error::Error;
@@ -556,6 +557,253 @@ fn fade_envelope(offset: u64, duration: u64, fade_in: u64, fade_out: u64) -> f32
     envelope.clamp(0.0, 1.0) as f32
 }
 
+
+/// Immutable, pre-resolved session snapshot for the realtime output callback.
+///
+/// All WAV decoding, validation, allocation and pan/fade coefficient work
+/// happens before the stream starts. The callback only reads these buffers
+/// and accumulates one sample frame; it never allocates or locks.
+#[derive(Clone)]
+struct RealtimeClip {
+    start_frame: usize,
+    source_start_frame: usize,
+    duration_frames: usize,
+    source_channels: usize,
+    samples: Arc<[f32]>,
+    gain: f32,
+    left_pan_gain: f32,
+    right_pan_gain: f32,
+    fade_in_frames: usize,
+    fade_out_frames: usize,
+}
+
+#[derive(Clone)]
+struct RealtimeTrack {
+    gain: f32,
+    clips: Vec<RealtimeClip>,
+}
+
+/// Shared immutable playback plan consumed by the CPAL callback.
+pub(crate) struct RealtimeMixer {
+    pub(crate) sample_rate: u32,
+    pub(crate) channels: u16,
+    pub(crate) total_frames: u64,
+    tracks: Vec<RealtimeTrack>,
+    master_gain: f32,
+}
+
+impl RealtimeMixer {
+    /// Mixes one timeline frame without allocation, locking or file access.
+    /// The returned pair is mono duplicated to both sides for mono sessions.
+    pub(crate) fn mix_frame(&self, timeline_frame: usize) -> (f32, f32) {
+        let mut left = 0.0_f32;
+        let mut right = 0.0_f32;
+
+        for track in &self.tracks {
+            for clip in &track.clips {
+                if timeline_frame < clip.start_frame {
+                    continue;
+                }
+                let offset = timeline_frame - clip.start_frame;
+                if offset >= clip.duration_frames {
+                    continue;
+                }
+
+                let source_frame = clip.source_start_frame + offset;
+                let source_index = source_frame * clip.source_channels;
+                let fade = fade_envelope(
+                    offset as u64,
+                    clip.duration_frames as u64,
+                    clip.fade_in_frames as u64,
+                    clip.fade_out_frames as u64,
+                );
+                let gain = track.gain * clip.gain * self.master_gain * fade;
+
+                match (clip.source_channels, self.channels) {
+                    (1, 1) => {
+                        let sample = clip.samples[source_index] * gain;
+                        left += sample;
+                        right += sample;
+                    }
+                    (1, 2) => {
+                        let sample = clip.samples[source_index] * gain;
+                        left += sample * clip.left_pan_gain;
+                        right += sample * clip.right_pan_gain;
+                    }
+                    (2, 1) => {
+                        let mono = (clip.samples[source_index]
+                            + clip.samples[source_index + 1]) * 0.5;
+                        let sample = mono * gain;
+                        left += sample;
+                        right += sample;
+                    }
+                    (2, 2) => {
+                        left += clip.samples[source_index] * gain * clip.left_pan_gain;
+                        right += clip.samples[source_index + 1] * gain * clip.right_pan_gain;
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        if self.channels == 1 {
+            (left, left)
+        } else {
+            (left, right)
+        }
+    }
+}
+
+/// Builds the realtime graph before opening the device stream. Each distinct
+/// source asset is copied into one shared immutable sample allocation; clips
+/// referencing the same WAV reuse that allocation.
+pub(crate) fn build_realtime_mixer(
+    session: &MixSession,
+    assets: &HashMap<String, AudioBuffer>,
+) -> Result<Arc<RealtimeMixer>, AudioError> {
+    validate_audio_format(session.sample_rate, session.channels)?;
+    if !session.master_gain.is_finite() || session.master_gain < 0.0 {
+        return Err(AudioError::InvalidArgument(
+            "master gain must be finite and non-negative".into(),
+        ));
+    }
+
+    let has_solo = session.tracks.iter().any(|track| track.solo && !track.muted);
+    let mut decoded_samples: HashMap<String, Arc<[f32]>> = HashMap::new();
+    let mut realtime_tracks = Vec::with_capacity(session.tracks.len());
+    let mut output_frames = 0_usize;
+
+    for track in &session.tracks {
+        if track.id.trim().is_empty() || !track.gain.is_finite() || track.gain < 0.0
+            || !track.pan.is_finite() || !(-1.0..=1.0).contains(&track.pan) {
+            return Err(AudioError::InvalidArgument(format!(
+                "track {} has an invalid id, gain or pan",
+                track.id
+            )));
+        }
+
+        let audible = !track.muted && (!has_solo || track.solo);
+        if !audible {
+            continue;
+        }
+
+        let mut clips = Vec::with_capacity(track.clips.len());
+        for clip in &track.clips {
+            if clip.id.trim().is_empty()
+                || clip.media_id.trim().is_empty()
+                || clip.duration_frames == 0
+                || !clip.gain.is_finite()
+                || clip.gain < 0.0
+                || !clip.pan.is_finite()
+                || !(-1.0..=1.0).contains(&clip.pan)
+                || clip.fade_in_frames > clip.duration_frames
+                || clip.fade_out_frames > clip.duration_frames
+            {
+                return Err(AudioError::InvalidArgument(format!(
+                    "track {} contains an invalid clip",
+                    track.id
+                )));
+            }
+            if clip.muted {
+                continue;
+            }
+
+            let asset = assets
+                .get(&clip.media_id)
+                .ok_or_else(|| AudioError::AssetNotFound(clip.media_id.clone()))?;
+            if asset.sample_rate != session.sample_rate {
+                return Err(AudioError::SampleRateMismatch {
+                    asset_rate: asset.sample_rate,
+                    session_rate: session.sample_rate,
+                });
+            }
+
+            let source_end = clip
+                .source_start_frame
+                .checked_add(clip.duration_frames)
+                .ok_or(AudioError::SizeOverflow)?;
+            if source_end > asset.frame_count() {
+                return Err(AudioError::InvalidArgument(format!(
+                    "clip {} reads beyond the end of asset {}",
+                    clip.id, clip.media_id
+                )));
+            }
+            let timeline_end = clip
+                .start_frame
+                .checked_add(clip.duration_frames)
+                .ok_or(AudioError::SizeOverflow)?;
+            let timeline_end = usize::try_from(timeline_end)
+                .map_err(|_| AudioError::SizeOverflow)?;
+            let start_frame = usize::try_from(clip.start_frame)
+                .map_err(|_| AudioError::SizeOverflow)?;
+            let source_start_frame = usize::try_from(clip.source_start_frame)
+                .map_err(|_| AudioError::SizeOverflow)?;
+            let duration_frames = usize::try_from(clip.duration_frames)
+                .map_err(|_| AudioError::SizeOverflow)?;
+            let source_channels = usize::from(asset.channels());
+
+            let samples = decoded_samples
+                .entry(clip.media_id.clone())
+                .or_insert_with(|| Arc::<[f32]>::from(asset.samples().to_vec()))
+                .clone();
+
+            let combined_pan = (track.pan + clip.pan).clamp(-1.0, 1.0);
+            let (left_pan_gain, right_pan_gain) =
+                match (asset.channels(), session.channels) {
+                    (1, 2) => {
+                        let angle = (f64::from(combined_pan) + 1.0)
+                            * std::f64::consts::FRAC_PI_4;
+                        (angle.cos() as f32, angle.sin() as f32)
+                    }
+                    (2, 2) => (
+                        if combined_pan > 0.0 {
+                            (f64::from(combined_pan)
+                                * std::f64::consts::FRAC_PI_2).cos() as f32
+                        } else {
+                            1.0
+                        },
+                        if combined_pan < 0.0 {
+                            (f64::from(-combined_pan)
+                                * std::f64::consts::FRAC_PI_2).cos() as f32
+                        } else {
+                            1.0
+                        },
+                    ),
+                    _ => (1.0, 1.0),
+                };
+
+            clips.push(RealtimeClip {
+                start_frame,
+                source_start_frame,
+                duration_frames,
+                source_channels,
+                samples,
+                gain: clip.gain,
+                left_pan_gain,
+                right_pan_gain,
+                fade_in_frames: usize::try_from(clip.fade_in_frames)
+                    .map_err(|_| AudioError::SizeOverflow)?,
+                fade_out_frames: usize::try_from(clip.fade_out_frames)
+                    .map_err(|_| AudioError::SizeOverflow)?,
+            });
+            output_frames = output_frames.max(timeline_end);
+        }
+
+        realtime_tracks.push(RealtimeTrack {
+            gain: track.gain,
+            clips,
+        });
+    }
+
+    Ok(Arc::new(RealtimeMixer {
+        sample_rate: session.sample_rate,
+        channels: session.channels,
+        total_frames: u64::try_from(output_frames).map_err(|_| AudioError::SizeOverflow)?,
+        tracks: realtime_tracks,
+        master_gain: session.master_gain,
+    }))
+}
+
 // ---------------- C ABI for Flutter FFI ----------------
 
 use std::cell::RefCell;
@@ -628,7 +876,7 @@ unsafe fn checked_handle<'a>(
 /// Returns the current C ABI version. Increment on incompatible ABI changes.
 #[no_mangle]
 pub extern "C" fn aura_engine_abi_version() -> u32 {
-    3
+    4
 }
 
 /// Returns a static NUL-terminated engine version string.
@@ -839,6 +1087,51 @@ pub unsafe extern "C" fn aura_engine_render_wav(
     })
 }
 
+
+
+/// Starts direct callback-driven multitrack playback for the prepared session.
+///
+/// The engine handle may be destroyed after this function returns: the output
+/// stream owns an immutable snapshot of the decoded source buffers and clip
+/// graph. The callback performs sample mixing directly and does not render a
+/// complete WAV beforehand.
+#[no_mangle]
+pub unsafe extern "C" fn aura_engine_realtime_playback_start(
+    handle: *mut AuraEngineHandle,
+    out_total_frames: *mut u64,
+) -> *mut device_io::AuraAudioPlaybackHandle {
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        if handle.is_null() || out_total_frames.is_null() {
+            return Err(AudioError::InvalidArgument(
+                "realtime playback handle and output pointer must not be null".into(),
+            ));
+        }
+        // SAFETY: Caller supplies a live engine handle and writable output slot.
+        let engine = unsafe { &*handle };
+        let mixer = build_realtime_mixer(&engine.session, &engine.assets)?;
+        let total_frames = mixer.total_frames;
+        let playback = device_io::start_realtime_playback(mixer)?;
+        // SAFETY: The pointer was checked above and is writable by the ABI contract.
+        unsafe { *out_total_frames = total_frames; }
+        Ok::<_, AudioError>(playback)
+    }));
+
+    match result {
+        Ok(Ok(playback)) => {
+            set_ffi_error("");
+            playback
+        }
+        Ok(Err(error)) => {
+            set_ffi_error(&error.to_string());
+            ptr::null_mut()
+        }
+        Err(_) => {
+            set_ffi_error("realtime multitrack playback failed unexpectedly");
+            ptr::null_mut()
+        }
+    }
+}
+
 /// Frees a buffer allocated by aura_engine_render_wav.
 ///
 /// # Safety
@@ -992,8 +1285,8 @@ mod tests {
     }
 
     #[test]
-    fn c_abi_reports_version_three_for_transport_controls() {
-        assert_eq!(aura_engine_abi_version(), 3);
+    fn c_abi_reports_version_four_for_realtime_multitrack_playback() {
+        assert_eq!(aura_engine_abi_version(), 4);
     }
 
     #[test]
@@ -1071,6 +1364,64 @@ mod tests {
             aura_engine_free_buffer(output, output_len);
             aura_engine_destroy(handle);
         }
+    }
+
+
+
+    #[test]
+    fn realtime_mixer_matches_offline_mix_for_overlapping_tracks_and_fades() {
+        let mut assets = HashMap::new();
+        assets.insert(
+            "voice".into(),
+            AudioBuffer::new(48_000, 1, vec![0.25, 0.5, 0.75, 1.0]).unwrap(),
+        );
+        assets.insert(
+            "room".into(),
+            AudioBuffer::new(48_000, 2, vec![0.2, -0.2, 0.4, -0.4]).unwrap(),
+        );
+
+        let mut lead = Track::new("lead");
+        let mut lead_clip = Clip::new("lead-clip", "voice", 0, 0, 4);
+        lead_clip.fade_in_frames = 2;
+        lead_clip.gain = 0.7;
+        lead.clips.push(lead_clip);
+
+        let mut room = Track::new("room");
+        room.pan = 0.25;
+        let mut room_clip = Clip::new("room-clip", "room", 1, 0, 2);
+        room_clip.fade_out_frames = 1;
+        room.clips.push(room_clip);
+
+        let mut session = MixSession::new(48_000, 2);
+        session.tracks = vec![lead, room];
+
+        let offline = render_mix(&session, &assets).unwrap();
+        let realtime = build_realtime_mixer(&session, &assets).unwrap();
+        assert_eq!(realtime.total_frames, offline.audio.frame_count());
+
+        for frame in 0..realtime.total_frames as usize {
+            let (left, right) = realtime.mix_frame(frame);
+            let index = frame * 2;
+            assert!((left - offline.audio.samples()[index]).abs() < 0.000001);
+            assert!((right - offline.audio.samples()[index + 1]).abs() < 0.000001);
+        }
+    }
+
+    #[test]
+    fn realtime_mixer_uses_shared_asset_buffers_for_repeated_clips() {
+        let assets = asset("voice", 1, &[0.25, 0.5]);
+        let mut track = Track::new("voice");
+        track.clips.push(Clip::new("one", "voice", 0, 0, 2));
+        track.clips.push(Clip::new("two", "voice", 4, 0, 2));
+        let mut session = MixSession::new(48_000, 1);
+        session.tracks.push(track);
+
+        let mixer = build_realtime_mixer(&session, &assets).unwrap();
+        let first = &mixer.tracks[0].clips[0].samples;
+        let second = &mixer.tracks[0].clips[1].samples;
+        assert!(Arc::ptr_eq(first, second));
+        assert_eq!(mixer.mix_frame(0).0, 0.25);
+        assert_eq!(mixer.mix_frame(4).0, 0.25);
     }
 
     #[test]
