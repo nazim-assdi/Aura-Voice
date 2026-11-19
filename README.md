@@ -44,7 +44,7 @@ A feature is only advertised as ready after its real engine is integrated and te
 - FastAPI health endpoint and versioned capabilities endpoint.
 - Speech-provider interface and a safe unavailable provider that fails instead of returning fake audio.
 - Initial Rust offline PCM WAV renderer in `native/audio_engine`: integer/float WAV decode, sample-frame clip placement, multitrack gain/pan/mute/solo, fades, sample-peak/clipping report and PCM WAV export.
-- Versioned C ABI and public header for offline rendering, microphone input capture and system-output WAV playback.
+- Versioned C ABI and public header for offline rendering, microphone input capture and system-output WAV playback with sample-frame seek, pause/resume and loop controls.
 - Flutter FFI adapter with ABI-version check, worker-isolate rendering, native-library discovery, microphone capture and playback sessions, plus explicit web/unsupported-platform fallbacks.
 - Studio single-take Record Booth: selectable microphone, live Peak/RMS meters, local 24-bit PCM WAV save, dropped-frame warning and Play/Stop audition with progress.
 - Local Audio Library: scans RIFF metadata without loading audio payloads, search/sort, saved-take playback, sample-derived waveform preview, rename and confirmed delete. Recordings referenced by saved sessions are protected from rename/delete.
@@ -55,7 +55,7 @@ A feature is only advertised as ready after its real engine is integrated and te
 
 ## What is not implemented yet
 
-- The current editor now has non-destructive trim handles, overlapping crossfades, snap-to-grid, bounded undo/redo, debounced local autosave and timeline zoom. Remaining editor gaps include waveform-cache persistence, media relinking, seek/pause/loop transport, true real-time multitrack playback and input-to-output monitoring. Playback remains offline render-then-play; saved WAV preview loads files up to 256 MiB into memory and requires a supported output sample rate.
+- The current editor now has non-destructive trim handles, overlapping crossfades, snap-to-grid, bounded undo/redo, debounced local autosave, timeline zoom, a sample-frame playhead, seek slider, pause/resume and whole-mix loop transport. Remaining editor gaps include waveform-cache persistence, media relinking, loop-range selection, true real-time multitrack mixing/playback and input-to-output monitoring. The session is still rendered offline before output; saved WAV preview loads files up to 256 MiB into memory and requires a supported output sample rate.
 - Production audio DSP, noise restoration, effects graph or mastering.
 - Production TTS inference, voice profile enrollment or voice cloning.
 - Speech recognition, translation/dubbing alignment and subtitle export.
