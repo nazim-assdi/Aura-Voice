@@ -99,11 +99,11 @@ class FfiAudioEngineService implements AudioEngineService {
         'Native Aura audio library is not available on this platform.',
       );
     }
-    if (wavBytes.length < 44 || wavBytes.length > 536870912) {
+    if (wavBytes.length < 44 || wavBytes.length > 268435456) {
       throw ArgumentError.value(
         wavBytes.length,
         'wavBytes',
-        'WAV must be between 44 bytes and 512 MiB.',
+        'WAV must be between 44 bytes and 256 MiB.',
       );
     }
     final data = calloc<Uint8>(wavBytes.length);
