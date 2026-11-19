@@ -182,7 +182,7 @@ fn list_input_devices_json() -> Result<String, AudioError> {
             json_escape(&name),
             default_id.as_deref() == Some(id.as_str()),
             config.as_ref().map(|value| value.channels()).unwrap_or(0),
-            config.as_ref().map(|value| value.sample_rate().0).unwrap_or(0),
+            config.as_ref().map(|value| value.sample_rate()).unwrap_or(0),
         );
     }
     json.push(']');
@@ -338,7 +338,7 @@ pub unsafe extern "C" fn aura_audio_capture_start(
             return Err(AudioError::InvalidArgument("microphone reports zero input channels".into()));
         }
         let channels = input_channels.min(2);
-        let sample_rate = supported.sample_rate().0;
+        let sample_rate = supported.sample_rate();
         let buffer_ms = buffer_milliseconds.clamp(100, 5000) as usize;
         let requested_samples = (sample_rate as usize)
             .checked_mul(channels)
