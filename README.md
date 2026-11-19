@@ -55,7 +55,7 @@ A feature is only advertised as ready after its real engine is integrated and te
 
 ## What is not implemented yet
 
-- Full multitrack production workflow remains in development: drag/drop clip movement, trim/split, fades/crossfades controls, undo/redo, autosave, waveform cache persistence, media relinking, seek/pause/loop transport, true real-time multitrack playback and input-to-output monitoring. The current editor arranges sample-frame clips and uses offline render-then-play preview. Saved WAV preview loads files up to 256 MiB into memory and requires a supported output sample rate.
+- Full multitrack production workflow remains in development: precise trim/split, fades/crossfades controls, undo/redo, autosave, waveform cache persistence, media relinking, seek/pause/loop transport, true real-time multitrack playback and input-to-output monitoring. The current editor arranges sample-frame clips and uses offline render-then-play preview. Saved WAV preview loads files up to 256 MiB into memory and requires a supported output sample rate.
 - Production audio DSP, noise restoration, effects graph or mastering.
 - Production TTS inference, voice profile enrollment or voice cloning.
 - Speech recognition, translation/dubbing alignment and subtitle export.
