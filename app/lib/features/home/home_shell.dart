@@ -589,9 +589,10 @@ class _StudioPageState extends State<StudioPage> {
       _stopping = false;
     }
   }
+
   Future<void> _playSavedTake() async {
     final path = _savedPath;
-    if (path == null || _capture != null) return;
+    if (path == null || _capture != null || _starting) return;
     await _stopPlayback();
     try {
       final bytes = await readAudioFile(path);
@@ -930,7 +931,7 @@ class _StudioPageState extends State<StudioPage> {
                             ),
                           ),
                           OutlinedButton.icon(
-                            onPressed: listening ? null : _playSavedTake,
+                            onPressed: listening || _starting ? null : _playSavedTake,
                             icon: const Icon(Icons.play_arrow_rounded),
                             label: const Text('Play'),
                           ),
@@ -948,7 +949,9 @@ class _StudioPageState extends State<StudioPage> {
                         LinearProgressIndicator(
                           value: _playback!.totalFrames == 0
                               ? 0
-                              : (_playbackPosition / _playback!.totalFrames).clamp(0.0, 1.0),
+                              : (_playbackPosition / _playback!.totalFrames)
+                                  .clamp(0.0, 1.0)
+                                  .toDouble(),
                           minHeight: 4,
                           borderRadius: BorderRadius.circular(4),
                           backgroundColor: AuraTheme.panelLight,
