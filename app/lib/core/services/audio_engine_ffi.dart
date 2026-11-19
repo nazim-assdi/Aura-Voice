@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:ffi';
 import 'dart:io';
@@ -578,6 +579,9 @@ class FfiAudioPlaybackSession implements AudioPlaybackSession {
   bool _stopped = false;
   bool _paused = false;
   int _totalFrames;
+  Future<void> _replaceQueue = Future<void>.value();
+  Future<void>? _stopFuture;
+  bool _stopping = false;
 
   @override
   final int sampleRate;
@@ -601,8 +605,8 @@ class FfiAudioPlaybackSession implements AudioPlaybackSession {
   bool get isPaused => _paused;
 
   void _checkActive() {
-    if (_stopped) {
-      throw const AudioEngineUnavailable('The playback stream is stopped.');
+    if (_stopped || _stopping) {
+      throw const AudioEngineUnavailable('The playback stream is stopping or stopped.');
     }
   }
 
@@ -658,29 +662,59 @@ class FfiAudioPlaybackSession implements AudioPlaybackSession {
   Future<void> replaceSession({
     required AudioSession session,
     required Map<String, Uint8List> assetWavs,
-  }) async {
+  }) {
     _checkActive();
-    var totalBytes = 0;
-    const maximumRealtimeInputBytes = 536870912;
-    final workerAssets = <String, Uint8List>{};
-    for (final entry in assetWavs.entries) {
-      if (entry.value.length > maximumRealtimeInputBytes - totalBytes) {
-        throw const AudioEngineUnavailable(
-          'Realtime graph updates are limited to 512 MiB of source WAV data per session.',
+
+    // Serialize graph publications, and keep the native playback pointer
+    // alive until every queued worker-isolate publication has returned.
+    final previous = _replaceQueue;
+    final completion = Completer<void>();
+    _replaceQueue = completion.future;
+
+    return () async {
+      try {
+        await previous;
+        _checkActive();
+        var totalBytes = 0;
+        const maximumRealtimeInputBytes = 536870912;
+        final workerAssets = <String, Uint8List>{};
+        for (final entry in assetWavs.entries) {
+          if (entry.value.length > maximumRealtimeInputBytes - totalBytes) {
+            throw const AudioEngineUnavailable(
+              'Realtime graph updates are limited to 512 MiB of source WAV data per session.',
+            );
+          }
+          totalBytes += entry.value.length;
+          workerAssets[entry.key] = entry.value;
+        }
+        final sessionJson = session.toJson();
+        final nextTotalFrames = await Isolate.run(
+          () => _replaceRealtimeSessionInWorker(
+            _handle.address,
+            sessionJson,
+            workerAssets,
+          ),
         );
+        _totalFrames = nextTotalFrames;
+      } finally {
+        completion.complete();
       }
-      totalBytes += entry.value.length;
-      workerAssets[entry.key] = entry.value;
+    }();
+  }
+
+  @override
+  Future<void> stop() => _stopFuture ??= _stopAfterPendingGraphUpdates();
+
+  Future<void> _stopAfterPendingGraphUpdates() async {
+    if (_stopped) return;
+    _stopping = true;
+    await _replaceQueue;
+    if (!_stopped) {
+      _api.playbackStop(_handle);
+      _handle = nullptr;
+      _paused = false;
+      _stopped = true;
     }
-    final sessionJson = session.toJson();
-    final nextTotalFrames = await Isolate.run(
-      () => _replaceRealtimeSessionInWorker(
-        _handle.address,
-        sessionJson,
-        workerAssets,
-      ),
-    );
-    _totalFrames = nextTotalFrames;
   }
 
   @override
