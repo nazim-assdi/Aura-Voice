@@ -368,6 +368,8 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
     int? startFrame,
     double? gain,
     bool? muted,
+    int? fadeInFrames,
+    int? fadeOutFrames,
   }) {
     final track = _selectedTrack;
     final clip = _selectedClip;
@@ -381,8 +383,8 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
       gain: gain ?? clip.gain,
       pan: clip.pan,
       muted: muted ?? clip.muted,
-      fadeInFrames: clip.fadeInFrames,
-      fadeOutFrames: clip.fadeOutFrames,
+      fadeInFrames: fadeInFrames ?? clip.fadeInFrames,
+      fadeOutFrames: fadeOutFrames ?? clip.fadeOutFrames,
     );
     final updatedTrack = AudioTrack(
       id: track.id,
@@ -412,6 +414,41 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
     final clip = _selectedClip;
     if (clip == null) return;
     _updateSelectedClip(muted: !clip.muted);
+  }
+
+  void _splitSelectedClip() {
+    final track = _selectedTrack;
+    final clip = _selectedClip;
+    if (track == null || clip == null || clip.durationFrames < 2) return;
+    final splitOffset = clip.durationFrames ~/ 2;
+    try {
+      final parts = clip.splitAtFrameOffset(
+        splitOffset,
+        firstId: 'clip-${DateTime.now().microsecondsSinceEpoch}-a',
+        secondId: 'clip-${DateTime.now().microsecondsSinceEpoch}-b',
+      );
+      final updatedTrack = AudioTrack(
+        id: track.id,
+        name: track.name,
+        kind: track.kind,
+        gain: track.gain,
+        pan: track.pan,
+        muted: track.muted,
+        solo: track.solo,
+        armed: track.armed,
+        clips: [
+          for (final item in track.clips)
+            if (item.id == clip.id) ...parts else item,
+        ],
+      );
+      _replaceTrack(updatedTrack);
+      setState(() {
+        _selectedClipId = parts.last.id;
+        _message = 'Clip split at frame ${clip.startFrame + splitOffset}. The source WAV remains unchanged.';
+      });
+    } catch (error) {
+      setState(() => _message = error.toString());
+    }
   }
 
   void _removeSelectedClip() {
@@ -769,7 +806,17 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
                 onMoveRight: () => _moveSelectedClip(1),
                 onToggleMute: _toggleSelectedClipMute,
                 onRemove: _removeSelectedClip,
+                onSplit: _splitSelectedClip,
+                maxFadeFrames: math.min(
+                  selectedClip.durationFrames,
+                  _session.sampleRate * 5,
+                ).toInt(),
+                sampleRate: _session.sampleRate,
                 onGainChanged: (value) => _updateSelectedClip(gain: value),
+                onFadeInChanged: (value) =>
+                    _updateSelectedClip(fadeInFrames: value.round()),
+                onFadeOutChanged: (value) =>
+                    _updateSelectedClip(fadeOutFrames: value.round()),
               ),
             if (_projectPath != null)
               Padding(
@@ -943,20 +990,40 @@ class _SelectedClipPanel extends StatelessWidget {
   const _SelectedClipPanel({
     required this.clip,
     required this.trackName,
+    required this.maxFadeFrames,
+    required this.sampleRate,
     required this.onMoveLeft,
     required this.onMoveRight,
     required this.onToggleMute,
     required this.onRemove,
+    required this.onSplit,
     required this.onGainChanged,
+    required this.onFadeInChanged,
+    required this.onFadeOutChanged,
   });
 
   final AudioClip clip;
   final String trackName;
+  final int maxFadeFrames;
+  final int sampleRate;
   final VoidCallback onMoveLeft;
   final VoidCallback onMoveRight;
   final VoidCallback onToggleMute;
   final VoidCallback onRemove;
+  final VoidCallback onSplit;
   final ValueChanged<double> onGainChanged;
+  final ValueChanged<double> onFadeInChanged;
+  final ValueChanged<double> onFadeOutChanged;
+
+  String _milliseconds(int frames) =>
+      (frames * 1000 / sampleRate).round().toString();
+
+  bool get _canSplit {
+    if (clip.durationFrames < 2) return false;
+    final midpoint = clip.durationFrames ~/ 2;
+    return clip.fadeInFrames <= midpoint &&
+        clip.fadeOutFrames <= clip.durationFrames - midpoint;
+  }
 
   @override
   Widget build(BuildContext context) => Container(
@@ -968,6 +1035,7 @@ class _SelectedClipPanel extends StatelessWidget {
           ),
         ),
         child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
             Row(
               children: [
@@ -978,6 +1046,11 @@ class _SelectedClipPanel extends StatelessWidget {
                           fontWeight: FontWeight.w700,
                         ),
                   ),
+                ),
+                IconButton(
+                  tooltip: 'Split clip at midpoint',
+                  onPressed: _canSplit ? onSplit : null,
+                  icon: const Icon(Icons.content_cut_rounded),
                 ),
                 IconButton(
                   tooltip: 'Move left one second',
@@ -1003,29 +1076,73 @@ class _SelectedClipPanel extends StatelessWidget {
                 ),
               ],
             ),
-            Row(
-              children: [
-                const SizedBox(width: 50, child: Text('Gain')),
-                Expanded(
-                  child: Slider(
-                    min: 0,
-                    max: 2,
-                    value: clip.gain.clamp(0.0, 2.0).toDouble(),
-                    onChanged: onGainChanged,
-                  ),
-                ),
-                SizedBox(
-                  width: 45,
-                  child: Text(
-                    '${(clip.gain * 100).round()}%',
-                    textAlign: TextAlign.end,
-                    style: Theme.of(context).textTheme.labelSmall,
-                  ),
-                ),
-              ],
+            _ClipValueSlider(
+              label: 'Gain',
+              value: clip.gain,
+              min: 0,
+              max: 2,
+              valueLabel: '${(clip.gain * 100).round()}%',
+              onChanged: onGainChanged,
+            ),
+            _ClipValueSlider(
+              label: 'Fade In',
+              value: clip.fadeInFrames.toDouble(),
+              min: 0,
+              max: math.max(1, maxFadeFrames).toDouble(),
+              valueLabel: '${_milliseconds(clip.fadeInFrames)} ms',
+              onChanged: onFadeInChanged,
+            ),
+            _ClipValueSlider(
+              label: 'Fade Out',
+              value: clip.fadeOutFrames.toDouble(),
+              min: 0,
+              max: math.max(1, maxFadeFrames).toDouble(),
+              valueLabel: '${_milliseconds(clip.fadeOutFrames)} ms',
+              onChanged: onFadeOutChanged,
             ),
           ],
         ),
+      );
+}
+
+class _ClipValueSlider extends StatelessWidget {
+  const _ClipValueSlider({
+    required this.label,
+    required this.value,
+    required this.min,
+    required this.max,
+    required this.valueLabel,
+    required this.onChanged,
+  });
+
+  final String label;
+  final double value;
+  final double min;
+  final double max;
+  final String valueLabel;
+  final ValueChanged<double> onChanged;
+
+  @override
+  Widget build(BuildContext context) => Row(
+        children: [
+          SizedBox(width: 62, child: Text(label)),
+          Expanded(
+            child: Slider(
+              min: min,
+              max: max,
+              value: value.clamp(min, max).toDouble(),
+              onChanged: onChanged,
+            ),
+          ),
+          SizedBox(
+            width: 56,
+            child: Text(
+              valueLabel,
+              textAlign: TextAlign.end,
+              style: Theme.of(context).textTheme.labelSmall,
+            ),
+          ),
+        ],
       );
 }
 
