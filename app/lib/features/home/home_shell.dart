@@ -287,7 +287,7 @@ class _ApiStatusPanel extends StatelessWidget {
 }
 
 class _NativeEngineStatusPanel extends StatefulWidget {
-  const _NativeEngineStatusPanel({super.key});
+  const _NativeEngineStatusPanel();
 
   @override
   State<_NativeEngineStatusPanel> createState() =>
@@ -1305,6 +1305,7 @@ class _LibraryPageState extends State<LibraryPage> {
       return;
     }
     if (_playingPath == recording.path) await _stopPlayback();
+    if (!mounted) return;
     final controller = TextEditingController(text: recording.name);
     final name = await showDialog<String>(
       context: context,
@@ -1995,31 +1996,3 @@ class _LibraryEmptyState extends StatelessWidget {
       );
 }
 
-class _ComingSoonPage extends StatelessWidget {
-  const _ComingSoonPage({required this.icon, required this.title, required this.description});
-  final IconData icon;
-  final String title;
-  final String description;
-
-  @override
-  Widget build(BuildContext context) => Center(
-    child: Padding(
-      padding: const EdgeInsets.all(28),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 480),
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Container(width: 76, height: 76,
-            decoration: BoxDecoration(color: AuraTheme.panelLight, borderRadius: BorderRadius.circular(24)),
-            child: Icon(icon, size: 36, color: AuraTheme.mint)),
-          const SizedBox(height: 22),
-          Text(title, style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800)),
-          const SizedBox(height: 10),
-          Text(description, textAlign: TextAlign.center,
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: AuraTheme.muted, height: 1.6)),
-          const SizedBox(height: 18),
-          const _StatusChip(label: 'IN DEVELOPMENT'),
-        ]),
-      ),
-    ),
-  );
-}
