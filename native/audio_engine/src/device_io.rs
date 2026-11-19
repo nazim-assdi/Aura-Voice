@@ -770,7 +770,7 @@ pub unsafe extern "C" fn aura_audio_playback_position_frames(
         .min(playback.total_frames)
 }
 
-/// Returns 0 while playing, 1 when complete, and 2 after an output stream error.
+/// Returns 0 while active (playing, paused or looping), 1 when complete, and 2 after an output stream error.
 #[no_mangle]
 pub unsafe extern "C" fn aura_audio_playback_status(
     handle: *const AuraAudioPlaybackHandle,
