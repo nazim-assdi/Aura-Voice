@@ -44,18 +44,18 @@ A feature is only advertised as ready after its real engine is integrated and te
 - FastAPI health endpoint and versioned capabilities endpoint.
 - Speech-provider interface and a safe unavailable provider that fails instead of returning fake audio.
 - Initial Rust offline PCM WAV renderer in `native/audio_engine`: integer/float WAV decode, sample-frame clip placement, multitrack gain/pan/mute/solo, fades, sample-peak/clipping report and PCM WAV export.
-- Versioned C ABI and public header for offline rendering, microphone input capture and system-output WAV playback with sample-frame seek, pause/resume and loop controls.
-- Flutter FFI adapter with ABI-version check, worker-isolate rendering, native-library discovery, microphone capture and playback sessions, plus explicit web/unsupported-platform fallbacks.
+- Versioned C ABI and public header for offline export, microphone capture, standalone WAV audition and callback-driven real-time multitrack session playback with sample-frame seek, pause/resume and loop controls.
+- Flutter FFI adapter with ABI-version check, worker-isolate WAV decoding/session preparation, native-library discovery, microphone capture, standalone WAV preview and real-time multitrack playback sessions, plus explicit web/unsupported-platform fallbacks.
 - Studio single-take Record Booth: selectable microphone, live Peak/RMS meters, local 24-bit PCM WAV save, dropped-frame warning and Play/Stop audition with progress.
 - Local Audio Library: scans RIFF metadata without loading audio payloads, search/sort, saved-take playback, sample-derived waveform preview, rename and confirmed delete. Recordings referenced by saved sessions are protected from rename/delete.
 - Local session projects: sample-frame JSON manifests in Documents/Aura Voice Studio/Projects, project listing/reopen, save recovery from backup and source WAV reference checks.
-- Early non-destructive multitrack editor: sample-frame ruler and source-range-aware waveforms, long-press body move and edge trim handles, sample-frame split, 250 ms (or shorter for short clips) overlapping crossfades, adjustable 10 ms–1 s snap grid, timeline zoom (25%–400%), 100-step undo/redo history, debounced local autosave, clip gain/fades/mute, track mute/solo, project save/reopen and rendered-mix transport with playhead, sample-frame seek, pause/resume and whole-mix loop.
+- Early non-destructive multitrack editor: sample-frame ruler and source-range-aware waveforms, long-press move/trim handles, sample-frame split, overlapping crossfades, adjustable 10 ms–1 s snap grid, timeline zoom (25%–400%), 100-step undo/redo, debounced autosave, clip gain/fades/mute, track mute/solo, project save/reopen and a native callback-driven real-time mixer with playhead, sample-frame seek, pause/resume, whole-mix loop and selected-clip loop.
 - Rust unit tests for sample-accurate placement, mixing, panning, fades, clipping, format conversion and invalid media. Native CI is configured; check the latest workflow run for its result.
 - Backend tests, Docker development setup and CI workflows for the configured platform targets.
 
 ## What is not implemented yet
 
-- The current editor now has non-destructive trim handles, overlapping crossfades, snap-to-grid, bounded undo/redo, debounced local autosave, timeline zoom, a sample-frame playhead, seek slider, pause/resume and whole-mix loop transport. Remaining editor gaps include waveform-cache persistence, media relinking, loop-range selection, true real-time multitrack mixing/playback and input-to-output monitoring. The session is still rendered offline before output; saved WAV preview loads files up to 256 MiB into memory and requires a supported output sample rate.
+- The realtime mixer currently uses an immutable session snapshot prepared before playback and scans the clip graph for each output sample frame. Dynamic graph edits while playing, optimized block scheduling for very dense sessions, track/bus routing, realtime DSP automation, input-to-output monitoring, waveform-cache persistence and media relinking remain future work. Playback requires each source WAV to match the session sample rate and the output device to support that rate; resampling is not implemented.
 - Production audio DSP, noise restoration, effects graph or mastering.
 - Production TTS inference, voice profile enrollment or voice cloning.
 - Speech recognition, translation/dubbing alignment and subtitle export.
@@ -89,7 +89,7 @@ cd native/audio_engine
 cargo test --all-targets
 ```
 
-The renderer intentionally accepts decoded PCM assets at the session sample rate. The C ABI and Flutter FFI bridge are in place, and desktop workflows now build/copy the shared library beside each executable; this packaging change still needs a successful CI run. The native module now exposes CPAL microphone input discovery/capture and a bounded realtime-safe sample ring through its C ABI and Dart service. The Flutter Record Booth still needs UI controls, WAV/session writing and live monitoring; sample-rate conversion and compressed-audio decoding are not implemented.
+Native unit tests cover the offline renderer and parity between its output and the realtime frame mixer. The renderer intentionally accepts decoded PCM assets at the session sample rate. The C ABI and Flutter FFI bridge are in place, and desktop workflows now build/copy the shared library beside each executable; this packaging change still needs a successful CI run. The native module now exposes CPAL microphone input discovery/capture and a bounded realtime-safe sample ring through its C ABI and Dart service. The Flutter Record Booth still needs UI controls, WAV/session writing and live monitoring; sample-rate conversion and compressed-audio decoding are not implemented.
 
 ## Run the FastAPI backend
 
