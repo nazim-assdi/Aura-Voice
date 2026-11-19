@@ -156,15 +156,18 @@ This repository is currently an early Flutter/FastAPI foundation. The UI shell, 
 ## Implementation status (November 19, 2026)
 
 ### Implemented in source
-- Versioned Flutter session model with sample-frame clip positions, tracks, markers, validation and JSON round-trip tests.
-- Professional Voice Studio dashboard and navigation language.
-- Rust offline PCM WAV engine foundation: PCM 8/16/24/32 and IEEE float32 WAV import; mono/stereo buffers; exact sample-frame clip placement; multitrack mixing; track/clip/master gain; panning; mute/solo; linear clip fades; sample-peak and overload reporting; PCM 16/24/32 WAV export.
-- Dedicated Native Audio Engine GitHub Actions workflow.
+- Versioned Flutter session model with sample-frame clip positions, tracks, markers, per-clip fades, validation and JSON round-trip tests.
+- Professional Voice Studio dashboard with an honest native-library availability indicator.
+- Rust offline PCM WAV engine: PCM 8/16/24/32 and IEEE float32 WAV import; mono/stereo buffers; sample-frame clip placement; multitrack mixing; track/clip/master gain; panning; mute/solo; linear fades; sample-peak and overload reporting; PCM 16/24/32 WAV export.
+- Versioned C ABI, public C header, engine error reporting and an end-to-end Rust FFI unit test.
+- Flutter FFI adapter with ABI checks, asset/track/clip marshaling, output-buffer ownership handling, worker-isolate rendering and a web/unsupported-platform fallback.
+- Desktop build workflow steps to compile and copy the native shared library beside Linux, Windows and macOS executables.
 
 ### Still not implemented
-- Device audio I/O, microphone recording, monitoring, realtime playback and low-latency callback scheduling.
-- Flutter FFI bridge to load and call the Rust library.
+- Microphone capture, input device selection, monitoring, realtime playback and low-latency callback scheduling.
+- Android/iOS native audio library packaging and native app linking.
+- In-app media-file import UX, waveform display/editor and session-to-render controls.
 - Sample-rate conversion, compressed MP3/AAC/FLAC decoders, realtime DSP and waveform cache.
 - Production TTS, voice cloning, transcription, translation, dubbing and mastering workflows.
 
-The engine code and automated tests have been committed to `main`; their CI result must be checked before treating the native renderer as build-verified. Preview playback and microphone capture are not available yet.
+All code and build configuration are committed to `main`. CI still needs to pass before treating the new C ABI, Dart FFI adapter and desktop bundling steps as verified end to end. Live recording and preview playback remain unavailable.
