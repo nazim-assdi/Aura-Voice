@@ -8,7 +8,7 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    app_name: str = "Aura Voice AI API"
+    app_name: str = "Aura Voice Studio API"
     app_version: str = "0.1.0"
     environment: str = "development"
     speech_provider: str = "none"
