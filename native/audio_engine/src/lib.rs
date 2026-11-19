@@ -1917,6 +1917,117 @@ mod tests {
     }
 
     #[test]
+    fn realtime_graph_keeps_an_in_use_snapshot_alive_until_the_callback_releases_it() {
+        let assets = asset("voice", 1, &[0.25; 8]);
+
+        let mut first_track = Track::new("voice");
+        first_track.clips.push(Clip::new("first", "voice", 0, 0, 2));
+        let mut first_session = MixSession::new(48_000, 1);
+        first_session.tracks.push(first_track);
+        let first = build_realtime_mixer(&first_session, &assets).unwrap();
+        let first_frames = first.total_frames;
+        let graph = RealtimeGraph::new(first);
+
+        // Simulate a callback that is midway through rendering the old graph.
+        let old_guard = graph.load();
+        let old_pointer = old_guard.pointer;
+        assert_eq!(old_guard.mixer().total_frames, first_frames);
+
+        let mut second_track = Track::new("voice");
+        second_track.clips.push(Clip::new("second", "voice", 0, 0, 4));
+        let mut second_session = MixSession::new(48_000, 1);
+        second_session.tracks.push(second_track);
+        let second = build_realtime_mixer(&second_session, &assets).unwrap();
+        let second_frames = second.total_frames;
+
+        graph.publish(second).unwrap();
+        assert_eq!(old_guard.mixer().total_frames, first_frames);
+        assert_eq!(graph.hazard.load(Ordering::SeqCst), old_pointer);
+        assert_eq!(graph.owners.lock().unwrap().retired.len(), 1);
+        drop(old_guard);
+
+        let current_guard = graph.load();
+        assert_eq!(current_guard.mixer().total_frames, second_frames);
+        drop(current_guard);
+
+        let mut third_track = Track::new("voice");
+        third_track.clips.push(Clip::new("third", "voice", 0, 0, 6));
+        let mut third_session = MixSession::new(48_000, 1);
+        third_session.tracks.push(third_track);
+        let third = build_realtime_mixer(&third_session, &assets).unwrap();
+        graph.publish(third).unwrap();
+
+        // The writer thread reclaims retired graphs after the callback's
+        // hazard pointer is clear; the audio callback never frees a graph.
+        assert!(graph.owners.lock().unwrap().retired.is_empty());
+    }
+
+    #[test]
+    fn realtime_graph_rejects_live_sample_format_changes() {
+        let assets = asset("voice", 1, &[0.25; 8]);
+        let mut initial_track = Track::new("voice");
+        initial_track.clips.push(Clip::new("initial", "voice", 0, 0, 2));
+        let mut initial = MixSession::new(48_000, 1);
+        initial.tracks.push(initial_track);
+        let graph = RealtimeGraph::new(
+            build_realtime_mixer(&initial, &assets).unwrap(),
+        );
+
+        let mut replacement_track = Track::new("voice");
+        replacement_track.clips.push(Clip::new("replacement", "voice", 0, 0, 2));
+        let mut replacement = MixSession::new(44_100, 1);
+        replacement.tracks.push(replacement_track);
+        let replacement_assets = HashMap::from([(
+            "voice".to_string(),
+            AudioBuffer::new(44_100, 1, vec![0.25; 8]).unwrap(),
+        )]);
+        let replacement_graph =
+            build_realtime_mixer(&replacement, &replacement_assets).unwrap();
+
+        assert!(matches!(
+            graph.publish(replacement_graph),
+            Err(AudioError::InvalidArgument(_))
+        ));
+    }
+
+    #[test]
+    fn block_scheduler_scales_to_thousands_of_short_clips() {
+        const CLIP_COUNT: usize = 8_192;
+        let assets = asset("voice", 1, &[0.25]);
+        let mut track = Track::new("dense");
+        track.clips.reserve(CLIP_COUNT);
+        for index in 0..CLIP_COUNT {
+            track.clips.push(Clip::new(
+                format!("clip-{index}"),
+                "voice",
+                (index * 2) as u64,
+                0,
+                1,
+            ));
+        }
+
+        let mut session = MixSession::new(48_000, 1);
+        session.tracks.push(track);
+        let mixer = build_realtime_mixer(&session, &assets).unwrap();
+        let mut state = RealtimeRenderState::new();
+        let total_frames = mixer.total_frames as usize;
+        let mut block = vec![0.0_f32; MAX_REALTIME_BLOCK_FRAMES];
+
+        for start in (0..total_frames).step_by(MAX_REALTIME_BLOCK_FRAMES) {
+            let frames = (total_frames - start).min(MAX_REALTIME_BLOCK_FRAMES);
+            mixer.render_block(&mut state, start, &mut block[..frames]);
+            for (offset, sample) in block[..frames].iter().enumerate() {
+                let expected = if (start + offset) % 2 == 0 {
+                    0.25
+                } else {
+                    0.0
+                };
+                assert!((sample - expected).abs() < 0.000001);
+            }
+        }
+    }
+
+    #[test]
     fn track_dsp_validates_cutoff_and_compressor_ranges() {
         let assets = asset("voice", 1, &[0.2, 0.4, 0.6, 0.8]);
         let mut track = Track::new("lead");
