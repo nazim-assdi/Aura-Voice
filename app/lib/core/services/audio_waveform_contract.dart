@@ -3,7 +3,7 @@ import 'dart:typed_data';
 /// Compact peak data derived from the original WAV samples.
 class AudioWaveformData {
   AudioWaveformData({
-    required this.peaks,
+    required List<double> peaks,
     required this.sampleRate,
     required this.channels,
     required this.bitsPerSample,
