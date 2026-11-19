@@ -14,9 +14,15 @@ class AudioClip {
     this.gain = 1,
     this.pan = 0,
     this.muted = false,
+    this.fadeInFrames = 0,
+    this.fadeOutFrames = 0,
   }) {
     if (id.trim().isEmpty || mediaId.trim().isEmpty) {
       throw ArgumentError('Clip id and mediaId must not be empty.');
+    }
+    if (fadeInFrames < 0 || fadeOutFrames < 0 ||
+        fadeInFrames > durationFrames || fadeOutFrames > durationFrames) {
+      throw ArgumentError('Clip fades must be between zero and the clip duration.');
     }
     if (startFrame < 0 || sourceStartFrame < 0 || durationFrames <= 0) {
       throw ArgumentError('Clip frame positions must be non-negative and duration must be positive.');
@@ -37,6 +43,8 @@ class AudioClip {
   final double gain;
   final double pan;
   final bool muted;
+  final int fadeInFrames;
+  final int fadeOutFrames;
 
   Map<String, Object> toJson() => {
         'id': id,
@@ -47,6 +55,8 @@ class AudioClip {
         'gain': gain,
         'pan': pan,
         'muted': muted,
+        'fadeInFrames': fadeInFrames,
+        'fadeOutFrames': fadeOutFrames,
       };
 
   factory AudioClip.fromJson(Map<String, dynamic> json) => AudioClip(
@@ -58,6 +68,8 @@ class AudioClip {
         gain: (json['gain'] as num?)?.toDouble() ?? 1,
         pan: (json['pan'] as num?)?.toDouble() ?? 0,
         muted: json['muted'] as bool? ?? false,
+        fadeInFrames: json['fadeInFrames'] as int? ?? 0,
+        fadeOutFrames: json['fadeOutFrames'] as int? ?? 0,
       );
 }
 
