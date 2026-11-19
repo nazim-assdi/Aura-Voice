@@ -42,6 +42,8 @@ A feature is only advertised as ready after its real engine is integrated and te
 - Flutter shell with a premium dark theme and responsive navigation.
 - FastAPI health endpoint and versioned capabilities endpoint.
 - Speech-provider interface and a safe unavailable provider that fails instead of returning fake audio.
+- Initial Rust offline PCM WAV renderer in `native/audio_engine`: integer/float WAV decode, sample-frame clip placement, multitrack gain/pan/mute/solo, fades, sample-peak/clipping report and PCM WAV export.
+- Rust unit tests for sample-accurate placement, mixing, panning, fades, clipping, format conversion and invalid media. Native CI is configured; check the latest workflow run for its result.
 - Backend tests, Docker development setup and CI workflows for the configured platform targets.
 
 ## What is not implemented yet
@@ -70,6 +72,17 @@ flutter run --dart-define=AURA_API_BASE_URL=http://127.0.0.1:8000
 ```
 
 For the Android emulator, use `http://10.0.2.2:8000` instead of `127.0.0.1`. A physical phone needs the computer's reachable LAN address and matching backend/CORS configuration.
+
+## Test the native offline audio renderer
+
+Requires the stable Rust toolchain:
+
+```bash
+cd native/audio_engine
+cargo test --all-targets
+```
+
+The renderer intentionally accepts decoded PCM assets at the session sample rate. It does not yet perform resampling, compressed-audio decoding, microphone capture or realtime playback.
 
 ## Run the FastAPI backend
 
