@@ -471,7 +471,7 @@ pub unsafe extern "C" fn aura_audio_capture_stop(handle: *mut AuraAudioCaptureHa
 }
 
 
-/// Opaque playback stream backed by a decoded WAV asset.
+/// Opaque OS output stream for standalone WAV or realtime session playback.
 pub struct AuraAudioPlaybackHandle {
     _stream: Stream,
     total_frames: u64,
