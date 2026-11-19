@@ -716,7 +716,7 @@ pub(crate) struct RealtimeRenderState {
 }
 
 impl RealtimeRenderState {
-    pub(crate) fn new(mixer: &RealtimeMixer) -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             active_clips: Vec::with_capacity(MAX_REALTIME_CLIPS),
             event_cursor: 0,
@@ -1655,7 +1655,7 @@ mod tests {
 
         let offline = render_mix(&session, &assets).unwrap();
         let realtime = build_realtime_mixer(&session, &assets).unwrap();
-        let mut state = RealtimeRenderState::new(&realtime);
+        let mut state = RealtimeRenderState::new();
         let mut block = vec![0.0_f32; 4];
         let mut actual = Vec::new();
         for start in (0..realtime.total_frames as usize).step_by(2) {
@@ -1678,7 +1678,7 @@ mod tests {
         let mut session = MixSession::new(48_000, 1);
         session.tracks.push(track);
         let mixer = build_realtime_mixer(&session, &assets).unwrap();
-        let mut state = RealtimeRenderState::new(&mixer);
+        let mut state = RealtimeRenderState::new();
         let mut output = [0.0_f32; 2];
 
         mixer.render_block(&mut state, 0, &mut output);
