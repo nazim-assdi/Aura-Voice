@@ -812,7 +812,7 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
     }
     setState(() {
       _rendering = true;
-      _message = 'Rendering the current session…';
+      _message = 'Preparing the realtime multitrack audio graph…';
     });
     try {
       final assets = <String, Uint8List>{};
@@ -832,25 +832,32 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
           }
         }
       }
-      final result = await _engine.renderSession(
+      final playback = await _engine.startRealtimePlayback(
         session: _session,
         assetWavs: assets,
-        bitDepth: _session.bitDepth,
       );
-      if (!mounted) return;
-      if (result.wavBytes.length > 536870912) {
-        throw const AudioEngineUnavailable(
-          'The rendered mix is larger than the 512 MiB preview limit. Reduce the session length or render fewer tracks at once.',
-        );
-      }
-      final playback = await _engine.startPlayback(wavBytes: result.wavBytes);
       try {
         if (_loopEnabled) {
-          await playback.setLoopRange(
-            startFrame: 0,
-            endFrame: playback.totalFrames,
-            enabled: true,
-          );
+          final selected = _selectedClip;
+          final loopStart = selected?.startFrame ?? 0;
+          final loopEnd = selected == null
+              ? playback.totalFrames
+              : selected.startFrame + selected.durationFrames;
+          if (loopStart < loopEnd && loopEnd <= playback.totalFrames) {
+            await playback.setLoopRange(
+              startFrame: loopStart,
+              endFrame: loopEnd,
+              enabled: true,
+            );
+          } else if (selected != null) {
+            _loopEnabled = false;
+            if (mounted) {
+              setState(() {
+                _message =
+                    'The selected clip is not part of the audible playback range; loop was disabled.';
+              });
+            }
+          }
         }
       } catch (_) {
         await playback.stop();
@@ -866,9 +873,7 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
         _transportTotalFrames = playback.totalFrames;
         _transportPaused = false;
         _seekPreviewFrame = null;
-        _message = result.clippedSamples > 0
-            ? 'Mix preview playing · ${result.clippedSamples} clipped samples were detected.'
-            : 'Mix preview playing · no clipped samples detected.';
+        _message = 'Realtime multitrack playback playing.';
       });
       _playbackTimer = Timer.periodic(
         const Duration(milliseconds: 70),
@@ -947,20 +952,38 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
   Future<void> _toggleLoop() async {
     final enabled = !_loopEnabled;
     final playback = _playback;
+    final selected = _selectedClip;
+    final loopStart = selected?.startFrame ?? 0;
+    final loopEnd = selected == null
+        ? playback?.totalFrames ?? _sessionEndFrame
+        : selected.startFrame + selected.durationFrames;
     try {
-      if (playback != null) {
+      if (playback != null && enabled) {
+        if (loopStart >= loopEnd || loopEnd > playback.totalFrames) {
+          throw const AudioEngineUnavailable(
+            'The selected clip is outside the audible playback range. Select an audible clip or clear the selection to loop the whole mix.',
+          );
+        }
+        await playback.setLoopRange(
+          startFrame: loopStart,
+          endFrame: loopEnd,
+          enabled: true,
+        );
+      } else if (playback != null) {
         await playback.setLoopRange(
           startFrame: 0,
           endFrame: playback.totalFrames,
-          enabled: enabled,
+          enabled: false,
         );
       }
       if (mounted) {
         setState(() {
           _loopEnabled = enabled;
-          _message = enabled
-              ? 'Whole-mix loop enabled.'
-              : 'Loop disabled. Playback will stop at the end.';
+          _message = !enabled
+              ? 'Loop disabled. Playback will continue to the end.'
+              : selected == null
+                  ? 'Whole-mix loop enabled.'
+                  : 'Selected clip loop enabled.';
         });
       }
     } catch (error) {
@@ -1053,7 +1076,7 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
                 : const Icon(Icons.save_outlined),
           ),
           IconButton(
-            tooltip: _playback == null ? 'Render and play mix' : 'Stop mix preview',
+            tooltip: _playback == null ? 'Start realtime mix' : 'Stop realtime mix',
             onPressed: _rendering
                 ? null
                 : _playback == null
@@ -1348,7 +1371,11 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
                           icon: const Icon(Icons.stop_rounded),
                         ),
                         IconButton(
-                          tooltip: _loopEnabled ? 'Disable whole-mix loop' : 'Loop whole mix',
+                          tooltip: _loopEnabled
+                              ? 'Disable loop'
+                              : _selectedClip == null
+                                  ? 'Loop whole mix'
+                                  : 'Loop selected clip',
                           onPressed: _toggleLoop,
                           color: _loopEnabled ? AuraTheme.mint : null,
                           icon: const Icon(Icons.repeat_rounded),
