@@ -1036,13 +1036,677 @@ class _InputLevelMeter extends StatelessWidget {
   }
 }
 
-class LibraryPage extends StatelessWidget {
+class LibraryPage extends StatefulWidget {
   const LibraryPage({super.key});
+
   @override
-  Widget build(BuildContext context) => const _ComingSoonPage(
-    icon: Icons.library_music_rounded, title: 'Audio Library',
-    description: 'Your recordings, generated speech, voice projects and final audio exports will appear here when local project storage and secure library management are implemented.',
-  );
+  State<LibraryPage> createState() => _LibraryPageState();
+}
+
+class _LibraryPageState extends State<LibraryPage> {
+  late final AudioLibraryService _library;
+  late final AudioEngineService _engine;
+  final TextEditingController _searchController = TextEditingController();
+  final List<AudioLibraryRecording> _recordings = [];
+  AudioPlaybackSession? _playback;
+  Timer? _playbackTimer;
+  String? _playingPath;
+  String? _loadingPath;
+  String? _message;
+  bool _loading = true;
+  bool _pollingPlayback = false;
+  String _sortBy = 'recent';
+
+  @override
+  void initState() {
+    super.initState();
+    _library = createAudioLibraryService();
+    _engine = createAudioEngineService();
+    unawaited(_refresh());
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    _playbackTimer?.cancel();
+    final playback = _playback;
+    _playback = null;
+    if (playback != null) unawaited(playback.stop());
+    super.dispose();
+  }
+
+  Future<void> _refresh() async {
+    if (mounted) {
+      setState(() {
+        _loading = true;
+        _message = null;
+      });
+    }
+    try {
+      final items = await _library.listRecordings();
+      if (!mounted) return;
+      setState(() {
+        _recordings
+          ..clear()
+          ..addAll(items);
+      });
+    } catch (error) {
+      if (mounted) setState(() => _message = error.toString());
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  List<AudioLibraryRecording> get _visibleRecordings {
+    final query = _searchController.text.trim().toLowerCase();
+    final items = _recordings
+        .where((item) => item.name.toLowerCase().contains(query))
+        .toList();
+    switch (_sortBy) {
+      case 'name':
+        items.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+      case 'longest':
+        items.sort((a, b) => b.duration.compareTo(a.duration));
+      case 'largest':
+        items.sort((a, b) => b.sizeBytes.compareTo(a.sizeBytes));
+      default:
+        items.sort((a, b) => b.modifiedAt.compareTo(a.modifiedAt));
+    }
+    return items;
+  }
+
+  Future<void> _play(AudioLibraryRecording recording) async {
+    if (_loadingPath != null) return;
+    if (_playingPath == recording.path && _playback != null) {
+      await _stopPlayback();
+      return;
+    }
+    await _stopPlayback();
+    if (!mounted) return;
+    setState(() {
+      _loadingPath = recording.path;
+      _message = null;
+    });
+    try {
+      final bytes = await readAudioFile(recording.path);
+      final playback = await _engine.startPlayback(wavBytes: bytes);
+      if (!mounted) {
+        await playback.stop();
+        return;
+      }
+      setState(() {
+        _playback = playback;
+        _playingPath = recording.path;
+      });
+      _playbackTimer = Timer.periodic(
+        const Duration(milliseconds: 60),
+        (_) => unawaited(_pollPlayback()),
+      );
+    } catch (error) {
+      if (mounted) setState(() => _message = error.toString());
+    } finally {
+      if (mounted) setState(() => _loadingPath = null);
+    }
+  }
+
+  Future<void> _pollPlayback() async {
+    final playback = _playback;
+    if (playback == null || _pollingPlayback) return;
+    _pollingPlayback = true;
+    try {
+      final complete = playback.isComplete;
+      final failed = playback.hasError;
+      if (complete || failed) {
+        _playbackTimer?.cancel();
+        _playbackTimer = null;
+        _playback = null;
+        _playingPath = null;
+        await playback.stop();
+        if (mounted) {
+          setState(() {
+            _message = failed ? 'The output device reported a playback error.' : null;
+          });
+        }
+      }
+    } finally {
+      _pollingPlayback = false;
+    }
+  }
+
+  Future<void> _stopPlayback() async {
+    _playbackTimer?.cancel();
+    _playbackTimer = null;
+    final playback = _playback;
+    _playback = null;
+    _playingPath = null;
+    if (playback != null) await playback.stop();
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _rename(AudioLibraryRecording recording) async {
+    final controller = TextEditingController(text: recording.name);
+    final name = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Rename recording'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          maxLength: 90,
+          decoration: const InputDecoration(
+            labelText: 'Recording name',
+            hintText: 'Enter a name',
+          ),
+          onSubmitted: (value) => Navigator.of(dialogContext).pop(value),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(controller.text),
+            child: const Text('Save name'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (name == null || name.trim().isEmpty || !mounted) return;
+    try {
+      final updated = await _library.renameRecording(recording, name);
+      if (!mounted) return;
+      final index = _recordings.indexWhere((item) => item.path == recording.path);
+      setState(() {
+        if (index >= 0) _recordings[index] = updated;
+      });
+    } catch (error) {
+      if (mounted) setState(() => _message = error.toString());
+    }
+  }
+
+  Future<void> _delete(AudioLibraryRecording recording) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Delete recording?'),
+        content: Text(
+          '“${recording.name}” will be permanently deleted from this device.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFFB94B55),
+            ),
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    if (_playingPath == recording.path) await _stopPlayback();
+    try {
+      await _library.deleteRecording(recording);
+      if (!mounted) return;
+      setState(() {
+        _recordings.removeWhere((item) => item.path == recording.path);
+        _message = 'Recording deleted from this device.';
+      });
+    } catch (error) {
+      if (mounted) setState(() => _message = error.toString());
+    }
+  }
+
+  String _durationLabel(Duration duration) {
+    final hours = duration.inHours;
+    final minutes = duration.inMinutes.remainder(60);
+    final seconds = duration.inSeconds.remainder(60);
+    if (hours > 0) {
+      return '${hours.toString().padLeft(2, '0')}:${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
+    }
+    return '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
+  }
+
+  String _sizeLabel(int bytes) {
+    if (bytes >= 1024 * 1024) {
+      return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+    }
+    return '${(bytes / 1024).toStringAsFixed(0)} KB';
+  }
+
+  String _dateLabel(DateTime date) {
+    final local = date.toLocal();
+    final day = local.day.toString().padLeft(2, '0');
+    final month = local.month.toString().padLeft(2, '0');
+    final year = local.year.toString();
+    final hour = local.hour.toString().padLeft(2, '0');
+    final minute = local.minute.toString().padLeft(2, '0');
+    return '$day/$month/$year · $hour:$minute';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final visible = _visibleRecordings;
+    final totalBytes = _recordings.fold<int>(
+      0,
+      (total, item) => total + item.sizeBytes,
+    );
+    final totalDuration = _recordings.fold<Duration>(
+      Duration.zero,
+      (total, item) => total + item.duration,
+    );
+
+    return RefreshIndicator(
+      onRefresh: _refresh,
+      child: CustomScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        slivers: [
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(22, 22, 22, 34),
+            sliver: SliverList(
+              delegate: SliverChildListDelegate([
+                Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'YOUR AUDIO',
+                            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                                  color: AuraTheme.mint,
+                                  letterSpacing: 2,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'Audio Library',
+                            style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                                  fontWeight: FontWeight.w800,
+                                ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: 'Refresh library',
+                      onPressed: _loading ? null : _refresh,
+                      icon: const Icon(Icons.refresh_rounded),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 18),
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: AuraTheme.panel,
+                    borderRadius: BorderRadius.circular(19),
+                    border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: _LibraryStat(
+                          label: 'RECORDINGS',
+                          value: _recordings.length.toString(),
+                          icon: Icons.library_music_rounded,
+                        ),
+                      ),
+                      Expanded(
+                        child: _LibraryStat(
+                          label: 'TOTAL TIME',
+                          value: _durationLabel(totalDuration),
+                          icon: Icons.schedule_rounded,
+                        ),
+                      ),
+                      Expanded(
+                        child: _LibraryStat(
+                          label: 'STORAGE',
+                          value: _sizeLabel(totalBytes),
+                          icon: Icons.storage_rounded,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 18),
+                TextField(
+                  controller: _searchController,
+                  onChanged: (_) => setState(() {}),
+                  decoration: InputDecoration(
+                    hintText: 'Search recordings…',
+                    prefixIcon: const Icon(Icons.search_rounded),
+                    suffixIcon: _searchController.text.isEmpty
+                        ? null
+                        : IconButton(
+                            tooltip: 'Clear search',
+                            onPressed: () {
+                              _searchController.clear();
+                              setState(() {});
+                            },
+                            icon: const Icon(Icons.close_rounded),
+                          ),
+                    filled: true,
+                    fillColor: AuraTheme.panel,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(15),
+                      borderSide: BorderSide.none,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        '${visible.length} of ${_recordings.length} recordings',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: AuraTheme.muted,
+                            ),
+                      ),
+                    ),
+                    DropdownButtonHideUnderline(
+                      child: DropdownButton<String>(
+                        value: _sortBy,
+                        dropdownColor: AuraTheme.panel,
+                        items: const [
+                          DropdownMenuItem(value: 'recent', child: Text('Newest first')),
+                          DropdownMenuItem(value: 'name', child: Text('Name')),
+                          DropdownMenuItem(value: 'longest', child: Text('Longest')),
+                          DropdownMenuItem(value: 'largest', child: Text('Largest')),
+                        ],
+                        onChanged: (value) {
+                          if (value != null) setState(() => _sortBy = value);
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+                if (_message != null) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    _message!,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: const Color(0xFFFFC27A),
+                          height: 1.4,
+                        ),
+                  ),
+                ],
+                if (_loading) ...[
+                  const SizedBox(height: 30),
+                  const Center(child: CircularProgressIndicator()),
+                ] else if (_recordings.isEmpty) ...[
+                  const SizedBox(height: 34),
+                  _LibraryEmptyState(directoryPath: _library.directoryPath),
+                ] else if (visible.isEmpty) ...[
+                  const SizedBox(height: 32),
+                  const Center(child: Text('No recordings match this search.')),
+                ] else ...[
+                  const SizedBox(height: 8),
+                  for (final recording in visible)
+                    _RecordingCard(
+                      recording: recording,
+                      durationLabel: _durationLabel(recording.duration),
+                      sizeLabel: _sizeLabel(recording.sizeBytes),
+                      dateLabel: _dateLabel(recording.modifiedAt),
+                      playing: _playingPath == recording.path,
+                      loading: _loadingPath == recording.path,
+                      onPlay: () => _play(recording),
+                      onRename: () => _rename(recording),
+                      onDelete: () => _delete(recording),
+                    ),
+                ],
+                const SizedBox(height: 8),
+                Text(
+                  'Only local WAV files in this device’s Aura Voice Studio Recordings folder appear here.',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: AuraTheme.muted,
+                        height: 1.5,
+                      ),
+                ),
+              ]),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LibraryStat extends StatelessWidget {
+  const _LibraryStat({
+    required this.label,
+    required this.value,
+    required this.icon,
+  });
+
+  final String label;
+  final String value;
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: AuraTheme.mint, size: 18),
+          const SizedBox(height: 10),
+          Text(
+            value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w800,
+                  fontFeatures: const [FontFeature.tabularFigures()],
+                ),
+          ),
+          const SizedBox(height: 3),
+          Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  color: AuraTheme.muted,
+                  letterSpacing: 0.7,
+                ),
+          ),
+        ],
+      );
+}
+
+class _RecordingCard extends StatelessWidget {
+  const _RecordingCard({
+    required this.recording,
+    required this.durationLabel,
+    required this.sizeLabel,
+    required this.dateLabel,
+    required this.playing,
+    required this.loading,
+    required this.onPlay,
+    required this.onRename,
+    required this.onDelete,
+  });
+
+  final AudioLibraryRecording recording;
+  final String durationLabel;
+  final String sizeLabel;
+  final String dateLabel;
+  final bool playing;
+  final bool loading;
+  final VoidCallback onPlay;
+  final VoidCallback onRename;
+  final VoidCallback onDelete;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        margin: const EdgeInsets.only(top: 10),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: AuraTheme.panel,
+          borderRadius: BorderRadius.circular(17),
+          border: Border.all(
+            color: playing
+                ? AuraTheme.mint.withValues(alpha: 0.45)
+                : Colors.white.withValues(alpha: 0.055),
+          ),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: AuraTheme.mint.withValues(alpha: 0.11),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Icon(
+                playing ? Icons.graphic_eq_rounded : Icons.audio_file_rounded,
+                color: AuraTheme.mint,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    recording.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                  ),
+                  const SizedBox(height: 5),
+                  Text(
+                    '$durationLabel · ${recording.sampleRate} Hz · ${recording.channels == 1 ? 'Mono' : 'Stereo'} · ${recording.bitsPerSample}-bit',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: AuraTheme.muted,
+                        ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    '$dateLabel · $sizeLabel',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          color: AuraTheme.muted,
+                        ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 4),
+            IconButton(
+              tooltip: playing ? 'Stop playback' : 'Play recording',
+              onPressed: loading ? null : onPlay,
+              icon: loading
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : Icon(
+                      playing ? Icons.stop_circle_rounded : Icons.play_circle_fill_rounded,
+                      color: AuraTheme.mint,
+                      size: 30,
+                    ),
+            ),
+            PopupMenuButton<String>(
+              tooltip: 'Recording actions',
+              onSelected: (value) {
+                if (value == 'rename') onRename();
+                if (value == 'delete') onDelete();
+              },
+              itemBuilder: (context) => const [
+                PopupMenuItem(
+                  value: 'rename',
+                  child: ListTile(
+                    dense: true,
+                    leading: Icon(Icons.edit_outlined),
+                    title: Text('Rename'),
+                  ),
+                ),
+                PopupMenuItem(
+                  value: 'delete',
+                  child: ListTile(
+                    dense: true,
+                    leading: Icon(Icons.delete_outline_rounded),
+                    title: Text('Delete'),
+                  ),
+                ),
+              ],
+              icon: const Icon(Icons.more_vert_rounded, color: Colors.white70),
+            ),
+          ],
+        ),
+      );
+}
+
+class _LibraryEmptyState extends StatelessWidget {
+  const _LibraryEmptyState({required this.directoryPath});
+
+  final String directoryPath;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 28),
+        decoration: BoxDecoration(
+          color: AuraTheme.panel,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.055)),
+        ),
+        child: Column(
+          children: [
+            Container(
+              width: 62,
+              height: 62,
+              decoration: BoxDecoration(
+                color: AuraTheme.mint.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: const Icon(
+                Icons.library_music_rounded,
+                size: 30,
+                color: AuraTheme.mint,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Your library is empty',
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
+            ),
+            const SizedBox(height: 7),
+            Text(
+              'Record a take in Voice Studio. Saved WAV files will appear here automatically.',
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: AuraTheme.muted,
+                    height: 1.5,
+                  ),
+            ),
+            const SizedBox(height: 14),
+            SelectableText(
+              directoryPath,
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: Colors.white54,
+                    height: 1.5,
+                  ),
+            ),
+          ],
+        ),
+      );
 }
 
 class _ComingSoonPage extends StatelessWidget {
