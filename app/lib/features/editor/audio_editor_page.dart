@@ -66,6 +66,7 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
   int _snapGridMilliseconds = 100;
   double _timelineZoom = 1.0;
   _ClipDragMode _dragMode = _ClipDragMode.move;
+  AudioClip? _dragOriginalClip;
 
   @override
   void initState() {
@@ -471,6 +472,7 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
             ? _ClipDragMode.trimEnd
             : _ClipDragMode.move;
     _beginEditTransaction();
+    _dragOriginalClip = hit;
     setState(() {
       _selectedTrackId = track.id;
       _selectedClipId = hit!.id;
@@ -490,50 +492,50 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
       return;
     }
     final deltaX = localX - previousX;
-    _lastDragX = localX;
-    final clip = _selectedClip;
+    // Keep the initial pointer and clip as the drag anchor. This accumulates
+    // sub-grid pointer motion so snapping cannot get stuck between events.
+    final clip = _dragOriginalClip ?? _selectedClip;
     if (clip == null || deltaX == 0) return;
     final deltaFrames =
         (deltaX / _pixelsPerSecond * _session.sampleRate).round();
     if (deltaFrames == 0) return;
 
-    switch (_dragMode) {
-      case _ClipDragMode.move:
-        final nextFrame = _snapFrame(
-          math.max(0, clip.startFrame + deltaFrames).toInt(),
-        );
-        if (nextFrame != clip.startFrame) {
-          _updateSelectedClip(startFrame: nextFrame);
-        }
-      case _ClipDragMode.trimStart:
-        final nextStart = _snapFrame(clip.startFrame + deltaFrames);
-        final trimFrames = math.max(0, nextStart - clip.startFrame).toInt();
-        if (trimFrames <= 0 || trimFrames >= clip.durationFrames) return;
-        final trimmed = clip.trimStartByFrames(
-          trimFrames,
-          newId: clip.id,
-        );
-        _updateSelectedClip(
-          startFrame: trimmed.startFrame,
-          sourceStartFrame: trimmed.sourceStartFrame,
-          durationFrames: trimmed.durationFrames,
-          fadeInFrames: trimmed.fadeInFrames,
-          fadeOutFrames: trimmed.fadeOutFrames,
-        );
-      case _ClipDragMode.trimEnd:
-        final oldEnd = clip.startFrame + clip.durationFrames;
-        final nextEnd = _snapFrame(oldEnd + deltaFrames);
-        final nextDuration = nextEnd - clip.startFrame;
-        if (nextDuration <= 0 || nextDuration >= clip.durationFrames) return;
-        final trimmed = clip.trimEndByFrames(
-          clip.durationFrames - nextDuration,
-          newId: clip.id,
-        );
-        _updateSelectedClip(
-          durationFrames: trimmed.durationFrames,
-          fadeInFrames: trimmed.fadeInFrames,
-          fadeOutFrames: trimmed.fadeOutFrames,
-        );
+    if (_dragMode == _ClipDragMode.move) {
+      final nextFrame = _snapFrame(
+        math.max(0, clip.startFrame + deltaFrames).toInt(),
+      );
+      if (nextFrame != clip.startFrame) {
+        _updateSelectedClip(startFrame: nextFrame);
+      }
+    } else if (_dragMode == _ClipDragMode.trimStart) {
+      final nextStart = _snapFrame(clip.startFrame + deltaFrames);
+      final trimFrames = math.max(0, nextStart - clip.startFrame).toInt();
+      if (trimFrames <= 0 || trimFrames >= clip.durationFrames) return;
+      final trimmed = clip.trimStartByFrames(
+        trimFrames,
+        newId: clip.id,
+      );
+      _updateSelectedClip(
+        startFrame: trimmed.startFrame,
+        sourceStartFrame: trimmed.sourceStartFrame,
+        durationFrames: trimmed.durationFrames,
+        fadeInFrames: trimmed.fadeInFrames,
+        fadeOutFrames: trimmed.fadeOutFrames,
+      );
+    } else {
+      final oldEnd = clip.startFrame + clip.durationFrames;
+      final nextEnd = _snapFrame(oldEnd + deltaFrames);
+      final nextDuration = nextEnd - clip.startFrame;
+      if (nextDuration <= 0 || nextDuration >= clip.durationFrames) return;
+      final trimmed = clip.trimEndByFrames(
+        clip.durationFrames - nextDuration,
+        newId: clip.id,
+      );
+      _updateSelectedClip(
+        durationFrames: trimmed.durationFrames,
+        fadeInFrames: trimmed.fadeInFrames,
+        fadeOutFrames: trimmed.fadeOutFrames,
+      );
     }
   }
 
@@ -541,6 +543,7 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
     _dragTrackId = null;
     _dragClipId = null;
     _lastDragX = null;
+    _dragOriginalClip = null;
     _finishEditTransaction();
   }
 
