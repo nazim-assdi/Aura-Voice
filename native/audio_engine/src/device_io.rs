@@ -10,7 +10,7 @@ use std::fmt::Write as _;
 use std::os::raw::c_char;
 use std::ptr;
 use std::str::FromStr;
-use std::sync::atomic::{AtomicU32, AtomicUsize, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, AtomicU64, Ordering};
 use std::sync::Arc;
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
@@ -477,7 +477,50 @@ pub struct AuraAudioPlaybackHandle {
     total_frames: u64,
     drain_frames: u64,
     position_frames: Arc<AtomicUsize>,
+    paused: Arc<AtomicBool>,
+    loop_enabled: Arc<AtomicBool>,
+    loop_start_frames: Arc<AtomicUsize>,
+    loop_end_frames: Arc<AtomicUsize>,
     stream_error: Arc<AtomicU32>,
+}
+
+/// Atomically claims the next source frame. The callback uses compare-exchange
+/// so an interactive seek cannot be overwritten by a stale local cursor.
+/// This is lock-free and performs no allocation or blocking operation.
+fn claim_playback_frame(
+    position: &AtomicUsize,
+    paused: &AtomicBool,
+    loop_enabled: &AtomicBool,
+    loop_start: &AtomicUsize,
+    loop_end: &AtomicUsize,
+) -> Option<usize> {
+    if paused.load(Ordering::Acquire) {
+        return None;
+    }
+
+    loop {
+        let current = position.load(Ordering::Acquire);
+        if loop_enabled.load(Ordering::Acquire) {
+            let end = loop_end.load(Ordering::Acquire);
+            let start = loop_start.load(Ordering::Acquire);
+            if start < end && current >= end {
+                let _ = position.compare_exchange(
+                    current,
+                    start,
+                    Ordering::AcqRel,
+                    Ordering::Acquire,
+                );
+                continue;
+            }
+        }
+        let next = current.saturating_add(1);
+        if position
+            .compare_exchange(current, next, Ordering::AcqRel, Ordering::Acquire)
+            .is_ok()
+        {
+            return Some(current);
+        }
+    }
 }
 
 fn build_playback_stream(
@@ -488,6 +531,10 @@ fn build_playback_stream(
     source_channels: usize,
     output_channels: usize,
     position_frames: Arc<AtomicUsize>,
+    paused: Arc<AtomicBool>,
+    loop_enabled: Arc<AtomicBool>,
+    loop_start_frames: Arc<AtomicUsize>,
+    loop_end_frames: Arc<AtomicUsize>,
     stream_error: Arc<AtomicU32>,
 ) -> Result<Stream, AudioError> {
     let total_frames = samples.len() / source_channels;
@@ -500,6 +547,10 @@ fn build_playback_stream(
         ($sample:ty, $convert:expr) => {{
             let callback_samples = Arc::clone(&samples);
             let callback_position = Arc::clone(&position_frames);
+            let callback_paused = Arc::clone(&paused);
+            let callback_loop_enabled = Arc::clone(&loop_enabled);
+            let callback_loop_start = Arc::clone(&loop_start_frames);
+            let callback_loop_end = Arc::clone(&loop_end_frames);
             let callback_error = Arc::clone(&stream_error);
             device
                 .build_output_stream::<$sample, _, _>(
@@ -511,22 +562,28 @@ fn build_playback_stream(
                             return;
                         }
                         let frames = data.len() / channels;
-                        let first_frame = callback_position.fetch_add(frames, Ordering::AcqRel);
                         for frame in 0..frames {
-                            let source_frame = first_frame.saturating_add(frame);
+                            let source_frame = claim_playback_frame(
+                                &callback_position,
+                                &callback_paused,
+                                &callback_loop_enabled,
+                                &callback_loop_start,
+                                &callback_loop_end,
+                            );
                             for channel in 0..channels {
-                                let sample = if source_frame < total_frames {
-                                    let source_offset = source_frame * source_channels;
-                                    if source_channels == 1 {
-                                        callback_samples[source_offset]
-                                    } else if channels == 1 {
-                                        (callback_samples[source_offset]
-                                            + callback_samples[source_offset + 1]) * 0.5
-                                    } else {
-                                        callback_samples[source_offset + channel.min(1)]
+                                let sample = match source_frame {
+                                    Some(source_frame) if source_frame < total_frames => {
+                                        let source_offset = source_frame * source_channels;
+                                        if source_channels == 1 {
+                                            callback_samples[source_offset]
+                                        } else if channels == 1 {
+                                            (callback_samples[source_offset]
+                                                + callback_samples[source_offset + 1]) * 0.5
+                                        } else {
+                                            callback_samples[source_offset + channel.min(1)]
+                                        }
                                     }
-                                } else {
-                                    0.0
+                                    _ => 0.0,
                                 };
                                 data[frame * channels + channel] = ($convert)(sample);
                             }
@@ -640,6 +697,10 @@ pub unsafe extern "C" fn aura_audio_playback_start_wav(
         let samples = Arc::new(audio.into_samples());
         let total_frames = samples.len() / source_channels;
         let position_frames = Arc::new(AtomicUsize::new(0));
+        let paused = Arc::new(AtomicBool::new(false));
+        let loop_enabled = Arc::new(AtomicBool::new(false));
+        let loop_start_frames = Arc::new(AtomicUsize::new(0));
+        let loop_end_frames = Arc::new(AtomicUsize::new(0));
         let stream_error = Arc::new(AtomicU32::new(0));
         let stream = build_playback_stream(
             &device,
@@ -649,6 +710,10 @@ pub unsafe extern "C" fn aura_audio_playback_start_wav(
             source_channels,
             output_channels,
             Arc::clone(&position_frames),
+            Arc::clone(&paused),
+            Arc::clone(&loop_enabled),
+            Arc::clone(&loop_start_frames),
+            Arc::clone(&loop_end_frames),
             Arc::clone(&stream_error),
         )?;
         stream
@@ -667,6 +732,10 @@ pub unsafe extern "C" fn aura_audio_playback_start_wav(
             total_frames: total_frames as u64,
             drain_frames: u64::from(sample_rate) / 4,
             position_frames,
+            paused,
+            loop_enabled,
+            loop_start_frames,
+            loop_end_frames,
             stream_error,
         })))
     }));
@@ -714,12 +783,111 @@ pub unsafe extern "C" fn aura_audio_playback_status(
     if playback.stream_error.load(Ordering::Acquire) != 0 {
         return 2;
     }
+    if playback.loop_enabled.load(Ordering::Acquire)
+        || playback.paused.load(Ordering::Acquire)
+    {
+        return 0;
+    }
     let drained_until = playback.total_frames.saturating_add(playback.drain_frames);
     if playback.position_frames.load(Ordering::Acquire) as u64 >= drained_until {
         1
     } else {
         0
     }
+}
+
+/// Pauses output while preserving the current sample-frame playhead.
+#[no_mangle]
+pub unsafe extern "C" fn aura_audio_playback_pause(
+    handle: *mut AuraAudioPlaybackHandle,
+) -> i32 {
+    if handle.is_null() {
+        set_ffi_error("playback handle is null");
+        return -1;
+    }
+    // SAFETY: Caller must pass a live playback handle and not stop it concurrently.
+    unsafe { &*handle }.paused.store(true, Ordering::Release);
+    set_ffi_error("");
+    0
+}
+
+/// Resumes output from the current sample-frame playhead.
+#[no_mangle]
+pub unsafe extern "C" fn aura_audio_playback_resume(
+    handle: *mut AuraAudioPlaybackHandle,
+) -> i32 {
+    if handle.is_null() {
+        set_ffi_error("playback handle is null");
+        return -1;
+    }
+    // SAFETY: Caller must pass a live playback handle and not stop it concurrently.
+    unsafe { &*handle }.paused.store(false, Ordering::Release);
+    set_ffi_error("");
+    0
+}
+
+/// Seeks to an exact frame. Seeking past the end is rejected.
+#[no_mangle]
+pub unsafe extern "C" fn aura_audio_playback_seek(
+    handle: *mut AuraAudioPlaybackHandle,
+    frame: u64,
+) -> i32 {
+    if handle.is_null() {
+        set_ffi_error("playback handle is null");
+        return -1;
+    }
+    // SAFETY: Caller must pass a live playback handle and not stop it concurrently.
+    let playback = unsafe { &*handle };
+    if frame > playback.total_frames {
+        set_ffi_error("seek frame is beyond the end of the audio");
+        return -2;
+    }
+    let Ok(frame) = usize::try_from(frame) else {
+        set_ffi_error("seek frame is too large for this platform");
+        return -2;
+    };
+    playback.position_frames.store(frame, Ordering::Release);
+    set_ffi_error("");
+    0
+}
+
+/// Enables/disables a loop range in sample frames. A valid enabled range is
+/// non-empty and must end no later than the decoded WAV length.
+#[no_mangle]
+pub unsafe extern "C" fn aura_audio_playback_set_loop(
+    handle: *mut AuraAudioPlaybackHandle,
+    start_frame: u64,
+    end_frame: u64,
+    enabled: u8,
+) -> i32 {
+    if handle.is_null() || enabled > 1 {
+        set_ffi_error("playback handle or loop enabled flag is invalid");
+        return -1;
+    }
+    // SAFETY: Caller must pass a live playback handle and not stop it concurrently.
+    let playback = unsafe { &*handle };
+    if enabled == 1 {
+        if start_frame >= end_frame || end_frame > playback.total_frames {
+            set_ffi_error("loop range must be non-empty and inside the audio duration");
+            return -2;
+        }
+        let (Ok(start), Ok(end)) =
+            (usize::try_from(start_frame), usize::try_from(end_frame))
+        else {
+            set_ffi_error("loop range is too large for this platform");
+            return -2;
+        };
+        playback.loop_start_frames.store(start, Ordering::Release);
+        playback.loop_end_frames.store(end, Ordering::Release);
+        playback.loop_enabled.store(true, Ordering::Release);
+        if playback.position_frames.load(Ordering::Acquire) >= end {
+            playback.position_frames.store(start, Ordering::Release);
+        }
+    } else {
+        playback.loop_enabled.store(false, Ordering::Release);
+    }
+    set_ffi_error("");
+    0
 }
 
 /// Stops playback and releases the operating-system output stream.
@@ -738,6 +906,62 @@ pub unsafe extern "C" fn aura_audio_playback_stop(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn playback_cursor_does_not_advance_while_paused() {
+        let position = AtomicUsize::new(17);
+        let paused = AtomicBool::new(true);
+        let looping = AtomicBool::new(false);
+        let start = AtomicUsize::new(0);
+        let end = AtomicUsize::new(100);
+
+        assert_eq!(
+            claim_playback_frame(&position, &paused, &looping, &start, &end),
+            None
+        );
+        assert_eq!(position.load(Ordering::Acquire), 17);
+
+        paused.store(false, Ordering::Release);
+        assert_eq!(
+            claim_playback_frame(&position, &paused, &looping, &start, &end),
+            Some(17)
+        );
+        assert_eq!(position.load(Ordering::Acquire), 18);
+    }
+
+    #[test]
+    fn playback_cursor_wraps_at_loop_end_without_allocating() {
+        let position = AtomicUsize::new(12);
+        let paused = AtomicBool::new(false);
+        let looping = AtomicBool::new(true);
+        let start = AtomicUsize::new(10);
+        let end = AtomicUsize::new(13);
+
+        assert_eq!(
+            claim_playback_frame(&position, &paused, &looping, &start, &end),
+            Some(12)
+        );
+        assert_eq!(
+            claim_playback_frame(&position, &paused, &looping, &start, &end),
+            Some(10)
+        );
+        assert_eq!(position.load(Ordering::Acquire), 11);
+    }
+
+    #[test]
+    fn playback_cursor_continues_normally_when_loop_is_disabled() {
+        let position = AtomicUsize::new(8);
+        let paused = AtomicBool::new(false);
+        let looping = AtomicBool::new(false);
+        let start = AtomicUsize::new(2);
+        let end = AtomicUsize::new(5);
+
+        assert_eq!(
+            claim_playback_frame(&position, &paused, &looping, &start, &end),
+            Some(8)
+        );
+        assert_eq!(position.load(Ordering::Acquire), 9);
+    }
 
     #[test]
     fn ring_round_trips_stereo_frames_without_interleaving() {
