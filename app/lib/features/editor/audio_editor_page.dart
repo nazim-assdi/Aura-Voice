@@ -459,6 +459,7 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
       _dragTrackId = null;
       _dragClipId = null;
       _lastDragX = null;
+      _dragOriginalClip = null;
       return;
     }
     final clipLeft = hit.startFrame / _session.sampleRate * _pixelsPerSecond;
@@ -1628,16 +1629,32 @@ class _TrackWaveformPainter extends CustomPainter {
       }
 
       final waveform = waveforms[clip.mediaId];
-      if (waveform != null && waveform.peaks.isNotEmpty) {
+      if (waveform != null &&
+          waveform.peaks.isNotEmpty &&
+          waveform.frameCount > 0) {
         final peaks = waveform.peaks;
+        final firstPeak = (clip.sourceStartFrame * peaks.length /
+                waveform.frameCount)
+            .floor()
+            .clamp(0, peaks.length - 1)
+            .toInt();
+        final afterLastPeak = ((clip.sourceStartFrame + clip.durationFrames) *
+                peaks.length /
+                waveform.frameCount)
+            .ceil()
+            .clamp(firstPeak + 1, peaks.length)
+            .toInt();
+        final visibleCount = afterLastPeak - firstPeak;
         final center = rect.center.dy;
         final barPaint = Paint()
           ..color = clip.muted ? Colors.white38 : AuraTheme.mint
-          ..strokeWidth = math.max(1.0, width / peaks.length * 0.7).toDouble()
+          ..strokeWidth =
+              math.max(1.0, width / visibleCount * 0.7).toDouble()
           ..strokeCap = StrokeCap.round;
-        for (var index = 0; index < peaks.length; index++) {
-          final x = rect.left + (index + 0.5) / peaks.length * rect.width;
-          final height = math.max(1.0, peaks[index] * rect.height * 0.42).toDouble();
+        for (var index = 0; index < visibleCount; index++) {
+          final peak = peaks[firstPeak + index];
+          final x = rect.left + (index + 0.5) / visibleCount * rect.width;
+          final height = math.max(1.0, peak * rect.height * 0.42).toDouble();
           canvas.drawLine(
             Offset(x, center - height),
             Offset(x, center + height),
