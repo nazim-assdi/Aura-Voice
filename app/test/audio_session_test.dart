@@ -113,6 +113,68 @@ void main() {
       );
     });
 
+    test('trims clip start while preserving source and timeline alignment', () {
+      final original = AudioClip(
+        id: 'original',
+        mediaId: 'take.wav',
+        startFrame: 1000,
+        sourceStartFrame: 200,
+        durationFrames: 10000,
+        gain: 0.8,
+        pan: -0.2,
+        fadeInFrames: 900,
+        fadeOutFrames: 700,
+      );
+
+      final trimmed = original.trimStartByFrames(400, newId: 'trimmed');
+
+      expect(trimmed.startFrame, 1400);
+      expect(trimmed.sourceStartFrame, 600);
+      expect(trimmed.durationFrames, 9600);
+      expect(trimmed.fadeInFrames, 500);
+      expect(trimmed.fadeOutFrames, 700);
+      expect(trimmed.mediaId, original.mediaId);
+      expect(original.durationFrames, 10000);
+    });
+
+    test('trims clip end and clamps a fade that no longer fits', () {
+      final original = AudioClip(
+        id: 'original',
+        mediaId: 'take.wav',
+        startFrame: 1000,
+        sourceStartFrame: 200,
+        durationFrames: 10000,
+        fadeInFrames: 2000,
+        fadeOutFrames: 3000,
+      );
+
+      final trimmed = original.trimEndByFrames(8000, newId: 'trimmed');
+
+      expect(trimmed.startFrame, 1000);
+      expect(trimmed.sourceStartFrame, 200);
+      expect(trimmed.durationFrames, 2000);
+      expect(trimmed.fadeInFrames, 2000);
+      expect(trimmed.fadeOutFrames, 2000);
+    });
+
+    test('rejects trims that remove an entire clip', () {
+      final clip = AudioClip(
+        id: 'clip',
+        mediaId: 'take.wav',
+        startFrame: 0,
+        sourceStartFrame: 0,
+        durationFrames: 100,
+      );
+      expect(
+        () => clip.trimStartByFrames(100, newId: 'bad'),
+        throwsRangeError,
+      );
+      expect(
+        () => clip.trimEndByFrames(100, newId: 'bad'),
+        throwsRangeError,
+      );
+    });
+
     test('rejects invalid clip durations and sample rates', () {
       expect(
         () => AudioClip(
