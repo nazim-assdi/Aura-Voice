@@ -144,10 +144,10 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
   }
 
   AudioClip? get _selectedClip {
-    for (final track in _session.tracks) {
-      for (final clip in track.clips) {
-        if (clip.id == _selectedClipId) return clip;
-      }
+    final track = _selectedTrack;
+    if (track == null) return null;
+    for (final clip in track.clips) {
+      if (clip.id == _selectedClipId) return clip;
     }
     return null;
   }
@@ -460,6 +460,54 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
       _selectedTrackId = trackId;
       _selectedClipId = clipId;
     });
+    if (_loopEnabled && _playback != null) {
+      unawaited(_syncLoopToSelection());
+    }
+  }
+
+  Future<void> _syncLoopToSelection() async {
+    final playback = _playback;
+    if (playback == null || !_loopEnabled) return;
+    final selected = _selectedClip;
+    final canLoopSelection =
+        selected == null || _selectedClipIsAudible;
+    final startFrame = selected == null ? 0 : selected.startFrame;
+    final endFrame = selected == null
+        ? playback.totalFrames
+        : selected.startFrame + selected.durationFrames;
+    try {
+      if (!canLoopSelection ||
+          startFrame >= endFrame ||
+          endFrame > playback.totalFrames) {
+        await playback.setLoopRange(
+          startFrame: 0,
+          endFrame: playback.totalFrames,
+          enabled: false,
+        );
+        if (mounted) {
+          setState(() {
+            _loopEnabled = false;
+            _message =
+                'Clip loop disabled because the new selection is not audible.';
+          });
+        }
+        return;
+      }
+      await playback.setLoopRange(
+        startFrame: startFrame,
+        endFrame: endFrame,
+        enabled: true,
+      );
+      if (mounted) {
+        setState(() {
+          _message = selected == null
+              ? 'Whole-mix loop enabled.'
+              : 'Loop range updated to the selected clip.';
+        });
+      }
+    } catch (error) {
+      if (mounted) setState(() => _message = error.toString());
+    }
   }
 
   void _beginClipDrag(AudioTrack track, double localX) {
