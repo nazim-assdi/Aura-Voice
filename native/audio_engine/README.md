@@ -13,6 +13,7 @@ The native-engine foundation for Aura Voice Studio combines deterministic offlin
 - C ABI for creating/destroying render sessions, loading WAV assets, adding tracks/clips, rendering output and releasing returned buffers.
 - Public C header at `include/aura_audio_engine.h`.
 - Cross-platform microphone input enumeration with stable device ids and default-device reporting.
+- Flutter Record Booth input meters and local 24-bit PCM WAV writer with streamed chunk writes and finalized RIFF headers.
 - Live mono/stereo microphone capture at the input device's default sample rate.
 - A preallocated SPSC sample ring. The audio callback does not allocate, lock, or write files; overflow is reported as dropped frames.
 - C ABI capture start/read/status/stop lifecycle and Dart FFI wrappers for device listing and capture reads.
