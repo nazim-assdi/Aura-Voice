@@ -3,10 +3,12 @@
 //! The first engine slice deliberately focuses on reliable file rendering:
 //! decode PCM/IEEE-float WAV, arrange clips at exact sample-frame positions,
 //! mix tracks in floating point, meter the result, and export integer PCM WAV.
-//! Realtime device I/O and platform FFI are separate layers and are not claimed
-//! by this crate yet.
+//! Realtime device I/O is isolated in a CPAL-backed capture module; its
+//! callback writes to a preallocated SPSC ring and never performs file I/O.
 
 use std::collections::HashMap;
+
+pub mod device_io;
 use std::error::Error;
 use std::fmt;
 
@@ -568,7 +570,7 @@ pub struct AuraEngineHandle {
     assets: HashMap<String, AudioBuffer>,
 }
 
-fn set_ffi_error(message: &str) {
+pub(super) fn set_ffi_error(message: &str) {
     let sanitized = message.replace('\0', " ");
     let value = CString::new(sanitized)
         .unwrap_or_else(|_| CString::new("native audio engine error").expect("static string"));
