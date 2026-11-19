@@ -61,7 +61,7 @@ class FileAudioLibraryService implements AudioLibraryService {
       }
       return current;
     }
-    final extension = '.wav';
+    const extension = '.wav';
     final destination = await _uniqueDestination(normalized, extension);
     final renamed = await source.rename(destination.path);
     final metadata = await _readMetadata(renamed);
