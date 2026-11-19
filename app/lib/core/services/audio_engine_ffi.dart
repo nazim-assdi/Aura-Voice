@@ -717,15 +717,6 @@ class FfiAudioPlaybackSession implements AudioPlaybackSession {
     }
   }
 
-  @override
-  Future<void> stop() async {
-    if (!_stopped) {
-      _api.playbackStop(_handle);
-      _handle = nullptr;
-      _stopped = true;
-      _paused = false;
-    }
-  }
 }
 
 class FfiAudioCaptureSession implements AudioCaptureSession {
