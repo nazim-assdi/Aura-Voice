@@ -50,6 +50,7 @@ void main() {
       expect(recordings.single.channels, 1);
       expect(recordings.single.bitsPerSample, 24);
       expect(recordings.single.duration, const Duration(milliseconds: 100));
+      expect(recordings.single.frameCount, 4800);
       expect(recordings.single.sizeBytes, 44 + 4800 * 3);
       expect(recordings.single.name, startsWith('AuraVoice_'));
     });
@@ -124,6 +125,7 @@ void main() {
         modifiedAt: DateTime.now(),
         sizeBytes: 3,
         duration: Duration.zero,
+        frameCount: 0,
         sampleRate: 48000,
         channels: 1,
         bitsPerSample: 24,
