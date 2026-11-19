@@ -1,6 +1,6 @@
 # Aura Audio Engine
 
-The native-engine foundation for Aura Voice Studio combines deterministic offline PCM WAV rendering, CPAL-based microphone capture and CPAL-based WAV playback, exposed through Rust and a versioned C ABI.
+Aura Voice Studio's native Rust engine provides offline PCM WAV rendering, CPAL microphone capture and CPAL WAV playback. The native library is exposed to Flutter through C ABI version 2.
 
 ## Implemented
 
@@ -10,19 +10,29 @@ The native-engine foundation for Aura Voice Studio combines deterministic offlin
 - Mix tracks using clip/track/master gain, pan, mute, solo and clip fades.
 - Report sample peak and samples over full scale before export.
 - Export integer PCM WAV at 16/24/32-bit.
-- C ABI for creating/destroying render sessions, loading WAV assets, adding tracks/clips, rendering output and releasing returned buffers.
-- Public C header at `include/aura_audio_engine.h`.
-- Cross-platform microphone input enumeration with stable device ids and default-device reporting.
-- Flutter Record Booth input meters and local 24-bit PCM WAV writer with streamed chunk writes and finalized RIFF headers.
-- Live mono/stereo microphone capture at the input device's default sample rate.
-- A preallocated SPSC sample ring. The audio callback does not allocate, lock, or write files; overflow is reported as dropped frames.
-- C ABI capture start/pause/read/status/stop lifecycle and Dart FFI wrappers for device listing and capture reads.
-- Native WAV playback via the default output device, with exact sample-rate matching, realtime output callbacks, playback position/status and stop.
-- Studio Play/Stop preview controls for saved local takes, plus elapsed-time and progress display.
+- Enumerate operating-system microphone inputs with stable device ids and default-device reporting.
+- Capture mono/stereo microphone streams at the input device's default sample rate.
+- Use a preallocated single-producer/single-consumer ring: the audio callback performs no file I/O, heap allocation or blocking lock operation; ring overflow is counted.
+- Record a single local take from Flutter into a 24-bit PCM WAV file. The UI drains the ring outside the device callback, shows Peak/RMS meters and reports dropped frames.
+- Pause capture, flush buffered samples, finalize the WAV header and stop the input stream on Finish & Save.
+- Play a saved PCM/IEEE-float WAV through the default OS output device using CPAL. The output stream uses a supported configuration at the WAV's sample rate, converts common device sample formats in the output callback, and exposes playback position, completion/error status and stop.
+- Studio Play/Stop controls and progress for the most recent saved take.
+- Versioned C ABI and public C header in `include/aura_audio_engine.h`.
 
 ## Build the shared library
 
+On Linux, install the ALSA build dependencies first:
+
 ```bash
+sudo apt-get update
+sudo apt-get install -y libasound2-dev pkg-config
+```
+
+Then build from this directory:
+
+```bash
+cargo check --all-targets
+cargo test --all-targets
 cargo build --release
 ```
 
@@ -31,14 +41,12 @@ Outputs are written under `target/release`:
 - macOS: `libaura_audio_engine.dylib`
 - Linux: `libaura_audio_engine.so`
 
-The shared library must be placed beside the Flutter desktop executable (or on the platform loader path). The Flutter service checks the ABI version before calling it.
-
-## Test
-
-```bash
-cargo test --all-targets
-```
+The shared library must be placed beside the Flutter desktop executable (or on the platform loader path). The Dart service checks C ABI version 2 before using it. Desktop CI currently packages the native library next to each generated app executable; check the workflow result before treating a release build as verified.
 
 ## Current limitations
 
-The current Record Booth is a single-take recorder, not a full session recorder. It records to a standalone 24-bit PCM WAV file in the user's Documents folder and can audition that saved file through the default output device. Output-device selection, seek/pause, repeat/loop, live input-to-output monitoring, multitrack playback, waveform display, session asset registration, resampling, compressed formats and realtime DSP remain future work. WAV preview loads the entire file into memory and is limited to 256 MiB in the Flutter app; the system output device must support the file sample rate. Device reconnect and low-latency measurements also remain future work.
+This is a single-take Record Booth, not a complete multitrack recording studio. The current recorder saves standalone 24-bit PCM WAV files under `Documents/Aura Voice Studio/Recordings`; it does not yet attach takes to an editable session or provide pause/resume, punch-in, take lanes, waveform editing, clip audition or project recovery.
+
+Playback currently uses only the default output device. The Flutter preview reads the WAV into memory and is limited to 256 MiB; the output device must support the file's sample rate. There is no resampling, output-device picker, seek, pause, loop, volume automation or multitrack transport yet. The output callback does not allocate or lock, but playback has not yet been validated on physical Windows/macOS/Linux audio devices in CI.
+
+Input-to-output monitoring, live effects, device reconnect recovery, output latency calibration, more microphone sample formats, compressed MP3/AAC/FLAC decoding, realtime DSP and waveform caches remain future work. Android/iOS native library packaging and audio-session integration are also not complete.
