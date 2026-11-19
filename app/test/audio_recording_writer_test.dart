@@ -70,6 +70,24 @@ void main() {
       expect(writer.filePath, isNull);
     });
 
+    test('can start a new take after discarding a previous one', () async {
+      final writer = FileAudioRecordingWriter(
+        directoryPath: temporaryDirectory.path,
+      );
+      await writer.start(sampleRate: 48000, channels: 1);
+      await writer.append(Float32List.fromList([0.1]));
+      await writer.discard();
+
+      await writer.start(sampleRate: 44100, channels: 2);
+      await writer.append(Float32List.fromList([0.1, -0.1]));
+      final path = await writer.finish();
+
+      expect(ByteData.sublistView(await File(path).readAsBytes())
+          .getUint32(24, Endian.little), 44100);
+      expect(ByteData.sublistView(await File(path).readAsBytes())
+          .getUint16(22, Endian.little), 2);
+    });
+
     test('rejects partial interleaved frames', () async {
       final writer = FileAudioRecordingWriter(
         directoryPath: temporaryDirectory.path,
