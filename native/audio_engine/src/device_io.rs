@@ -778,7 +778,7 @@ pub(crate) fn start_realtime_playback(
             "cannot query output configurations: {error}"
         )))?
         .filter(|range| range.channels() >= mixer.channels)
-        .filter_map(|range| range.try_with_sample_rate(cpal::SampleRate(mixer.sample_rate)))
+        .filter_map(|range| range.try_with_sample_rate(mixer.sample_rate))
         .next()
         .ok_or_else(|| AudioError::InvalidArgument(format!(
             "the default output device does not support {} Hz playback",
@@ -800,11 +800,13 @@ pub(crate) fn start_realtime_playback(
     let loop_end_frames = Arc::new(AtomicUsize::new(0));
     let stream_error = Arc::new(AtomicU32::new(0));
 
+    let total_frames = mixer.total_frames;
+    let sample_rate = mixer.sample_rate;
     let stream = build_realtime_playback_stream(
         &device,
         config,
         format,
-        mixer,
+        Arc::clone(&mixer),
         output_channels,
         Arc::clone(&position_frames),
         Arc::clone(&paused),
@@ -819,8 +821,8 @@ pub(crate) fn start_realtime_playback(
 
     let handle = Box::new(AuraAudioPlaybackHandle {
         _stream: stream,
-        total_frames: mixer.total_frames,
-        drain_frames: u64::from(mixer.sample_rate) / 4,
+        total_frames,
+        drain_frames: u64::from(sample_rate) / 4,
         position_frames,
         paused,
         loop_enabled,
