@@ -49,11 +49,11 @@ class DashboardPage extends StatelessWidget {
             delegate: SliverChildListDelegate([
               const _TopBar(),
               const SizedBox(height: 34),
-              Text('YOUR CREATIVE AUDIO SPACE',
+              Text('PROFESSIONAL VOICE PRODUCTION',
                   style: Theme.of(context).textTheme.labelSmall?.copyWith(
                     color: AuraTheme.mint, letterSpacing: 2.1, fontWeight: FontWeight.w700)),
               const SizedBox(height: 10),
-              Text('Every voice has\na new dimension.',
+              Text('Record with clarity.\nCreate with control.',
                   style: Theme.of(context).textTheme.headlineLarge?.copyWith(
                     height: 1.06, fontWeight: FontWeight.w800, letterSpacing: -1.1)),
               const SizedBox(height: 22),
@@ -63,17 +63,17 @@ class DashboardPage extends StatelessWidget {
                 Text('Your workspace',
                     style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700)),
                 const Spacer(),
-                const _StatusChip(label: 'FOUNDATION'),
+                const _StatusChip(label: 'IN DEVELOPMENT'),
               ]),
               const SizedBox(height: 14),
               LayoutBuilder(builder: (context, constraints) {
                 final columns = constraints.maxWidth > 720 ? 4 : 2;
                 final width = (constraints.maxWidth - (columns - 1) * 12) / columns;
                 const features = [
-                  _FeatureData(Icons.record_voice_over_rounded, 'Voice Studio', 'Speech workspace', AuraTheme.mint),
-                  _FeatureData(Icons.tune_rounded, 'Emotion Lab', 'Style controls', AuraTheme.violet),
-                  _FeatureData(Icons.multitrack_audio_rounded, 'Audio Tools', 'Edit and export', Color(0xFFFFC27A)),
-                  _FeatureData(Icons.translate_rounded, 'AI Dubbing', 'Voice and language', Color(0xFF80B8FF)),
+                  _FeatureData(Icons.record_voice_over_rounded, 'Record Booth', 'Capture clean takes', AuraTheme.mint),
+                  _FeatureData(Icons.tune_rounded, 'Multitrack Editor', 'Arrange voice tracks', AuraTheme.violet),
+                  _FeatureData(Icons.multitrack_audio_rounded, 'Voice Processing', 'EQ, dynamics, cleanup', Color(0xFFFFC27A)),
+                  _FeatureData(Icons.translate_rounded, 'AI Voice Studio', 'Text to speech', Color(0xFF80B8FF)),
                 ];
                 return Wrap(
                   spacing: 12, runSpacing: 12,
@@ -82,9 +82,14 @@ class DashboardPage extends StatelessWidget {
               }),
               const SizedBox(height: 24),
               const _ApiStatusPanel(),
+              const SizedBox(height: 12),
+              const Wrap(spacing: 10, runSpacing: 10, children: [
+                _FeaturePill(label: 'Dubbing & Localization'),
+                _FeaturePill(label: 'Mix & Master'),
+              ]),
               const SizedBox(height: 18),
               Text(
-                'Foundation preview · Speech models and voice processing are not connected yet.',
+                'Foundation preview · Audio engine, recording and speech providers are not connected yet. Planned tools remain clearly marked until their processing engines pass tests.',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(color: AuraTheme.muted, height: 1.5),
               ),
             ]),
@@ -111,7 +116,7 @@ class _TopBar extends StatelessWidget {
     Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Text('AURA', style: Theme.of(context).textTheme.titleMedium?.copyWith(
         fontWeight: FontWeight.w900, letterSpacing: 2.5)),
-      Text('VOICE AI', style: Theme.of(context).textTheme.labelSmall?.copyWith(
+      Text('VOICE STUDIO', style: Theme.of(context).textTheme.labelSmall?.copyWith(
         color: AuraTheme.muted, letterSpacing: 2.2)),
     ]),
     const Spacer(),
@@ -139,16 +144,16 @@ class _HeroPanel extends StatelessWidget {
     ),
     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Row(children: [
-        const _StatusChip(label: 'CREATIVE STUDIO'),
+        const _StatusChip(label: 'VOICE PRODUCTION'),
         const Spacer(),
         Icon(Icons.auto_awesome_rounded, color: AuraTheme.mint.withValues(alpha: 0.9)),
       ]),
       const SizedBox(height: 28),
-      Text('Shape sound.\nExpress more.',
+      Text('Your voice.\nYour sound.',
         style: Theme.of(context).textTheme.headlineMedium?.copyWith(
           fontWeight: FontWeight.w800, height: 1.08)),
       const SizedBox(height: 10),
-      Text('A single workspace for voice, emotion and audio creation.',
+      Text('Record, edit, generate, restore and master speech in one focused audio workspace.',
         style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Colors.white70, height: 1.5)),
       const SizedBox(height: 22),
       FilledButton.icon(
@@ -198,6 +203,21 @@ class _FeatureCard extends StatelessWidget {
   );
 }
 
+class _FeaturePill extends StatelessWidget {
+  const _FeaturePill({required this.label});
+  final String label;
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+    decoration: BoxDecoration(
+      color: AuraTheme.panelLight,
+      borderRadius: BorderRadius.circular(30),
+      border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
+    ),
+    child: Text(label, style: Theme.of(context).textTheme.labelSmall?.copyWith(color: Colors.white70)),
+  );
+}
+
 class _StatusChip extends StatelessWidget {
   const _StatusChip({required this.label});
   final String label;
@@ -222,9 +242,9 @@ class _ApiStatusPanel extends StatelessWidget {
       const Icon(Icons.cloud_outlined, color: AuraTheme.mint),
       const SizedBox(width: 12),
       Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text('Hybrid engine connection', style: Theme.of(context).textTheme.titleSmall),
+        Text('AI provider connection', style: Theme.of(context).textTheme.titleSmall),
         const SizedBox(height: 3),
-        Text('Backend availability check',
+        Text('Cloud speech engine availability',
           style: Theme.of(context).textTheme.bodySmall?.copyWith(color: AuraTheme.muted)),
       ])),
       FutureBuilder<bool>(
@@ -244,7 +264,7 @@ class StudioPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) => const _ComingSoonPage(
     icon: Icons.graphic_eq_rounded, title: 'Voice Studio',
-    description: 'The studio shell is ready. Speech generation, voice enrollment and audio processing will appear here after the engine and consent layers are connected.',
+    description: 'The professional studio workspace is being built around a real audio engine. Recording, waveform editing, track mixing and live effects will only be enabled when the audio engine is connected.',
   );
 }
 
@@ -252,8 +272,8 @@ class LibraryPage extends StatelessWidget {
   const LibraryPage({super.key});
   @override
   Widget build(BuildContext context) => const _ComingSoonPage(
-    icon: Icons.library_music_rounded, title: 'Your Library',
-    description: 'Voice profiles, generated audio and project exports will be stored here when secure account storage is implemented.',
+    icon: Icons.library_music_rounded, title: 'Audio Library',
+    description: 'Your recordings, generated speech, voice projects and final audio exports will appear here when local project storage and secure library management are implemented.',
   );
 }
 
