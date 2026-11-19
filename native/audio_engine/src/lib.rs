@@ -1361,6 +1361,40 @@ pub unsafe extern "C" fn aura_engine_add_track(
     })
 }
 
+/// Configures realtime track-level high-pass and linked compressor controls.
+///
+/// high_pass_hz = 0 disables the high-pass filter.
+/// compressor_threshold is linear amplitude (0.001..=1.0).
+/// compressor_ratio is 1..=20; 1 disables compression.
+#[no_mangle]
+pub unsafe extern "C" fn aura_engine_set_track_dsp(
+    handle: *mut AuraEngineHandle,
+    track_id: *const c_char,
+    high_pass_hz: f32,
+    compressor_threshold: f32,
+    compressor_ratio: f32,
+) -> i32 {
+    ffi_status(|| {
+        let id = unsafe { read_ffi_string(track_id, "track_id")? };
+        let engine = unsafe { checked_handle(handle)? };
+        validate_track_dsp(
+            engine.session.sample_rate,
+            high_pass_hz,
+            compressor_threshold,
+            compressor_ratio,
+        )?;
+        let track = engine.session.tracks.iter_mut()
+            .find(|track| track.id == id)
+            .ok_or_else(|| AudioError::InvalidArgument(
+                format!("track not found: {id}"),
+            ))?;
+        track.high_pass_hz = high_pass_hz;
+        track.compressor_threshold = compressor_threshold;
+        track.compressor_ratio = compressor_ratio;
+        Ok(())
+    })
+}
+
 /// Adds a clip referencing a previously registered WAV asset.
 ///
 /// # Safety
