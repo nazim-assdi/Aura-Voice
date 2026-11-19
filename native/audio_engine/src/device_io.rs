@@ -477,7 +477,7 @@ pub unsafe extern "C" fn aura_audio_capture_stop(handle: *mut AuraAudioCaptureHa
 /// Opaque OS output stream for standalone WAV or realtime session playback.
 pub struct AuraAudioPlaybackHandle {
     _stream: Stream,
-    total_frames: usize,
+    total_frames: AtomicUsize,
     drain_frames: usize,
     realtime_graph: Option<Arc<RealtimeGraph>>,
     position_frames: Arc<AtomicUsize>,
@@ -936,7 +936,7 @@ pub(crate) fn start_realtime_playback(
 
     let handle = Box::new(AuraAudioPlaybackHandle {
         _stream: stream,
-        total_frames,
+        total_frames: AtomicUsize::new(total_frames),
         drain_frames,
         realtime_graph: Some(graph),
         position_frames,
@@ -1043,7 +1043,7 @@ pub unsafe extern "C" fn aura_audio_playback_start_wav(
         }
         Ok::<_, AudioError>(Box::into_raw(Box::new(AuraAudioPlaybackHandle {
             _stream: stream,
-            total_frames,
+            total_frames: AtomicUsize::new(total_frames),
             drain_frames: (sample_rate / 4) as usize,
             realtime_graph: None,
             position_frames,
@@ -1082,7 +1082,7 @@ pub unsafe extern "C" fn aura_audio_playback_position_frames(
     // SAFETY: Caller must provide a live playback handle.
     let playback = unsafe { &*handle };
     (playback.position_frames.load(Ordering::Acquire) as u64)
-        .min(playback.total_frames as u64)
+        .min(playback.total_frames.load(Ordering::Acquire) as u64)
 }
 
 /// Returns 0 while active (playing, paused or looping), 1 when complete, and 2 after an output stream error.
@@ -1103,7 +1103,7 @@ pub unsafe extern "C" fn aura_audio_playback_status(
     {
         return 0;
     }
-    let drained_until = playback.total_frames.saturating_add(playback.drain_frames) as u64;
+    let drained_until = playback.total_frames.load(Ordering::Acquire).saturating_add(playback.drain_frames) as u64;
     if playback.position_frames.load(Ordering::Acquire) as u64 >= drained_until {
         1
     } else {
@@ -1153,7 +1153,7 @@ pub unsafe extern "C" fn aura_audio_playback_seek(
     }
     // SAFETY: Caller must pass a live playback handle and not stop it concurrently.
     let playback = unsafe { &*handle };
-    if frame > playback.total_frames as u64 {
+    if frame > playback.total_frames.load(Ordering::Acquire) as u64 {
         set_ffi_error("seek frame is beyond the end of the audio");
         return -2;
     }
@@ -1182,7 +1182,7 @@ pub unsafe extern "C" fn aura_audio_playback_set_loop(
     // SAFETY: Caller must pass a live playback handle and not stop it concurrently.
     let playback = unsafe { &*handle };
     if enabled == 1 {
-        if start_frame >= end_frame || end_frame > playback.total_frames as u64 {
+        if start_frame >= end_frame || end_frame > playback.total_frames.load(Ordering::Acquire) as u64 {
             set_ffi_error("loop range must be non-empty and inside the audio duration");
             return -2;
         }
@@ -1203,6 +1203,47 @@ pub unsafe extern "C" fn aura_audio_playback_set_loop(
     }
     set_ffi_error("");
     0
+}
+
+/// Replaces a playing session graph without stopping the output stream.
+/// The callback picks up the new immutable snapshot at the next audio block.
+pub(crate) unsafe fn replace_realtime_session(
+    handle: *mut AuraAudioPlaybackHandle,
+    mixer: Arc<RealtimeMixer>,
+) -> Result<u64, AudioError> {
+    if handle.is_null() {
+        return Err(AudioError::InvalidArgument(
+            "playback handle is null".into(),
+        ));
+    }
+    // SAFETY: Caller passes a live playback handle and does not stop it concurrently.
+    let playback = unsafe { &*handle };
+    let graph = playback.realtime_graph.as_ref().ok_or_else(|| {
+        AudioError::InvalidArgument(
+            "live session replacement is only supported for multitrack playback".into(),
+        )
+    })?;
+    let total_frames = usize::try_from(mixer.total_frames)
+        .map_err(|_| AudioError::SizeOverflow)?;
+    graph.publish(mixer)?;
+
+    playback.total_frames.store(total_frames, Ordering::Release);
+    let position = playback.position_frames.load(Ordering::Acquire);
+    if position > total_frames {
+        playback.position_frames.store(total_frames, Ordering::Release);
+    }
+    if playback.loop_enabled.load(Ordering::Acquire) {
+        let loop_end = playback.loop_end_frames.load(Ordering::Acquire);
+        if loop_end > total_frames {
+            playback.loop_enabled.store(false, Ordering::Release);
+        } else if position >= loop_end {
+            playback.position_frames.store(
+                playback.loop_start_frames.load(Ordering::Acquire),
+                Ordering::Release,
+            );
+        }
+    }
+    Ok(total_frames as u64)
 }
 
 /// Stops playback and releases the operating-system output stream.
