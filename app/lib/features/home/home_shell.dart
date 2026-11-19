@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:math' as math;
 import 'dart:ui' show FontFeature;
 
@@ -355,7 +356,9 @@ class _StudioPageState extends State<StudioPage> {
   final List<AudioInputDevice> _devices = [];
   AudioCaptureSession? _capture;
   AudioRecordingWriter? _writer;
+  AudioPlaybackSession? _playback;
   Timer? _meterTimer;
+  Timer? _playbackTimer;
   String? _savedPath;
   String? _selectedDeviceId;
   String? _message;
@@ -368,6 +371,7 @@ class _StudioPageState extends State<StudioPage> {
   int _channels = 0;
   int _capturedFrames = 0;
   int _droppedFrames = 0;
+  int _playbackPosition = 0;
 
   @override
   void initState() {
@@ -379,6 +383,8 @@ class _StudioPageState extends State<StudioPage> {
   @override
   void dispose() {
     _meterTimer?.cancel();
+    _playbackTimer?.cancel();
+    unawaited(_stopPlayback());
     unawaited(_finishOnDispose());
     super.dispose();
   }
@@ -456,6 +462,7 @@ class _StudioPageState extends State<StudioPage> {
 
   Future<void> _startRecording() async {
     if (_starting || _capture != null) return;
+    await _stopPlayback();
     setState(() {
       _starting = true;
       _message = null;
@@ -613,6 +620,85 @@ class _StudioPageState extends State<StudioPage> {
       });
     }
   }
+  Future<void> _playSavedTake() async {
+    final path = _savedPath;
+    if (path == null || _capture != null) return;
+    await _stopPlayback();
+    try {
+      final file = File(path);
+      if (!await file.exists()) {
+        throw const AudioEngineUnavailable('The saved WAV file no longer exists.');
+      }
+      final length = await file.length();
+      if (length > 536870912) {
+        throw const AudioEngineUnavailable(
+          'Preview is limited to WAV files smaller than 512 MiB.',
+        );
+      }
+      final bytes = await file.readAsBytes();
+      final playback = await _engine.startPlayback(wavBytes: bytes);
+      if (!mounted) {
+        await playback.stop();
+        return;
+      }
+      setState(() {
+        _playback = playback;
+        _playbackPosition = 0;
+        _message = 'Playing saved WAV through the default audio output.';
+      });
+      _playbackTimer = Timer.periodic(
+        const Duration(milliseconds: 50),
+        (_) => unawaited(_pollPlayback()),
+      );
+    } catch (error) {
+      if (mounted) setState(() => _message = error.toString());
+    }
+  }
+
+  Future<void> _pollPlayback() async {
+    final playback = _playback;
+    if (playback == null) return;
+    final position = playback.positionFrames;
+    final complete = playback.isComplete;
+    final failed = playback.hasError;
+    if (complete || failed) {
+      _playbackTimer?.cancel();
+      _playbackTimer = null;
+      _playback = null;
+      await playback.stop();
+      if (mounted) {
+        setState(() {
+          _playbackPosition = complete ? playback.totalFrames : position;
+          _message = failed
+              ? 'The audio output device reported a playback error.'
+              : 'Playback finished.';
+        });
+      }
+      return;
+    }
+    if (mounted) {
+      setState(() => _playbackPosition = position);
+    }
+  }
+
+  Future<void> _stopPlayback() async {
+    _playbackTimer?.cancel();
+    _playbackTimer = null;
+    final playback = _playback;
+    _playback = null;
+    if (playback != null) await playback.stop();
+    if (mounted && playback != null) {
+      setState(() => _playbackPosition = 0);
+    }
+  }
+
+  String _formatPlaybackTime(int frames, int sampleRate) {
+    if (sampleRate <= 0) return '00:00';
+    final totalSeconds = frames ~/ sampleRate;
+    return '${(totalSeconds ~/ 60).toString().padLeft(2, '0')}:'
+        '${(totalSeconds % 60).toString().padLeft(2, '0')}';
+  }
+
   String get _elapsed {
     if (_sampleRate <= 0) return '00:00';
     final totalSeconds = _capturedFrames ~/ _sampleRate;
@@ -843,7 +929,7 @@ class _StudioPageState extends State<StudioPage> {
                       ),
                 ),
               ],
-              if (_savedPath != null) ...[
+if (_savedPath != null) ...[
                 const SizedBox(height: 12),
                 Container(
                   padding: const EdgeInsets.all(14),
@@ -851,25 +937,68 @@ class _StudioPageState extends State<StudioPage> {
                     color: AuraTheme.panel,
                     borderRadius: BorderRadius.circular(14),
                   ),
-                  child: Row(
+                  child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Icon(Icons.check_circle_outline_rounded, color: AuraTheme.mint),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: SelectableText(
-                          _savedPath!,
-                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                color: Colors.white70,
-                                height: 1.45,
-                              ),
-                        ),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Icon(Icons.check_circle_outline_rounded, color: AuraTheme.mint),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: SelectableText(
+                              _savedPath!,
+                              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                    color: Colors.white70,
+                                    height: 1.45,
+                                  ),
+                            ),
+                          ),
+                        ],
                       ),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              _playback == null
+                                  ? 'WAV preview'
+                                  : '${_formatPlaybackTime(_playbackPosition, _playback!.sampleRate)} / ${_formatPlaybackTime(_playback!.totalFrames, _playback!.sampleRate)}',
+                              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                    color: AuraTheme.muted,
+                                    fontFeatures: const [FontFeature.tabularFigures()],
+                                  ),
+                            ),
+                          ),
+                          OutlinedButton.icon(
+                            onPressed: listening ? null : _playSavedTake,
+                            icon: const Icon(Icons.play_arrow_rounded),
+                            label: const Text('Play'),
+                          ),
+                          if (_playback != null) ...[
+                            const SizedBox(width: 8),
+                            IconButton(
+                              tooltip: 'Stop preview',
+                              onPressed: _stopPlayback,
+                              icon: const Icon(Icons.stop_rounded),
+                            ),
+                          ],
+                        ],
+                      ),
+                      if (_playback != null)
+                        LinearProgressIndicator(
+                          value: _playback!.totalFrames == 0
+                              ? 0
+                              : (_playbackPosition / _playback!.totalFrames).clamp(0.0, 1.0),
+                          minHeight: 4,
+                          borderRadius: BorderRadius.circular(4),
+                          backgroundColor: AuraTheme.panelLight,
+                          color: AuraTheme.mint,
+                        ),
                     ],
                   ),
                 ),
-              ],
-            ]),
+              ],           ]),
           ),
         ),
       ],
