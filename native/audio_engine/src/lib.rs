@@ -570,7 +570,7 @@ pub struct AuraEngineHandle {
     assets: HashMap<String, AudioBuffer>,
 }
 
-pub(super) fn set_ffi_error(message: &str) {
+pub(crate) fn set_ffi_error(message: &str) {
     let sanitized = message.replace('\0', " ");
     let value = CString::new(sanitized)
         .unwrap_or_else(|_| CString::new("native audio engine error").expect("static string"));
