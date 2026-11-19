@@ -627,20 +627,20 @@ impl RealtimeMixer {
                         right += sample;
                     }
                     (1, 2) => {
-                        let sample = clip.samples[source_index] * gain;
+                        let sample = clip.asset.samples()[source_index] * gain;
                         left += sample * clip.left_pan_gain;
                         right += sample * clip.right_pan_gain;
                     }
                     (2, 1) => {
-                        let mono = (clip.samples[source_index]
+                        let mono = (clip.asset.samples()[source_index]
                             + clip.asset.samples()[source_index + 1]) * 0.5;
                         let sample = mono * gain;
                         left += sample;
                         right += sample;
                     }
                     (2, 2) => {
-                        left += clip.samples[source_index] * gain * clip.left_pan_gain;
-                        right += clip.samples[source_index + 1] * gain * clip.right_pan_gain;
+                        left += clip.asset.samples()[source_index] * gain * clip.left_pan_gain;
+                        right += clip.asset.samples()[source_index + 1] * gain * clip.right_pan_gain;
                     }
                     _ => {}
                 }
