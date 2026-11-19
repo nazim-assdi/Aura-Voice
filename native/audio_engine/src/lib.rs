@@ -9,7 +9,8 @@
 //! directly in the callback. Neither callback performs file I/O.
 
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicPtr, Ordering};
 
 pub mod device_io;
 use std::error::Error;
@@ -596,6 +597,102 @@ struct ClipEvent {
 pub(crate) const MAX_REALTIME_TRACKS: usize = 256;
 pub(crate) const MAX_REALTIME_CLIPS: usize = 16_384;
 pub(crate) const MAX_REALTIME_BLOCK_FRAMES: usize = 1024;
+
+struct RealtimeGraphOwners {
+    current: Arc<RealtimeMixer>,
+    retired: Vec<Arc<RealtimeMixer>>,
+}
+
+/// Read-mostly graph publisher. The audio thread uses an atomic pointer plus a
+/// single-reader hazard pointer; writers retain old snapshots until the audio
+/// callback has moved to a newer graph. The callback never locks or increments
+/// reference counts.
+pub(crate) struct RealtimeGraph {
+    current: AtomicPtr<RealtimeMixer>,
+    hazard: AtomicPtr<RealtimeMixer>,
+    owners: Mutex<RealtimeGraphOwners>,
+}
+
+pub(crate) struct RealtimeMixerGuard<'a> {
+    graph: &'a RealtimeGraph,
+    pointer: *mut RealtimeMixer,
+}
+
+impl RealtimeMixerGuard<'_> {
+    pub(crate) fn mixer(&self) -> &RealtimeMixer {
+        // SAFETY: The hazard pointer pins this graph snapshot until Guard::drop.
+        unsafe { &*self.pointer }
+    }
+}
+
+impl Drop for RealtimeMixerGuard<'_> {
+    fn drop(&mut self) {
+        self.graph.hazard.store(ptr::null_mut(), Ordering::SeqCst);
+    }
+}
+
+impl RealtimeGraph {
+    pub(crate) fn new(initial: Arc<RealtimeMixer>) -> Arc<Self> {
+        let pointer = Arc::as_ptr(&initial) as *mut RealtimeMixer;
+        Arc::new(Self {
+            current: AtomicPtr::new(pointer),
+            hazard: AtomicPtr::new(ptr::null_mut()),
+            owners: Mutex::new(RealtimeGraphOwners {
+                current: initial,
+                retired: Vec::new(),
+            }),
+        })
+    }
+
+    /// Lock-free callback-side snapshot access. A graph cannot be reclaimed
+    /// between pointer validation and the end of this guard's lifetime.
+    pub(crate) fn load(&self) -> RealtimeMixerGuard<'_> {
+        loop {
+            let pointer = self.current.load(Ordering::SeqCst);
+            self.hazard.store(pointer, Ordering::SeqCst);
+            if self.current.load(Ordering::SeqCst) == pointer {
+                return RealtimeMixerGuard {
+                    graph: self,
+                    pointer,
+                };
+            }
+            self.hazard.store(ptr::null_mut(), Ordering::SeqCst);
+        }
+    }
+
+    /// Publishes a complete prepared graph. The callback notices the pointer
+    /// change at the next block boundary and rebuilds its active-clip schedule
+    /// at the current sample frame.
+    pub(crate) fn publish(
+        &self,
+        next: Arc<RealtimeMixer>,
+    ) -> Result<(), AudioError> {
+        let mut owners = self
+            .owners
+            .lock()
+            .map_err(|_| AudioError::InvalidArgument(
+                "realtime graph publisher lock is poisoned".into(),
+            ))?;
+        if next.sample_rate != owners.current.sample_rate
+            || next.channels != owners.current.channels
+        {
+            return Err(AudioError::InvalidArgument(
+                "live graph updates must keep the current sample rate and channel layout".into(),
+            ));
+        }
+
+        let next_pointer = Arc::as_ptr(&next) as *mut RealtimeMixer;
+        let previous = std::mem::replace(&mut owners.current, next);
+        self.current.store(next_pointer, Ordering::SeqCst);
+        owners.retired.push(previous);
+
+        let protected = self.hazard.load(Ordering::SeqCst);
+        owners
+            .retired
+            .retain(|snapshot| Arc::as_ptr(snapshot) as *mut RealtimeMixer == protected);
+        Ok(())
+    }
+}
 
 /// Immutable, sample-time-sorted playback plan. The callback visits only
 /// currently active clips, not every clip in the project, for each frame.
