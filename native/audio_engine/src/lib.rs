@@ -1839,7 +1839,7 @@ mod tests {
         let first = &mixer.clips[0].asset;
         let second = &mixer.clips[1].asset;
         assert!(Arc::ptr_eq(first, second));
-        let mut state = RealtimeRenderState::new(&mixer);
+        let mut state = RealtimeRenderState::new();
         let mut output = [0.0_f32; 2];
         mixer.render_block(&mut state, 4, &mut output);
         assert_eq!(output, [0.25, 0.5]);
