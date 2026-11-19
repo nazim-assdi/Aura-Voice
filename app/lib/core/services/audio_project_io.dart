@@ -91,6 +91,26 @@ class FileAudioProjectStore implements AudioProjectStore {
   }
 
   @override
+  Future<List<AudioProjectSummary>> findProjectsUsingMedia(String mediaPath) async {
+    final summaries = await listProjects();
+    final matches = <AudioProjectSummary>[];
+    for (final summary in summaries) {
+      try {
+        final session = await load(summary.path);
+        final referencesMedia = session.tracks.any(
+          (track) => track.clips.any((clip) => clip.mediaId == mediaPath),
+        );
+        if (referencesMedia) matches.add(summary);
+      } on FormatException {
+        // Skip a project that became invalid after the initial list scan.
+      } on FileSystemException {
+        // Skip a project removed while the references were being checked.
+      }
+    }
+    return matches;
+  }
+
+  @override
   Future<void> delete(String path) async {
     _assertManagedPath(path);
     final file = File(path);
