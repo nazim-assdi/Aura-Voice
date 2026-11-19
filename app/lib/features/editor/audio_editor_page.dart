@@ -992,6 +992,32 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
     );
   }
 
+  void _updateSelectedTrackDsp({
+    double? highPassHz,
+    double? compressorThreshold,
+    double? compressorRatio,
+  }) {
+    final track = _selectedTrack;
+    if (track == null) return;
+    _replaceTrack(
+      AudioTrack(
+        id: track.id,
+        name: track.name,
+        kind: track.kind,
+        gain: track.gain,
+        pan: track.pan,
+        muted: track.muted,
+        solo: track.solo,
+        armed: track.armed,
+        highPassHz: highPassHz ?? track.highPassHz,
+        compressorThreshold:
+            compressorThreshold ?? track.compressorThreshold,
+        compressorRatio: compressorRatio ?? track.compressorRatio,
+        clips: track.clips,
+      ),
+    );
+  }
+
   Future<void> _saveProject() async {
     if (_saving || _autosaving) return;
     _autosaveTimer?.cancel();
@@ -1527,6 +1553,19 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
                 ),
               ),
             ),
+            if (selectedTrack != null)
+              _TrackDspPanel(
+                track: selectedTrack,
+                sampleRate: _session.sampleRate,
+                onTransactionStart: _beginEditTransaction,
+                onTransactionEnd: _finishEditTransaction,
+                onHighPassChanged: (value) =>
+                    _updateSelectedTrackDsp(highPassHz: value),
+                onThresholdChanged: (value) =>
+                    _updateSelectedTrackDsp(compressorThreshold: value),
+                onRatioChanged: (value) =>
+                    _updateSelectedTrackDsp(compressorRatio: value),
+              ),
             if (selectedClip != null && selectedTrack != null)
               _SelectedClipPanel(
                 clip: selectedClip,
@@ -1768,6 +1807,107 @@ class _TrackMiniButton extends StatelessWidget {
           ),
         ),
       );
+}
+
+class _TrackDspPanel extends StatelessWidget {
+  const _TrackDspPanel({
+    required this.track,
+    required this.sampleRate,
+    required this.onTransactionStart,
+    required this.onTransactionEnd,
+    required this.onHighPassChanged,
+    required this.onThresholdChanged,
+    required this.onRatioChanged,
+  });
+
+  final AudioTrack track;
+  final int sampleRate;
+  final VoidCallback onTransactionStart;
+  final VoidCallback onTransactionEnd;
+  final ValueChanged<double> onHighPassChanged;
+  final ValueChanged<double> onThresholdChanged;
+  final ValueChanged<double> onRatioChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final maxHighPass = math.min(20000.0, sampleRate * 0.45).toDouble();
+    final highPass = track.highPassHz.clamp(0.0, maxHighPass).toDouble();
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 8, 14, 10),
+      decoration: BoxDecoration(
+        color: AuraTheme.panel,
+        border: Border(
+          top: BorderSide(color: Colors.white.withValues(alpha: 0.06)),
+        ),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(
+                Icons.tune_rounded,
+                size: 17,
+                color: AuraTheme.mint,
+              ),
+              const SizedBox(width: 7),
+              Expanded(
+                child: Text(
+                  '\${track.name} · Track Processing',
+                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                ),
+              ),
+              Text(
+                'Realtime',
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color: AuraTheme.mint,
+                    ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 5),
+          _ClipValueSlider(
+            label: 'High-Pass',
+            value: highPass,
+            min: 0,
+            max: maxHighPass,
+            valueLabel: highPass == 0
+                ? 'Off'
+                : '\${highPass.round()} Hz',
+            onChanged: onHighPassChanged,
+            onChangeStart: onTransactionStart,
+            onChangeEnd: onTransactionEnd,
+          ),
+          _ClipValueSlider(
+            label: 'Comp Threshold',
+            value: track.compressorThreshold,
+            min: 0.001,
+            max: 1,
+            valueLabel:
+                '\${(track.compressorThreshold * 100).toStringAsFixed(1)}%',
+            onChanged: onThresholdChanged,
+            onChangeStart: onTransactionStart,
+            onChangeEnd: onTransactionEnd,
+          ),
+          _ClipValueSlider(
+            label: 'Comp Ratio',
+            value: track.compressorRatio,
+            min: 1,
+            max: 20,
+            valueLabel: track.compressorRatio == 1
+                ? 'Off · 1:1'
+                : '\${track.compressorRatio.toStringAsFixed(1)}:1',
+            onChanged: onRatioChanged,
+            onChangeStart: onTransactionStart,
+            onChangeEnd: onTransactionEnd,
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _SelectedClipPanel extends StatelessWidget {
