@@ -379,12 +379,28 @@ pub struct Track {
     pub pan: f32,
     pub muted: bool,
     pub solo: bool,
+    /// One-pole high-pass cutoff in Hz; 0 disables the filter.
+    pub high_pass_hz: f32,
+    /// Linked stereo compressor threshold in linear amplitude; 1 disables it.
+    pub compressor_threshold: f32,
+    /// Compressor ratio; 1 disables compression.
+    pub compressor_ratio: f32,
     pub clips: Vec<Clip>,
 }
 
 impl Track {
     pub fn new(id: impl Into<String>) -> Self {
-        Self { id: id.into(), gain: 1.0, pan: 0.0, muted: false, solo: false, clips: Vec::new() }
+        Self {
+            id: id.into(),
+            gain: 1.0,
+            pan: 0.0,
+            muted: false,
+            solo: false,
+            high_pass_hz: 0.0,
+            compressor_threshold: 1.0,
+            compressor_ratio: 1.0,
+            clips: Vec::new(),
+        }
     }
 }
 
@@ -583,6 +599,9 @@ struct RealtimeClip {
 #[derive(Clone)]
 struct RealtimeTrack {
     gain: f32,
+    high_pass_alpha: f32,
+    compressor_threshold: f32,
+    compressor_ratio: f32,
 }
 
 #[derive(Clone, Copy)]
@@ -713,6 +732,8 @@ pub(crate) struct RealtimeRenderState {
     next_frame: Option<usize>,
     graph_identity: usize,
     track_scratch: Vec<f32>,
+    filter_state: Vec<f32>,
+    compressor_envelope: Vec<f32>,
 }
 
 impl RealtimeRenderState {
@@ -723,6 +744,8 @@ impl RealtimeRenderState {
             next_frame: None,
             graph_identity: 0,
             track_scratch: vec![0.0; MAX_REALTIME_TRACKS * 2],
+            filter_state: vec![0.0; MAX_REALTIME_TRACKS * 4],
+            compressor_envelope: vec![0.0; MAX_REALTIME_TRACKS],
         }
     }
 
@@ -750,6 +773,8 @@ impl RealtimeRenderState {
             self.apply_event(event);
             self.event_cursor += 1;
         }
+        self.filter_state.fill(0.0);
+        self.compressor_envelope.fill(0.0);
         self.graph_identity = mixer as *const RealtimeMixer as usize;
         self.next_frame = Some(start_frame);
     }
