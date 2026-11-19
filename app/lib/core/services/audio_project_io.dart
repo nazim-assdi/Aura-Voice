@@ -26,7 +26,10 @@ class FileAudioProjectStore implements AudioProjectStore {
     final file = File(
       '${directory.path}${Platform.pathSeparator}$filename',
     );
-    final temporary = File('${file.path}.tmp');
+    final temporary = File(
+      '${file.path}.${DateTime.now().microsecondsSinceEpoch}.tmp',
+    );
+    final backup = File('${file.path}.backup');
     final manifest = jsonEncode(session.toJson());
     final random = await temporary.open(mode: FileMode.write);
     try {
@@ -35,14 +38,32 @@ class FileAudioProjectStore implements AudioProjectStore {
     } finally {
       await random.close();
     }
-    if (await file.exists()) await file.delete();
-    await temporary.rename(file.path);
-    return file.path;
+
+    var movedOldFile = false;
+    try {
+      if (await file.exists()) {
+        if (await backup.exists()) await backup.delete();
+        await file.rename(backup.path);
+        movedOldFile = true;
+      }
+      await temporary.rename(file.path);
+      if (movedOldFile && await backup.exists()) {
+        await backup.delete();
+      }
+      return file.path;
+    } catch (_) {
+      if (movedOldFile && !await file.exists() && await backup.exists()) {
+        await backup.rename(file.path);
+      }
+      rethrow;
+    } finally {
+      if (await temporary.exists()) await temporary.delete();
+    }
   }
 
   @override
   Future<AudioSession> load(String path) async {
-    _assertManagedPath(path);
+    await _assertManagedPath(path);
     final file = File(path);
     if (!await file.exists()) {
       throw const AudioProjectStoreUnavailable('The project file no longer exists.');
@@ -80,10 +101,8 @@ class FileAudioProjectStore implements AudioProjectStore {
             trackCount: session.tracks.length,
           ),
         );
-      } on FormatException {
-        // Ignore invalid manifests; a damaged project should not hide others.
-      } on FileSystemException {
-        // Ignore a project that was removed while the list was being read.
+      } catch (_) {
+        // Ignore invalid manifests or files changed while the list was read.
       }
     }
     summaries.sort((a, b) => b.modifiedAt.compareTo(a.modifiedAt));
@@ -101,10 +120,8 @@ class FileAudioProjectStore implements AudioProjectStore {
           (track) => track.clips.any((clip) => clip.mediaId == mediaPath),
         );
         if (referencesMedia) matches.add(summary);
-      } on FormatException {
-        // Skip a project that became invalid after the initial list scan.
-      } on FileSystemException {
-        // Skip a project removed while the references were being checked.
+      } catch (_) {
+        // Skip a project that became invalid or disappeared during the scan.
       }
     }
     return matches;
@@ -112,20 +129,26 @@ class FileAudioProjectStore implements AudioProjectStore {
 
   @override
   Future<void> delete(String path) async {
-    _assertManagedPath(path);
+    await _assertManagedPath(path);
     final file = File(path);
     if (await file.exists()) await file.delete();
   }
 
-  void _assertManagedPath(String path) {
-    final root = Directory(_directoryPath).absolute.path;
-    final candidate = File(path).absolute.path;
+  Future<void> _assertManagedPath(String path) async {
+    final file = File(path);
+    if (!path.toLowerCase().endsWith('.aura.json') ||
+        !await file.exists()) {
+      throw const AudioProjectStoreUnavailable(
+        'Only existing Aura Voice project manifests can be changed.',
+      );
+    }
+    final root = await Directory(_directoryPath).resolveSymbolicLinks();
+    final candidate = await file.resolveSymbolicLinks();
     final separator = Platform.pathSeparator;
     final normalizedRoot = Platform.isWindows ? root.toLowerCase() : root;
     final normalizedCandidate =
         Platform.isWindows ? candidate.toLowerCase() : candidate;
-    if (!normalizedCandidate.startsWith('$normalizedRoot$separator') ||
-        !candidate.toLowerCase().endsWith('.aura.json')) {
+    if (!normalizedCandidate.startsWith('$normalizedRoot$separator')) {
       throw const AudioProjectStoreUnavailable(
         'Only Aura Voice project manifests inside the Projects folder can be changed.',
       );
