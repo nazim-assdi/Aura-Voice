@@ -90,6 +90,51 @@ class AudioClip {
     ];
   }
 
+  /// Trims frames from the start without modifying the source media.
+  /// The timeline start and source offset move forward by the same amount.
+  AudioClip trimStartByFrames(int frames, {required String newId}) {
+    if (frames <= 0 || frames >= durationFrames) {
+      throw RangeError.range(frames, 1, durationFrames - 1, 'frames');
+    }
+    final nextDuration = durationFrames - frames;
+    final nextFadeIn = fadeInFrames > frames ? fadeInFrames - frames : 0;
+    final nextFadeOut = fadeOutFrames > nextDuration
+        ? nextDuration
+        : fadeOutFrames;
+    return AudioClip(
+      id: newId,
+      mediaId: mediaId,
+      startFrame: startFrame + frames,
+      sourceStartFrame: sourceStartFrame + frames,
+      durationFrames: nextDuration,
+      gain: gain,
+      pan: pan,
+      muted: muted,
+      fadeInFrames: nextFadeIn,
+      fadeOutFrames: nextFadeOut,
+    );
+  }
+
+  /// Trims frames from the end without modifying the source media.
+  AudioClip trimEndByFrames(int frames, {required String newId}) {
+    if (frames <= 0 || frames >= durationFrames) {
+      throw RangeError.range(frames, 1, durationFrames - 1, 'frames');
+    }
+    final nextDuration = durationFrames - frames;
+    return AudioClip(
+      id: newId,
+      mediaId: mediaId,
+      startFrame: startFrame,
+      sourceStartFrame: sourceStartFrame,
+      durationFrames: nextDuration,
+      gain: gain,
+      pan: pan,
+      muted: muted,
+      fadeInFrames: fadeInFrames > nextDuration ? nextDuration : fadeInFrames,
+      fadeOutFrames: fadeOutFrames > nextDuration ? nextDuration : fadeOutFrames,
+    );
+  }
+
   Map<String, Object> toJson() => {
         'id': id,
         'mediaId': mediaId,
