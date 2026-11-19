@@ -566,6 +566,7 @@ fn fade_envelope(offset: u64, duration: u64, fade_in: u64, fade_out: u64) -> f32
 /// and accumulates one sample frame; it never allocates or locks.
 #[derive(Clone)]
 struct RealtimeClip {
+    track_index: usize,
     start_frame: usize,
     source_start_frame: usize,
     duration_frames: usize,
@@ -581,35 +582,122 @@ struct RealtimeClip {
 #[derive(Clone)]
 struct RealtimeTrack {
     gain: f32,
-    clips: Vec<RealtimeClip>,
 }
 
-/// Shared immutable playback plan consumed by the CPAL callback.
+#[derive(Clone, Copy)]
+struct ClipEvent {
+    frame: usize,
+    clip_index: usize,
+    is_start: bool,
+}
+
+/// Limits allow the callback to keep all working memory preallocated even
+/// when a new session graph is published while playback is active.
+pub(crate) const MAX_REALTIME_TRACKS: usize = 256;
+pub(crate) const MAX_REALTIME_CLIPS: usize = 16_384;
+pub(crate) const MAX_REALTIME_BLOCK_FRAMES: usize = 1024;
+
+/// Immutable, sample-time-sorted playback plan. The callback visits only
+/// currently active clips, not every clip in the project, for each frame.
 pub(crate) struct RealtimeMixer {
     pub(crate) sample_rate: u32,
     pub(crate) channels: u16,
     pub(crate) total_frames: u64,
     tracks: Vec<RealtimeTrack>,
+    clips: Vec<RealtimeClip>,
+    events: Vec<ClipEvent>,
     master_gain: f32,
 }
 
-impl RealtimeMixer {
-    /// Mixes one timeline frame without allocation, locking or file access.
-    /// The returned pair is mono duplicated to both sides for mono sessions.
-    pub(crate) fn mix_frame(&self, timeline_frame: usize) -> (f32, f32) {
-        let mut left = 0.0_f32;
-        let mut right = 0.0_f32;
+/// Callback-owned state. All vectors are allocated before CPAL starts.
+pub(crate) struct RealtimeRenderState {
+    active_clips: Vec<usize>,
+    event_cursor: usize,
+    next_frame: Option<usize>,
+    graph_identity: usize,
+    track_scratch: Vec<f32>,
+    output_scratch: Vec<f32>,
+}
 
-        for track in &self.tracks {
-            for clip in &track.clips {
-                if timeline_frame < clip.start_frame {
-                    continue;
+impl RealtimeRenderState {
+    pub(crate) fn new(mixer: &RealtimeMixer) -> Self {
+        Self {
+            active_clips: Vec::with_capacity(MAX_REALTIME_CLIPS),
+            event_cursor: 0,
+            next_frame: None,
+            graph_identity: 0,
+            track_scratch: vec![0.0; MAX_REALTIME_TRACKS * 2],
+            output_scratch: vec![0.0; MAX_REALTIME_BLOCK_FRAMES * 2],
+        }
+    }
+
+    fn apply_event(&mut self, event: ClipEvent) {
+        if event.is_start {
+            if self.active_clips.len() < self.active_clips.capacity() {
+                self.active_clips.push(event.clip_index);
+            }
+        } else if let Some(index) = self
+            .active_clips
+            .iter()
+            .position(|active| *active == event.clip_index)
+        {
+            self.active_clips.swap_remove(index);
+        }
+    }
+
+    fn reset_for(&mut self, mixer: &RealtimeMixer, start_frame: usize) {
+        self.active_clips.clear();
+        self.event_cursor = 0;
+        while let Some(event) = mixer.events.get(self.event_cursor).copied() {
+            if event.frame >= start_frame {
+                break;
+            }
+            self.apply_event(event);
+            self.event_cursor += 1;
+        }
+        self.graph_identity = mixer as *const RealtimeMixer as usize;
+        self.next_frame = Some(start_frame);
+    }
+}
+
+impl RealtimeMixer {
+    /// Mixes a contiguous block at exact timeline frames. The callback state
+    /// maintains the active-clip set across blocks and rebuilds it only after
+    /// a seek, loop wrap or graph replacement. No memory is allocated here.
+    pub(crate) fn render_block(
+        &self,
+        state: &mut RealtimeRenderState,
+        start_frame: usize,
+        output: &mut [f32],
+    ) {
+        let channels = usize::from(self.channels);
+        if channels == 0 {
+            output.fill(0.0);
+            return;
+        }
+        let frames = output.len() / channels;
+        let identity = self as *const RealtimeMixer as usize;
+        if state.graph_identity != identity || state.next_frame != Some(start_frame) {
+            state.reset_for(self, start_frame);
+        }
+
+        for output_frame in 0..frames {
+            let timeline_frame = start_frame.saturating_add(output_frame);
+            while let Some(event) = self.events.get(state.event_cursor).copied() {
+                if event.frame > timeline_frame {
+                    break;
                 }
+                state.apply_event(event);
+                state.event_cursor += 1;
+            }
+
+            state.track_scratch[..self.tracks.len() * 2].fill(0.0);
+            for active_index in state.active_clips.iter().copied() {
+                let clip = &self.clips[active_index];
                 let offset = timeline_frame - clip.start_frame;
                 if offset >= clip.duration_frames {
                     continue;
                 }
-
                 let source_frame = clip.source_start_frame + offset;
                 let source_index = source_frame * clip.source_channels;
                 let fade = fade_envelope(
@@ -618,40 +706,55 @@ impl RealtimeMixer {
                     clip.fade_in_frames as u64,
                     clip.fade_out_frames as u64,
                 );
-                let gain = track.gain * clip.gain * self.master_gain * fade;
-
-                match (clip.source_channels, self.channels) {
+                let gain = self.tracks[clip.track_index].gain * clip.gain * fade;
+                let track_offset = clip.track_index * 2;
+                match (clip.source_channels, channels) {
                     (1, 1) => {
-                        let sample = clip.asset.samples()[source_index] * gain;
-                        left += sample;
-                        right += sample;
+                        state.track_scratch[track_offset] +=
+                            clip.asset.samples()[source_index] * gain;
                     }
                     (1, 2) => {
                         let sample = clip.asset.samples()[source_index] * gain;
-                        left += sample * clip.left_pan_gain;
-                        right += sample * clip.right_pan_gain;
+                        state.track_scratch[track_offset] += sample * clip.left_pan_gain;
+                        state.track_scratch[track_offset + 1] += sample * clip.right_pan_gain;
                     }
                     (2, 1) => {
-                        let mono = (clip.asset.samples()[source_index]
+                        let sample = (clip.asset.samples()[source_index]
                             + clip.asset.samples()[source_index + 1]) * 0.5;
-                        let sample = mono * gain;
-                        left += sample;
-                        right += sample;
+                        state.track_scratch[track_offset] += sample * gain;
                     }
                     (2, 2) => {
-                        left += clip.asset.samples()[source_index] * gain * clip.left_pan_gain;
-                        right += clip.asset.samples()[source_index + 1] * gain * clip.right_pan_gain;
+                        state.track_scratch[track_offset] +=
+                            clip.asset.samples()[source_index] * gain * clip.left_pan_gain;
+                        state.track_scratch[track_offset + 1] +=
+                            clip.asset.samples()[source_index + 1] * gain * clip.right_pan_gain;
                     }
                     _ => {}
                 }
             }
+
+            let mut left = 0.0_f32;
+            let mut right = 0.0_f32;
+            for track_index in 0..self.tracks.len() {
+                let offset = track_index * 2;
+                left += state.track_scratch[offset];
+                right += state.track_scratch[offset + 1];
+            }
+            left *= self.master_gain;
+            right *= self.master_gain;
+            let output_index = output_frame * channels;
+            if channels == 1 {
+                output[output_index] = left;
+            } else {
+                output[output_index] = left;
+                output[output_index + 1] = right;
+            }
         }
 
-        if self.channels == 1 {
-            (left, left)
-        } else {
-            (left, right)
+        for sample in output.iter_mut().skip(frames * channels) {
+            *sample = 0.0;
         }
+        state.next_frame = Some(start_frame.saturating_add(frames));
     }
 }
 
@@ -696,14 +799,25 @@ fn build_realtime_mixer_shared(
             "master gain must be finite and non-negative".into(),
         ));
     }
+    if session.tracks.len() > MAX_REALTIME_TRACKS {
+        return Err(AudioError::InvalidArgument(format!(
+            "realtime sessions support at most {MAX_REALTIME_TRACKS} tracks"
+        )));
+    }
 
     let has_solo = session.tracks.iter().any(|track| track.solo && !track.muted);
     let mut realtime_tracks = Vec::with_capacity(session.tracks.len());
+    let mut realtime_clips = Vec::new();
+    let mut events = Vec::new();
     let mut output_frames = 0_usize;
 
     for track in &session.tracks {
-        if track.id.trim().is_empty() || !track.gain.is_finite() || track.gain < 0.0
-            || !track.pan.is_finite() || !(-1.0..=1.0).contains(&track.pan) {
+        if track.id.trim().is_empty()
+            || !track.gain.is_finite()
+            || track.gain < 0.0
+            || !track.pan.is_finite()
+            || !(-1.0..=1.0).contains(&track.pan)
+        {
             return Err(AudioError::InvalidArgument(format!(
                 "track {} has an invalid id, gain or pan",
                 track.id
@@ -714,8 +828,14 @@ fn build_realtime_mixer_shared(
         if !audible {
             continue;
         }
+        if realtime_tracks.len() == MAX_REALTIME_TRACKS {
+            return Err(AudioError::InvalidArgument(format!(
+                "realtime sessions support at most {MAX_REALTIME_TRACKS} audible tracks"
+            )));
+        }
+        let track_index = realtime_tracks.len();
+        realtime_tracks.push(RealtimeTrack { gain: track.gain });
 
-        let mut clips = Vec::with_capacity(track.clips.len());
         for clip in &track.clips {
             if clip.id.trim().is_empty()
                 || clip.media_id.trim().is_empty()
@@ -745,7 +865,6 @@ fn build_realtime_mixer_shared(
                     session_rate: session.sample_rate,
                 });
             }
-
             let source_end = clip
                 .source_start_frame
                 .checked_add(clip.duration_frames)
@@ -756,18 +875,24 @@ fn build_realtime_mixer_shared(
                     clip.id, clip.media_id
                 )));
             }
+            if realtime_clips.len() >= MAX_REALTIME_CLIPS {
+                return Err(AudioError::InvalidArgument(format!(
+                    "realtime sessions support at most {MAX_REALTIME_CLIPS} audible clips"
+                )));
+            }
+
             let timeline_end = clip
                 .start_frame
                 .checked_add(clip.duration_frames)
                 .ok_or(AudioError::SizeOverflow)?;
-            let timeline_end = usize::try_from(timeline_end)
-                .map_err(|_| AudioError::SizeOverflow)?;
-            let start_frame = usize::try_from(clip.start_frame)
-                .map_err(|_| AudioError::SizeOverflow)?;
-            let source_start_frame = usize::try_from(clip.source_start_frame)
-                .map_err(|_| AudioError::SizeOverflow)?;
-            let duration_frames = usize::try_from(clip.duration_frames)
-                .map_err(|_| AudioError::SizeOverflow)?;
+            let timeline_end =
+                usize::try_from(timeline_end).map_err(|_| AudioError::SizeOverflow)?;
+            let start_frame =
+                usize::try_from(clip.start_frame).map_err(|_| AudioError::SizeOverflow)?;
+            let source_start_frame =
+                usize::try_from(clip.source_start_frame).map_err(|_| AudioError::SizeOverflow)?;
+            let duration_frames =
+                usize::try_from(clip.duration_frames).map_err(|_| AudioError::SizeOverflow)?;
             let source_channels = usize::from(asset.channels());
 
             let combined_pan = (track.pan + clip.pan).clamp(-1.0, 1.0);
@@ -795,7 +920,9 @@ fn build_realtime_mixer_shared(
                     _ => (1.0, 1.0),
                 };
 
-            clips.push(RealtimeClip {
+            let clip_index = realtime_clips.len();
+            realtime_clips.push(RealtimeClip {
+                track_index,
                 start_frame,
                 source_start_frame,
                 duration_frames,
@@ -809,20 +936,35 @@ fn build_realtime_mixer_shared(
                 fade_out_frames: usize::try_from(clip.fade_out_frames)
                     .map_err(|_| AudioError::SizeOverflow)?,
             });
+            events.push(ClipEvent {
+                frame: start_frame,
+                clip_index,
+                is_start: true,
+            });
+            events.push(ClipEvent {
+                frame: timeline_end,
+                clip_index,
+                is_start: false,
+            });
             output_frames = output_frames.max(timeline_end);
         }
-
-        realtime_tracks.push(RealtimeTrack {
-            gain: track.gain,
-            clips,
-        });
     }
+
+    // End events sort before start events at the same frame so adjacent clips
+    // do not overlap by an unintended extra sample.
+    events.sort_unstable_by(|left, right| {
+        left.frame
+            .cmp(&right.frame)
+            .then_with(|| left.is_start.cmp(&right.is_start))
+    });
 
     Ok(Arc::new(RealtimeMixer {
         sample_rate: session.sample_rate,
         channels: session.channels,
         total_frames: u64::try_from(output_frames).map_err(|_| AudioError::SizeOverflow)?,
         tracks: realtime_tracks,
+        clips: realtime_clips,
+        events,
         master_gain: session.master_gain,
     }))
 }
@@ -1393,7 +1535,7 @@ mod tests {
 
 
     #[test]
-    fn realtime_mixer_matches_offline_mix_for_overlapping_tracks_and_fades() {
+    fn block_mixer_matches_offline_mix_for_overlapping_tracks_and_fades() {
         let mut assets = HashMap::new();
         assets.insert(
             "voice".into(),
@@ -1403,87 +1545,81 @@ mod tests {
             "room".into(),
             AudioBuffer::new(48_000, 2, vec![0.2, -0.2, 0.4, -0.4]).unwrap(),
         );
-
         let mut lead = Track::new("lead");
         let mut lead_clip = Clip::new("lead-clip", "voice", 0, 0, 4);
         lead_clip.fade_in_frames = 2;
         lead_clip.gain = 0.7;
         lead.clips.push(lead_clip);
-
         let mut room = Track::new("room");
         room.pan = 0.25;
         let mut room_clip = Clip::new("room-clip", "room", 1, 0, 2);
         room_clip.fade_out_frames = 1;
         room.clips.push(room_clip);
-
         let mut session = MixSession::new(48_000, 2);
         session.tracks = vec![lead, room];
 
         let offline = render_mix(&session, &assets).unwrap();
         let realtime = build_realtime_mixer(&session, &assets).unwrap();
-        assert_eq!(realtime.total_frames, offline.audio.frame_count());
-
-        for frame in 0..realtime.total_frames as usize {
-            let (left, right) = realtime.mix_frame(frame);
-            let index = frame * 2;
-            assert!((left - offline.audio.samples()[index]).abs() < 0.000001);
-            assert!((right - offline.audio.samples()[index + 1]).abs() < 0.000001);
+        let mut state = RealtimeRenderState::new(&realtime);
+        let mut block = vec![0.0_f32; 4];
+        let mut actual = Vec::new();
+        for start in (0..realtime.total_frames as usize).step_by(2) {
+            let count = (realtime.total_frames as usize - start).min(2);
+            realtime.render_block(&mut state, start, &mut block[..count * 2]);
+            actual.extend_from_slice(&block[..count * 2]);
+        }
+        assert_eq!(actual.len(), offline.audio.samples().len());
+        for (actual, expected) in actual.iter().zip(offline.audio.samples()) {
+            assert!((actual - expected).abs() < 0.000001);
         }
     }
 
     #[test]
-    fn realtime_mixer_uses_shared_asset_buffers_for_repeated_clips() {
+    fn block_scheduler_handles_seek_and_adjacent_clip_boundaries() {
+        let assets = asset("voice", 1, &[0.25, 0.5, 0.75, 1.0]);
+        let mut track = Track::new("voice");
+        track.clips.push(Clip::new("first", "voice", 0, 0, 2));
+        track.clips.push(Clip::new("second", "voice", 2, 2, 2));
+        let mut session = MixSession::new(48_000, 1);
+        session.tracks.push(track);
+        let mixer = build_realtime_mixer(&session, &assets).unwrap();
+        let mut state = RealtimeRenderState::new(&mixer);
+        let mut output = [0.0_f32; 2];
+
+        mixer.render_block(&mut state, 0, &mut output);
+        assert_eq!(output, [0.25, 0.5]);
+        mixer.render_block(&mut state, 2, &mut output);
+        assert_eq!(output, [0.75, 1.0]);
+        // A backwards seek rebuilds the active set from the sorted events.
+        mixer.render_block(&mut state, 1, &mut output);
+        assert_eq!(output, [0.5, 0.75]);
+    }
+
+    #[test]
+    fn realtime_scheduler_reuses_one_asset_buffer_for_repeated_clips() {
         let assets = asset("voice", 1, &[0.25, 0.5]);
         let mut track = Track::new("voice");
         track.clips.push(Clip::new("one", "voice", 0, 0, 2));
         track.clips.push(Clip::new("two", "voice", 4, 0, 2));
         let mut session = MixSession::new(48_000, 1);
         session.tracks.push(track);
-
         let mixer = build_realtime_mixer(&session, &assets).unwrap();
-        let first = &mixer.tracks[0].clips[0].asset;
-        let second = &mixer.tracks[0].clips[1].asset;
+        let first = &mixer.clips[0].asset;
+        let second = &mixer.clips[1].asset;
         assert!(Arc::ptr_eq(first, second));
-        assert_eq!(mixer.mix_frame(0).0, 0.25);
-        assert_eq!(mixer.mix_frame(4).0, 0.25);
+        let mut state = RealtimeRenderState::new(&mixer);
+        let mut output = [0.0_f32; 2];
+        mixer.render_block(&mut state, 4, &mut output);
+        assert_eq!(output, [0.25, 0.5]);
     }
 
     #[test]
-    fn realtime_mixer_obeys_track_solo_and_mute_states() {
-        let mut assets = HashMap::new();
-        assets.insert("voice".into(), AudioBuffer::new(48_000, 1, vec![0.2]).unwrap());
-        assets.insert("room".into(), AudioBuffer::new(48_000, 1, vec![0.8]).unwrap());
-
-        let mut lead = Track::new("lead");
-        lead.clips.push(Clip::new("lead-clip", "voice", 0, 0, 1));
-        let mut ambience = Track::new("ambience");
-        ambience.solo = true;
-        ambience.clips.push(Clip::new("room-clip", "room", 0, 0, 1));
-
-        let mut session = MixSession::new(48_000, 1);
-        session.tracks = vec![lead, ambience];
-
-        let solo_mix = build_realtime_mixer(&session, &assets).unwrap();
-        assert!((solo_mix.mix_frame(0).0 - 0.8).abs() < 0.000001);
-
-        session.tracks[1].muted = true;
-        let muted_solo_mix = build_realtime_mixer(&session, &assets).unwrap();
-        assert!((muted_solo_mix.mix_frame(0).0 - 0.2).abs() < 0.000001);
-
-        session.tracks[1].muted = false;
-        session.tracks[0].clips[0].muted = true;
-        let clip_muted_mix = build_realtime_mixer(&session, &assets).unwrap();
-        assert!((clip_muted_mix.mix_frame(0).0 - 0.8).abs() < 0.000001);
-    }
-
-    #[test]
-    fn realtime_mixer_rejects_clip_source_ranges_outside_the_asset() {
+    fn realtime_scheduler_rejects_clip_source_ranges_outside_the_asset() {
         let assets = asset("voice", 1, &[0.25, 0.5]);
         let mut track = Track::new("lead");
         track.clips.push(Clip::new("out-of-range", "voice", 0, 1, 2));
         let mut session = MixSession::new(48_000, 1);
         session.tracks.push(track);
-
         assert!(matches!(
             build_realtime_mixer(&session, &assets),
             Err(AudioError::InvalidArgument(_))
