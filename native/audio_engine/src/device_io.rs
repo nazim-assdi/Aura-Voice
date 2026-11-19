@@ -470,6 +470,271 @@ pub unsafe extern "C" fn aura_audio_capture_stop(handle: *mut AuraAudioCaptureHa
     }
 }
 
+
+/// Opaque playback stream backed by a decoded WAV asset.
+pub struct AuraAudioPlaybackHandle {
+    _stream: Stream,
+    sample_rate: u32,
+    total_frames: u64,
+    position_frames: Arc<AtomicUsize>,
+    stream_error: Arc<AtomicU32>,
+}
+
+fn build_playback_stream(
+    device: &cpal::Device,
+    config: cpal::StreamConfig,
+    format: SampleFormat,
+    samples: Arc<Vec<f32>>,
+    source_channels: usize,
+    output_channels: usize,
+    position_frames: Arc<AtomicUsize>,
+    stream_error: Arc<AtomicU32>,
+) -> Result<Stream, AudioError> {
+    let total_frames = samples.len() / source_channels;
+    let error_state = Arc::clone(&stream_error);
+    let on_error = move |_error: cpal::Error| {
+        error_state.store(1, Ordering::Release);
+    };
+
+    macro_rules! build_output {
+        ($sample:ty, $convert:expr) => {{
+            let callback_samples = Arc::clone(&samples);
+            let callback_position = Arc::clone(&position_frames);
+            let callback_error = Arc::clone(&stream_error);
+            device
+                .build_output_stream::<$sample, _, _>(
+                    config,
+                    move |data: &mut [$sample], _| {
+                        let channels = output_channels;
+                        if channels == 0 {
+                            callback_error.store(1, Ordering::Release);
+                            return;
+                        }
+                        let frames = data.len() / channels;
+                        let first_frame = callback_position.fetch_add(frames, Ordering::AcqRel);
+                        for frame in 0..frames {
+                            let source_frame = first_frame.saturating_add(frame);
+                            for channel in 0..channels {
+                                let sample = if source_frame < total_frames {
+                                    let source_offset = source_frame * source_channels;
+                                    if source_channels == 1 {
+                                        callback_samples[source_offset]
+                                    } else if channels == 1 {
+                                        (callback_samples[source_offset]
+                                            + callback_samples[source_offset + 1]) * 0.5
+                                    } else {
+                                        callback_samples[source_offset + channel.min(1)]
+                                    }
+                                } else {
+                                    0.0
+                                };
+                                data[frame * channels + channel] = ($convert)(sample);
+                            }
+                        }
+                        // Leave a malformed partial final frame silent.
+                        for output in data.iter_mut().skip(frames * channels) {
+                            *output = ($convert)(0.0);
+                        }
+                    },
+                    on_error,
+                    None,
+                )
+                .map_err(|error| {
+                    AudioError::InvalidArgument(format!(
+                        "cannot open audio output stream: {error}"
+                    ))
+                })?
+        }};
+    }
+
+    let stream = match format {
+        SampleFormat::F32 => build_output!(f32, |sample: f32| sample),
+        SampleFormat::F64 => build_output!(f64, |sample: f32| sample as f64),
+        SampleFormat::I16 => build_output!(i16, |sample: f32| {
+            (sample.clamp(-1.0, 1.0) * 32767.0).round() as i16
+        }),
+        SampleFormat::U16 => build_output!(u16, |sample: f32| {
+            (sample.clamp(-1.0, 1.0) * 32767.5 + 32767.5).round() as u16
+        }),
+        SampleFormat::I32 => build_output!(i32, |sample: f32| {
+            (sample.clamp(-1.0, 1.0) * 2_147_483_647.0).round() as i32
+        }),
+        SampleFormat::U32 => build_output!(u32, |sample: f32| {
+            (sample.clamp(-1.0, 1.0) as f64 * 2_147_483_647.5 + 2_147_483_647.5)
+                .round() as u32
+        }),
+        SampleFormat::I8 => build_output!(i8, |sample: f32| {
+            (sample.clamp(-1.0, 1.0) * 127.0).round() as i8
+        }),
+        SampleFormat::U8 => build_output!(u8, |sample: f32| {
+            (sample.clamp(-1.0, 1.0) * 127.5 + 127.5).round() as u8
+        }),
+        unsupported => {
+            return Err(AudioError::InvalidArgument(format!(
+                "output device sample format {unsupported} is not supported yet"
+            )));
+        }
+    };
+    Ok(stream)
+}
+
+/// Starts playing a PCM/IEEE-float WAV through the operating system's default
+/// output device. No resampling is performed: the output device must support
+/// the WAV's sample rate.
+#[no_mangle]
+pub unsafe extern "C" fn aura_audio_playback_start_wav(
+    wav_data: *const u8,
+    wav_len: usize,
+    out_sample_rate: *mut u32,
+    out_total_frames: *mut u64,
+) -> *mut AuraAudioPlaybackHandle {
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        if wav_data.is_null() || wav_len < 44 || wav_len > 1_073_741_824 {
+            return Err(AudioError::InvalidArgument(
+                "WAV buffer must be non-null and between 44 bytes and 1 GiB".into(),
+            ));
+        }
+        if out_sample_rate.is_null() || out_total_frames.is_null() {
+            return Err(AudioError::InvalidArgument(
+                "playback output pointers must not be null".into(),
+            ));
+        }
+        // SAFETY: Caller guarantees wav_data points to wav_len readable bytes.
+        let bytes = unsafe { std::slice::from_raw_parts(wav_data, wav_len) };
+        let audio = crate::AudioBuffer::from_wav(bytes)?;
+        let source_channels = usize::from(audio.channels());
+        let sample_rate = audio.sample_rate();
+        let total_frames = usize::try_from(audio.frame_count())
+            .map_err(|_| AudioError::SizeOverflow)?;
+        if !(1..=2).contains(&source_channels) || total_frames == 0 {
+            return Err(AudioError::InvalidArgument(
+                "playback expects a non-empty mono or stereo WAV".into(),
+            ));
+        }
+
+        let host = cpal::default_host();
+        let device = host
+            .default_output_device()
+            .ok_or_else(|| AudioError::InvalidArgument(
+                "no default audio output device is available".into(),
+            ))?;
+
+        let supported = device
+            .supported_output_configs()
+            .map_err(|error| AudioError::InvalidArgument(format!(
+                "cannot query output configurations: {error}"
+            )))?
+            .filter(|range| range.channels() >= source_channels as u16)
+            .filter_map(|range| range.try_with_sample_rate(sample_rate))
+            .next()
+            .ok_or_else(|| AudioError::InvalidArgument(format!(
+                "the default output device does not support {sample_rate} Hz playback"
+            )))?;
+
+        let output_channels = usize::from(supported.channels());
+        if output_channels == 0 {
+            return Err(AudioError::InvalidArgument(
+                "output device reports zero channels".into(),
+            ));
+        }
+        let format = supported.sample_format();
+        let config = supported.config();
+        let samples = Arc::new(audio.samples().to_vec());
+        let position_frames = Arc::new(AtomicUsize::new(0));
+        let stream_error = Arc::new(AtomicU32::new(0));
+        let stream = build_playback_stream(
+            &device,
+            config,
+            format,
+            samples,
+            source_channels,
+            output_channels,
+            Arc::clone(&position_frames),
+            Arc::clone(&stream_error),
+        )?;
+        stream
+            .play()
+            .map_err(|error| AudioError::InvalidArgument(format!(
+                "cannot start audio playback: {error}"
+            )))?;
+
+        // SAFETY: Output pointers are validated and writable per the C ABI contract.
+        unsafe {
+            *out_sample_rate = sample_rate;
+            *out_total_frames = total_frames as u64;
+        }
+        Ok::<_, AudioError>(Box::into_raw(Box::new(AuraAudioPlaybackHandle {
+            _stream: stream,
+            sample_rate,
+            total_frames: total_frames as u64,
+            position_frames,
+            stream_error,
+        })))
+    }));
+
+    match result {
+        Ok(Ok(handle)) => {
+            set_ffi_error("");
+            handle
+        }
+        Ok(Err(error)) => {
+            set_ffi_error(&error.to_string());
+            ptr::null_mut()
+        }
+        Err(_) => {
+            set_ffi_error("audio playback failed unexpectedly");
+            ptr::null_mut()
+        }
+    }
+}
+
+/// Returns the playback head in sample frames.
+#[no_mangle]
+pub unsafe extern "C" fn aura_audio_playback_position_frames(
+    handle: *const AuraAudioPlaybackHandle,
+) -> u64 {
+    if handle.is_null() {
+        return 0;
+    }
+    // SAFETY: Caller must provide a live playback handle.
+    let playback = unsafe { &*handle };
+    (playback.position_frames.load(Ordering::Acquire) as u64)
+        .min(playback.total_frames)
+}
+
+/// Returns 0 while playing, 1 when complete, and 2 after an output stream error.
+#[no_mangle]
+pub unsafe extern "C" fn aura_audio_playback_status(
+    handle: *const AuraAudioPlaybackHandle,
+) -> u32 {
+    if handle.is_null() {
+        return 2;
+    }
+    // SAFETY: Caller must provide a live playback handle.
+    let playback = unsafe { &*handle };
+    if playback.stream_error.load(Ordering::Acquire) != 0 {
+        return 2;
+    }
+    if playback.position_frames.load(Ordering::Acquire) as u64 >= playback.total_frames {
+        1
+    } else {
+        0
+    }
+}
+
+/// Stops playback and releases the operating-system output stream.
+#[no_mangle]
+pub unsafe extern "C" fn aura_audio_playback_stop(
+    handle: *mut AuraAudioPlaybackHandle,
+) {
+    if !handle.is_null() {
+        // SAFETY: Caller transfers the unique Box ownership exactly once.
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| unsafe {
+            drop(Box::from_raw(handle));
+        }));
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
