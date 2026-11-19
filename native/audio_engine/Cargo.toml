@@ -8,6 +8,7 @@ license = "MIT"
 [lib]
 name = "aura_audio_engine"
 path = "src/lib.rs"
+crate-type = ["rlib", "cdylib"]
 
 [profile.release]
 lto = true
