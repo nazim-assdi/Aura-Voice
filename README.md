@@ -44,6 +44,8 @@ A feature is only advertised as ready after its real engine is integrated and te
 - FastAPI health endpoint and versioned capabilities endpoint.
 - Speech-provider interface and a safe unavailable provider that fails instead of returning fake audio.
 - Initial Rust offline PCM WAV renderer in `native/audio_engine`: integer/float WAV decode, sample-frame clip placement, multitrack gain/pan/mute/solo, fades, sample-peak/clipping report and PCM WAV export.
+- C ABI and public header for creating a render session, loading WAV assets, adding tracks/clips and receiving rendered WAV buffers.
+- Flutter FFI adapter with ABI-version check, worker-isolate rendering, native-library discovery and an explicit web/unsupported-platform fallback.
 - Rust unit tests for sample-accurate placement, mixing, panning, fades, clipping, format conversion and invalid media. Native CI is configured; check the latest workflow run for its result.
 - Backend tests, Docker development setup and CI workflows for the configured platform targets.
 
@@ -83,7 +85,7 @@ cd native/audio_engine
 cargo test --all-targets
 ```
 
-The renderer intentionally accepts decoded PCM assets at the session sample rate. It does not yet perform resampling, compressed-audio decoding, microphone capture or realtime playback.
+The renderer intentionally accepts decoded PCM assets at the session sample rate. The C ABI and Flutter FFI bridge are in place, but the shared library is not yet automatically packaged with desktop builds. The engine does not yet perform resampling, compressed-audio decoding, microphone capture or realtime playback.
 
 ## Run the FastAPI backend
 
@@ -130,7 +132,8 @@ See [docs/PRO_VOICE_STUDIO_ARCHITECTURE.md](docs/PRO_VOICE_STUDIO_ARCHITECTURE.m
 - [x] Flutter/FastAPI foundation, health/capabilities and safe provider contract.
 - [x] Voice-studio dashboard, versioned sample-frame session model and serialization tests.
 - [x] Initial offline PCM WAV renderer with multitrack mixing, gain/pan, mute/solo, fades and WAV export (native CI verification pending).
-- [ ] Flutter FFI bridge, media-file access, waveform editor and session-to-render pipeline.
+- [ ] Package the compiled native library into desktop application bundles and verify the Flutter-to-Rust render call end to end.
+- [ ] Flutter media-file access, waveform editor and session-to-render UI workflow.
 - [ ] Real microphone capture, low-latency playback and device monitoring.
 - [ ] Native realtime audio graph, DSP effects and restoration.
 - [ ] Production multilingual TTS and optional local inference.
