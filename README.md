@@ -32,7 +32,7 @@ A feature is only advertised as ready after its real engine is integrated and te
 │   │   ├── core/                # settings
 │   │   └── engines/             # speech provider contract and registry
 │   └── tests/
-├── native/audio_engine/         # Rust offline PCM audio renderer
+├── native/audio_engine/         # Rust PCM renderer and CPAL device I/O
 ├── docs/                        # product and engineering plans
 ├── .github/workflows/           # checks and platform build pipelines
 └── docker-compose.yml
@@ -44,14 +44,15 @@ A feature is only advertised as ready after its real engine is integrated and te
 - FastAPI health endpoint and versioned capabilities endpoint.
 - Speech-provider interface and a safe unavailable provider that fails instead of returning fake audio.
 - Initial Rust offline PCM WAV renderer in `native/audio_engine`: integer/float WAV decode, sample-frame clip placement, multitrack gain/pan/mute/solo, fades, sample-peak/clipping report and PCM WAV export.
-- C ABI and public header for creating a render session, loading WAV assets, adding tracks/clips and receiving rendered WAV buffers.
-- Flutter FFI adapter with ABI-version check, worker-isolate rendering, native-library discovery and an explicit web/unsupported-platform fallback.
+- Versioned C ABI and public header for offline rendering, microphone input capture and system-output WAV playback.
+- Flutter FFI adapter with ABI-version check, worker-isolate rendering, native-library discovery, microphone capture and playback sessions, plus explicit web/unsupported-platform fallbacks.
+- Studio single-take Record Booth: selectable microphone, live Peak/RMS meters, local 24-bit PCM WAV save, dropped-frame warning and Play/Stop audition with progress.
 - Rust unit tests for sample-accurate placement, mixing, panning, fades, clipping, format conversion and invalid media. Native CI is configured; check the latest workflow run for its result.
 - Backend tests, Docker development setup and CI workflows for the configured platform targets.
 
 ## What is not implemented yet
 
-- Microphone capture, live monitoring, real-time playback or an in-app multitrack editing/export workflow. The Rust offline renderer is not yet connected to Flutter.
+- Multitrack session recording, in-app waveform/timeline editing, clip audition, session asset registration, seek/pause/loop transport and live input-to-output monitoring. Current playback auditions saved WAV files through the default output device; preview currently loads files up to 256 MiB into memory and requires a supported output sample rate.
 - Production audio DSP, noise restoration, effects graph or mastering.
 - Production TTS inference, voice profile enrollment or voice cloning.
 - Speech recognition, translation/dubbing alignment and subtitle export.
