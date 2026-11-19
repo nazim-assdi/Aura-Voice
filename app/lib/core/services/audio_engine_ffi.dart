@@ -147,7 +147,7 @@ class FfiAudioEngineService implements AudioEngineService {
     }
     var totalBytes = 0;
     const maximumRealtimeInputBytes = 536870912;
-    final copiedAssets = <String, Uint8List>{};
+    final workerAssets = <String, Uint8List>{};
     for (final entry in assetWavs.entries) {
       if (entry.value.length > maximumRealtimeInputBytes - totalBytes) {
         throw const AudioEngineUnavailable(
@@ -155,11 +155,13 @@ class FfiAudioEngineService implements AudioEngineService {
         );
       }
       totalBytes += entry.value.length;
-      copiedAssets[entry.key] = Uint8List.fromList(entry.value);
+      // Isolate.run transfers the payload to its worker. Keep one reference
+      // here rather than allocating a second full WAV copy before transfer.
+      workerAssets[entry.key] = entry.value;
     }
     final sessionJson = session.toJson();
     final result = await Isolate.run(
-      () => _startRealtimePlaybackInWorker(sessionJson, copiedAssets),
+      () => _startRealtimePlaybackInWorker(sessionJson, workerAssets),
     );
     return FfiAudioPlaybackSession(
       api: api,
