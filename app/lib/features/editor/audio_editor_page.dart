@@ -152,6 +152,17 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
     return null;
   }
 
+  bool get _selectedClipIsAudible {
+    final track = _selectedTrack;
+    final clip = _selectedClip;
+    if (track == null || clip == null || track.muted || clip.muted) {
+      return false;
+    }
+    final hasAudibleSolo =
+        _session.tracks.any((item) => item.solo && !item.muted);
+    return !hasAudibleSolo || track.solo;
+  }
+
   int get _sessionEndFrame {
     var end = 0;
     for (final track in _session.tracks) {
@@ -814,6 +825,7 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
       _rendering = true;
       _message = 'Preparing the realtime multitrack audio graph…';
     });
+    String? loopWarning;
     try {
       final assets = <String, Uint8List>{};
       var totalAssetBytes = 0;
@@ -822,7 +834,7 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
         for (final clip in track.clips) {
           if (!assets.containsKey(clip.mediaId)) {
             final bytes = await readAudioFile(clip.mediaId);
-            if (bytes.length > maximumRenderInputBytes - totalAssetBytes) {
+            if (bytes.length > maximumRealtimeInputBytes - totalAssetBytes) {
               throw const AudioEngineUnavailable(
                 'Realtime playback is limited to 512 MiB of source WAV data per session. Split the session or use smaller source files.',
               );
@@ -843,20 +855,19 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
           final loopEnd = selected == null
               ? playback.totalFrames
               : selected.startFrame + selected.durationFrames;
-          if (loopStart < loopEnd && loopEnd <= playback.totalFrames) {
+          if (selected != null &&
+              (!_selectedClipIsAudible ||
+                  loopStart >= loopEnd ||
+                  loopEnd > playback.totalFrames)) {
+            _loopEnabled = false;
+            loopWarning =
+                'Selected clip is muted or outside the audible range; clip loop was disabled.';
+          } else if (loopStart < loopEnd && loopEnd <= playback.totalFrames) {
             await playback.setLoopRange(
               startFrame: loopStart,
               endFrame: loopEnd,
               enabled: true,
             );
-          } else if (selected != null) {
-            _loopEnabled = false;
-            if (mounted) {
-              setState(() {
-                _message =
-                    'The selected clip is not part of the audible playback range; loop was disabled.';
-              });
-            }
           }
         }
       } catch (_) {
@@ -873,7 +884,7 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
         _transportTotalFrames = playback.totalFrames;
         _transportPaused = false;
         _seekPreviewFrame = null;
-        _message = 'Realtime multitrack playback playing.';
+        _message = loopWarning ?? 'Realtime multitrack playback playing.';
       });
       _playbackTimer = Timer.periodic(
         const Duration(milliseconds: 70),
@@ -958,6 +969,11 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
         ? playback?.totalFrames ?? _sessionEndFrame
         : selected.startFrame + selected.durationFrames;
     try {
+      if (enabled && selected != null && !_selectedClipIsAudible) {
+        throw const AudioEngineUnavailable(
+          'The selected clip is muted or excluded by solo mode. Unmute its track/clip or select an audible clip to loop it.',
+        );
+      }
       if (playback != null && enabled) {
         if (loopStart >= loopEnd || loopEnd > playback.totalFrames) {
           throw const AudioEngineUnavailable(
