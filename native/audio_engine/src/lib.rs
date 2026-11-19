@@ -548,6 +548,314 @@ fn fade_envelope(offset: u64, duration: u64, fade_in: u64, fade_out: u64) -> f32
     envelope.clamp(0.0, 1.0) as f32
 }
 
+// ---------------- C ABI for Flutter FFI ----------------
+
+use std::cell::RefCell;
+use std::ffi::{CStr, CString};
+use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::os::raw::c_char;
+use std::ptr;
+use std::slice;
+
+thread_local! {
+    static FFI_LAST_ERROR: RefCell<CString> =
+        RefCell::new(CString::new("").expect("empty CString is valid"));
+}
+
+/// Opaque engine session allocated by aura_engine_create.
+pub struct AuraEngineHandle {
+    session: MixSession,
+    assets: HashMap<String, AudioBuffer>,
+}
+
+fn set_ffi_error(message: &str) {
+    let sanitized = message.replace('\0', " ");
+    let value = CString::new(sanitized)
+        .unwrap_or_else(|_| CString::new("native audio engine error").expect("static string"));
+    FFI_LAST_ERROR.with(|last| *last.borrow_mut() = value);
+}
+
+fn ffi_status<F>(operation: F) -> i32
+where
+    F: FnOnce() -> Result<(), AudioError>,
+{
+    match catch_unwind(AssertUnwindSafe(operation)) {
+        Ok(Ok(())) => {
+            set_ffi_error("");
+            0
+        }
+        Ok(Err(error)) => {
+            set_ffi_error(&error.to_string());
+            -1
+        }
+        Err(_) => {
+            set_ffi_error("native audio engine panicked while processing the request");
+            -2
+        }
+    }
+}
+
+unsafe fn read_ffi_string(value: *const c_char, field: &str) -> Result<String, AudioError> {
+    if value.is_null() {
+        return Err(AudioError::InvalidArgument(format!("{field} pointer is null")));
+    }
+    // SAFETY: The public C ABI contract requires a valid NUL-terminated UTF-8 string.
+    let value = unsafe { CStr::from_ptr(value) };
+    value.to_str()
+        .map(str::to_owned)
+        .map_err(|_| AudioError::InvalidArgument(format!("{field} must be valid UTF-8")))
+}
+
+unsafe fn checked_handle<'a>(
+    handle: *mut AuraEngineHandle,
+) -> Result<&'a mut AuraEngineHandle, AudioError> {
+    if handle.is_null() {
+        return Err(AudioError::InvalidArgument("engine handle is null".into()));
+    }
+    // SAFETY: The C ABI caller must pass a live handle returned by aura_engine_create
+    // and must not use that handle concurrently or after aura_engine_destroy.
+    Ok(unsafe { &mut *handle })
+}
+
+/// Returns the current C ABI version. Increment on incompatible ABI changes.
+#[no_mangle]
+pub extern "C" fn aura_engine_abi_version() -> u32 {
+    1
+}
+
+/// Returns a static NUL-terminated engine version string.
+#[no_mangle]
+pub extern "C" fn aura_engine_version() -> *const c_char {
+    b"0.1.0\0".as_ptr().cast()
+}
+
+/// Creates an isolated offline-render session.
+///
+/// # Safety
+/// The returned handle must be destroyed exactly once with aura_engine_destroy.
+#[no_mangle]
+pub extern "C" fn aura_engine_create(
+    sample_rate: u32,
+    channels: u16,
+) -> *mut AuraEngineHandle {
+    match catch_unwind(AssertUnwindSafe(|| {
+        validate_audio_format(sample_rate, channels)?;
+        Ok::<_, AudioError>(Box::into_raw(Box::new(AuraEngineHandle {
+            session: MixSession::new(sample_rate, channels),
+            assets: HashMap::new(),
+        })))
+    })) {
+        Ok(Ok(handle)) => {
+            set_ffi_error("");
+            handle
+        }
+        Ok(Err(error)) => {
+            set_ffi_error(&error.to_string());
+            ptr::null_mut()
+        }
+        Err(_) => {
+            set_ffi_error("native audio engine failed to create a session");
+            ptr::null_mut()
+        }
+    }
+}
+
+/// Destroys a handle returned by aura_engine_create.
+///
+/// # Safety
+/// handle must be null or a live handle returned by aura_engine_create, not
+/// previously destroyed and not in use by another call.
+#[no_mangle]
+pub unsafe extern "C" fn aura_engine_destroy(handle: *mut AuraEngineHandle) {
+    if !handle.is_null() {
+        // SAFETY: Ownership is transferred back exactly once by this function's contract.
+        let _ = catch_unwind(AssertUnwindSafe(|| unsafe {
+            drop(Box::from_raw(handle));
+        }));
+    }
+}
+
+/// Decodes and registers a PCM/IEEE-float WAV asset.
+///
+/// # Safety
+/// handle must be live. asset_id must point to a valid NUL-terminated UTF-8
+/// string. wav_data must reference wav_len readable bytes.
+#[no_mangle]
+pub unsafe extern "C" fn aura_engine_add_wav_asset(
+    handle: *mut AuraEngineHandle,
+    asset_id: *const c_char,
+    wav_data: *const u8,
+    wav_len: usize,
+) -> i32 {
+    ffi_status(|| {
+        if wav_data.is_null() || wav_len < 12 || wav_len > 1_073_741_824 {
+            return Err(AudioError::InvalidArgument(
+                "WAV buffer must be non-null and between 12 bytes and 1 GiB".into(),
+            ));
+        }
+        // SAFETY: The pointer and length are validated and caller guarantees readable memory.
+        let bytes = unsafe { slice::from_raw_parts(wav_data, wav_len) };
+        let id = unsafe { read_ffi_string(asset_id, "asset_id")? };
+        let buffer = AudioBuffer::from_wav(bytes)?;
+        let engine = unsafe { checked_handle(handle)? };
+        engine.assets.insert(id, buffer);
+        Ok(())
+    })
+}
+
+/// Adds a mix track.
+///
+/// # Safety
+/// handle must be live. track_id must be a valid NUL-terminated UTF-8 string.
+#[no_mangle]
+pub unsafe extern "C" fn aura_engine_add_track(
+    handle: *mut AuraEngineHandle,
+    track_id: *const c_char,
+    gain: f32,
+    pan: f32,
+    muted: u8,
+    solo: u8,
+) -> i32 {
+    ffi_status(|| {
+        let id = unsafe { read_ffi_string(track_id, "track_id")? };
+        if id.trim().is_empty() || !gain.is_finite() || gain < 0.0
+            || !pan.is_finite() || !(-1.0..=1.0).contains(&pan) {
+            return Err(AudioError::InvalidArgument("track id, gain or pan is invalid".into()));
+        }
+        let engine = unsafe { checked_handle(handle)? };
+        if engine.session.tracks.iter().any(|track| track.id == id) {
+            return Err(AudioError::InvalidArgument(format!("duplicate track id: {id}")));
+        }
+        let mut track = Track::new(id);
+        track.gain = gain;
+        track.pan = pan;
+        track.muted = muted != 0;
+        track.solo = solo != 0;
+        engine.session.tracks.push(track);
+        Ok(())
+    })
+}
+
+/// Adds a clip referencing a previously registered WAV asset.
+///
+/// # Safety
+/// handle must be live; track_id, clip_id and asset_id must each be valid
+/// NUL-terminated UTF-8 strings.
+#[no_mangle]
+pub unsafe extern "C" fn aura_engine_add_clip(
+    handle: *mut AuraEngineHandle,
+    track_id: *const c_char,
+    clip_id: *const c_char,
+    asset_id: *const c_char,
+    start_frame: u64,
+    source_start_frame: u64,
+    duration_frames: u64,
+    gain: f32,
+    pan: f32,
+    muted: u8,
+    fade_in_frames: u64,
+    fade_out_frames: u64,
+) -> i32 {
+    ffi_status(|| {
+        let track_name = unsafe { read_ffi_string(track_id, "track_id")? };
+        let clip_name = unsafe { read_ffi_string(clip_id, "clip_id")? };
+        let asset_name = unsafe { read_ffi_string(asset_id, "asset_id")? };
+        if clip_name.trim().is_empty() || asset_name.trim().is_empty()
+            || duration_frames == 0 || !gain.is_finite() || gain < 0.0
+            || !pan.is_finite() || !(-1.0..=1.0).contains(&pan) {
+            return Err(AudioError::InvalidArgument("clip id, duration, gain or pan is invalid".into()));
+        }
+        let engine = unsafe { checked_handle(handle)? };
+        let track = engine.session.tracks.iter_mut()
+            .find(|track| track.id == track_name)
+            .ok_or_else(|| AudioError::InvalidArgument(format!("track not found: {track_name}")))?;
+        if track.clips.iter().any(|clip| clip.id == clip_name) {
+            return Err(AudioError::InvalidArgument(format!("duplicate clip id: {clip_name}")));
+        }
+        let mut clip = Clip::new(
+            clip_name, asset_name, start_frame, source_start_frame, duration_frames,
+        );
+        clip.gain = gain;
+        clip.pan = pan;
+        clip.muted = muted != 0;
+        clip.fade_in_frames = fade_in_frames;
+        clip.fade_out_frames = fade_out_frames;
+        track.clips.push(clip);
+        Ok(())
+    })
+}
+
+/// Renders the session and returns a newly allocated PCM WAV buffer.
+///
+/// # Safety
+/// handle must be live. All output pointers must point to writable storage.
+/// On success, free *out_data with aura_engine_free_buffer exactly once.
+#[no_mangle]
+pub unsafe extern "C" fn aura_engine_render_wav(
+    handle: *mut AuraEngineHandle,
+    bit_depth: u16,
+    out_data: *mut *mut u8,
+    out_len: *mut usize,
+    out_sample_peak: *mut f32,
+    out_clipped_samples: *mut usize,
+) -> i32 {
+    ffi_status(|| {
+        if out_data.is_null() || out_len.is_null()
+            || out_sample_peak.is_null() || out_clipped_samples.is_null() {
+            return Err(AudioError::InvalidArgument("render output pointers must not be null".into()));
+        }
+        // SAFETY: Output pointers are checked and writable per the public API contract.
+        unsafe {
+            *out_data = ptr::null_mut();
+            *out_len = 0;
+            *out_sample_peak = 0.0;
+            *out_clipped_samples = 0;
+        }
+
+        let engine = unsafe { checked_handle(handle)? };
+        let report = render_mix(&engine.session, &engine.assets)?;
+        let wav = report.to_wav_pcm(bit_depth)?;
+        let mut boxed = wav.into_boxed_slice();
+        let length = boxed.len();
+        let data = boxed.as_mut_ptr();
+        let _ = Box::into_raw(boxed);
+
+        // SAFETY: The output slots are valid and ownership of the boxed slice is transferred.
+        unsafe {
+            *out_data = data;
+            *out_len = length;
+            *out_sample_peak = report.sample_peak;
+            *out_clipped_samples = report.clipped_samples;
+        }
+        Ok(())
+    })
+}
+
+/// Frees a buffer allocated by aura_engine_render_wav.
+///
+/// # Safety
+/// data and len must be the exact pointer and length returned by a successful
+/// aura_engine_render_wav call, and must not have been freed already.
+#[no_mangle]
+pub unsafe extern "C" fn aura_engine_free_buffer(data: *mut u8, len: usize) {
+    if !data.is_null() {
+        let _ = catch_unwind(AssertUnwindSafe(|| {
+            let slice = ptr::slice_from_raw_parts_mut(data, len);
+            // SAFETY: Caller transfers the original boxed-slice allocation exactly once.
+            unsafe { drop(Box::from_raw(slice)); }
+        }));
+    }
+}
+
+/// Returns the last error message for the calling thread.
+///
+/// # Safety
+/// The returned pointer remains valid until the next Aura engine call on this thread.
+#[no_mangle]
+pub extern "C" fn aura_engine_last_error() -> *const c_char {
+    FFI_LAST_ERROR.with(|last| last.borrow().as_ptr())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
