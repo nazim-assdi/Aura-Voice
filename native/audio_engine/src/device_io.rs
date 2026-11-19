@@ -16,7 +16,10 @@ use std::sync::Arc;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{DeviceId, SampleFormat, Stream};
 
-use crate::{set_ffi_error, AudioError, RealtimeMixer};
+use crate::{
+    set_ffi_error, AudioError, RealtimeMixer, RealtimeRenderState,
+    MAX_REALTIME_BLOCK_FRAMES,
+};
 
 struct FloatRing {
     slots: Box<[UnsafeCell<f32>]>,
@@ -639,6 +642,63 @@ fn build_playback_stream(
 
 /// Builds an OS output stream whose callback mixes the session directly from
 /// immutable, pre-decoded clip buffers. No full-session WAV is created.
+/// Claims one contiguous output block with a single atomic cursor update.
+/// The returned block never crosses the active loop end or the stream-drain end.
+fn claim_playback_block(
+    position: &AtomicUsize,
+    paused: &AtomicBool,
+    loop_enabled: &AtomicBool,
+    loop_start: &AtomicUsize,
+    loop_end: &AtomicUsize,
+    total_frames: usize,
+    drain_frames: usize,
+    maximum_frames: usize,
+) -> Option<(usize, usize)> {
+    if paused.load(Ordering::Acquire) {
+        return None;
+    }
+
+    loop {
+        let current = position.load(Ordering::Acquire);
+        let boundary = if loop_enabled.load(Ordering::Acquire) {
+            let start = loop_start.load(Ordering::Acquire);
+            let end = loop_end.load(Ordering::Acquire);
+            if start < end {
+                if current >= end {
+                    let _ = position.compare_exchange(
+                        current,
+                        start,
+                        Ordering::AcqRel,
+                        Ordering::Acquire,
+                    );
+                    continue;
+                }
+                end
+            } else {
+                total_frames.saturating_add(drain_frames)
+            }
+        } else {
+            total_frames.saturating_add(drain_frames)
+        };
+
+        if current >= boundary || maximum_frames == 0 {
+            return None;
+        }
+        let available = boundary - current;
+        let count = available.min(maximum_frames);
+        let next = current.saturating_add(count);
+        if position
+            .compare_exchange(current, next, Ordering::AcqRel, Ordering::Acquire)
+            .is_ok()
+        {
+            return Some((current, count));
+        }
+        if paused.load(Ordering::Acquire) {
+            return None;
+        }
+    }
+}
+
 fn build_realtime_playback_stream(
     device: &cpal::Device,
     config: cpal::StreamConfig,
@@ -654,6 +714,8 @@ fn build_realtime_playback_stream(
 ) -> Result<Stream, AudioError> {
     let total_frames = usize::try_from(mixer.total_frames)
         .map_err(|_| AudioError::SizeOverflow)?;
+    let drain_frames = usize::try_from(u64::from(mixer.sample_rate) / 4)
+        .map_err(|_| AudioError::SizeOverflow)?;
     let error_state = Arc::clone(&stream_error);
     let on_error = move |_error: cpal::Error| {
         error_state.store(1, Ordering::Release);
@@ -668,6 +730,9 @@ fn build_realtime_playback_stream(
             let callback_loop_start = Arc::clone(&loop_start_frames);
             let callback_loop_end = Arc::clone(&loop_end_frames);
             let callback_error = Arc::clone(&stream_error);
+            let mut render_state = RealtimeRenderState::new(&callback_mixer);
+            let mut block_buffer = [0.0_f32; MAX_REALTIME_BLOCK_FRAMES * 2];
+
             device
                 .build_output_stream::<$sample, _, _>(
                     config,
@@ -678,38 +743,73 @@ fn build_realtime_playback_stream(
                             return;
                         }
 
-                        let frames = data.len() / channels;
-                        for output_frame in 0..frames {
-                            let timeline_frame = claim_playback_frame(
+                        let output_frames = data.len() / channels;
+                        let mut output_offset = 0_usize;
+                        while output_offset < output_frames {
+                            let requested = (output_frames - output_offset)
+                                .min(MAX_REALTIME_BLOCK_FRAMES);
+                            let claim = claim_playback_block(
                                 &callback_position,
                                 &callback_paused,
                                 &callback_loop_enabled,
                                 &callback_loop_start,
                                 &callback_loop_end,
+                                total_frames,
+                                drain_frames,
+                                requested,
                             );
-                            let (left, right) = match timeline_frame {
-                                Some(frame) if frame < total_frames => {
-                                    callback_mixer.mix_frame(frame)
+
+                            let Some((start_frame, block_frames)) = claim else {
+                                for sample in data
+                                    .iter_mut()
+                                    .skip(output_offset * channels)
+                                    .take((output_frames - output_offset) * channels)
+                                {
+                                    *sample = ($convert)(0.0);
                                 }
-                                _ => (0.0, 0.0),
+                                break;
                             };
-                            let output_start = output_frame * channels;
-                            if channels == 1 {
-                                let mono = if callback_mixer.channels == 1 {
-                                    left
+
+                            // Blocks wholly beyond the session tail are part
+                            // of the device drain window and stay silent.
+                            let render_channels = usize::from(callback_mixer.channels);
+                            let sample_count = block_frames * render_channels;
+                            let mixed = &mut block_buffer[..sample_count];
+                            callback_mixer.render_block(
+                                &mut render_state,
+                                start_frame,
+                                mixed,
+                            );
+
+                            for frame in 0..block_frames {
+                                let source_offset = frame * render_channels;
+                                let left = mixed[source_offset];
+                                let right = if render_channels > 1 {
+                                    mixed[source_offset + 1]
                                 } else {
-                                    (left + right) * 0.5
+                                    left
                                 };
-                                data[output_start] = ($convert)(mono);
-                            } else {
-                                data[output_start] = ($convert)(left);
-                                data[output_start + 1] = ($convert)(right);
-                                for channel in 2..channels {
-                                    data[output_start + channel] = ($convert)(0.0);
+                                let destination_offset = (output_offset + frame) * channels;
+                                if channels == 1 {
+                                    let mono = if render_channels == 1 {
+                                        left
+                                    } else {
+                                        (left + right) * 0.5
+                                    };
+                                    data[destination_offset] = ($convert)(mono);
+                                } else {
+                                    data[destination_offset] = ($convert)(left);
+                                    data[destination_offset + 1] = ($convert)(right);
+                                    for channel in 2..channels {
+                                        data[destination_offset + channel] =
+                                            ($convert)(0.0);
+                                    }
                                 }
                             }
+                            output_offset += block_frames;
                         }
-                        for sample in data.iter_mut().skip(frames * channels) {
+
+                        for sample in data.iter_mut().skip(output_frames * channels) {
                             *sample = ($convert)(0.0);
                         }
                     },
