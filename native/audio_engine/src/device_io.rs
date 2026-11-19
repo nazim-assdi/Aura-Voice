@@ -457,13 +457,24 @@ mod tests {
     }
 
     #[test]
-    fn ring_downmixes_to_mono_and_reports_overruns_in_whole_frames() {
+    fn ring_downmixes_to_mono_without_losing_channel_alignment() {
         let ring = FloatRing::new(1024, 1).unwrap();
         ring.push_interleaved(&[1.0, -1.0, 0.5, 0.5], 2);
         let mut output = [0.0_f32; 2];
         assert_eq!(ring.read_frames(&mut output, 2), 2);
         assert_eq!(output, [0.0, 0.5]);
         assert_eq!(ring.dropped_frames.load(Ordering::Relaxed), 0);
+    }
+
+    #[test]
+    fn ring_reports_dropped_frames_when_the_consumer_falls_behind() {
+        let ring = FloatRing::new(1024, 1).unwrap();
+        let input = vec![0.25_f32; 1025];
+        ring.push_interleaved(&input, 1);
+        assert_eq!(ring.dropped_frames.load(Ordering::Relaxed), 1);
+        let mut output = vec![0.0_f32; 1024];
+        assert_eq!(ring.read_frames(&mut output, 1024), 1024);
+        assert!(output.iter().all(|sample| (*sample - 0.25).abs() < 0.000001));
     }
 
     #[test]
