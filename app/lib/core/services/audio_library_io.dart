@@ -8,8 +8,8 @@ AudioLibraryService createAudioLibraryService({String? directoryPath}) =>
 
 /// Filesystem-backed local WAV library.
 ///
-/// Only WAV files matching Aura Voice Studio's recording naming convention
-/// are listed. Metadata is read from RIFF chunks without loading audio data.
+/// WAV files in this recordings directory are listed. Metadata is read from
+/// RIFF chunks without loading the audio payload.
 class FileAudioLibraryService implements AudioLibraryService {
   FileAudioLibraryService({String? directoryPath})
       : _directoryPath = directoryPath ?? _defaultDirectoryPath();
