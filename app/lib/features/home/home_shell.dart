@@ -370,11 +370,13 @@ class _StudioPageState extends State<StudioPage> {
 
   Future<void> _finishOnDispose() async {
     final capture = _capture;
+    var paused = capture == null;
     if (capture != null) {
       try {
         await capture.pause();
+        paused = true;
       } catch (_) {
-        // Device disconnects can make pause fail; continue shutdown safely.
+        // Device disconnects can make pause fail; preserve the valid file portion.
       }
     }
     while (_polling) {
@@ -384,7 +386,7 @@ class _StudioPageState extends State<StudioPage> {
     final writer = _writer;
     _writer = null;
     try {
-      if (capture != null) {
+      if (capture != null && paused) {
         while (true) {
           final remaining = await capture.readFrames(maxFrames: 4096);
           if (remaining.isEmpty) break;
@@ -450,25 +452,27 @@ class _StudioPageState extends State<StudioPage> {
     AudioCaptureSession? capture;
     AudioRecordingWriter? writer;
     try {
-      capture = await _engine.startCapture(
+      final activeCapture = await _engine.startCapture(
         deviceId: _selectedDeviceId,
         bufferMilliseconds: 1000,
       );
-      writer = createAudioRecordingWriter();
-      await writer.start(
-        sampleRate: capture.sampleRate,
-        channels: capture.channels,
+      capture = activeCapture;
+      final activeWriter = createAudioRecordingWriter();
+      writer = activeWriter;
+      await activeWriter.start(
+        sampleRate: activeCapture.sampleRate,
+        channels: activeCapture.channels,
       );
       if (!mounted) {
-        await capture.stop();
-        await writer.discard();
+        await activeCapture.stop();
+        await activeWriter.discard();
         return;
       }
       setState(() {
-        _capture = capture;
-        _writer = writer;
-        _sampleRate = capture.sampleRate;
-        _channels = capture.channels;
+        _capture = activeCapture;
+        _writer = activeWriter;
+        _sampleRate = activeCapture.sampleRate;
+        _channels = activeCapture.channels;
         _savedPath = null;
       });
       _meterTimer = Timer.periodic(
@@ -533,9 +537,11 @@ class _StudioPageState extends State<StudioPage> {
     _meterTimer?.cancel();
     _meterTimer = null;
     final capture = _capture;
+    var paused = capture == null;
     if (capture != null) {
       try {
         await capture.pause();
+        paused = true;
       } catch (error) {
         if (mounted) {
           setState(() => _message = 'Input pause warning: $error');
@@ -550,7 +556,7 @@ class _StudioPageState extends State<StudioPage> {
     _writer = null;
     String? path;
     try {
-      if (capture != null) {
+      if (capture != null && paused) {
         while (true) {
           final remaining = await capture.readFrames(maxFrames: 4096);
           if (remaining.isEmpty) break;
