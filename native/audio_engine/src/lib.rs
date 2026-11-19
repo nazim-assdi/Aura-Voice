@@ -1885,6 +1885,9 @@ mod tests {
             AudioBuffer::new(48_000, 2, vec![0.2, -0.2, 0.4, -0.4]).unwrap(),
         );
         let mut lead = Track::new("lead");
+        lead.high_pass_hz = 120.0;
+        lead.compressor_threshold = 0.35;
+        lead.compressor_ratio = 3.0;
         let mut lead_clip = Clip::new("lead-clip", "voice", 0, 0, 4);
         lead_clip.fade_in_frames = 2;
         lead_clip.gain = 0.7;
@@ -1911,6 +1914,32 @@ mod tests {
         for (actual, expected) in actual.iter().zip(offline.audio.samples()) {
             assert!((actual - expected).abs() < 0.000001);
         }
+    }
+
+    #[test]
+    fn track_dsp_validates_cutoff_and_compressor_ranges() {
+        let assets = asset("voice", 1, &[0.2, 0.4, 0.6, 0.8]);
+        let mut track = Track::new("lead");
+        track.high_pass_hz = 24_000.0;
+        track.clips.push(Clip::new("clip", "voice", 0, 0, 4));
+        let mut session = MixSession::new(48_000, 1);
+        session.tracks.push(track);
+
+        assert!(matches!(
+            render_mix(&session, &assets),
+            Err(AudioError::InvalidArgument(_))
+        ));
+        assert!(matches!(
+            build_realtime_mixer(&session, &assets),
+            Err(AudioError::InvalidArgument(_))
+        ));
+
+        session.tracks[0].high_pass_hz = 0.0;
+        session.tracks[0].compressor_threshold = 0.0;
+        assert!(matches!(
+            build_realtime_mixer(&session, &assets),
+            Err(AudioError::InvalidArgument(_))
+        ));
     }
 
     #[test]
