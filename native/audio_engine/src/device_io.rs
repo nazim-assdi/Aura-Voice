@@ -1494,7 +1494,7 @@ pub(crate) fn start_realtime_playback(
         output_sample_rate,
         callback_metrics.clone(),
     )?;
-    stream.play().map_err(|error| AudioError::InvalidArgument(format(
+    stream.play().map_err(|error| AudioError::InvalidArgument(format!(
         "cannot start realtime multitrack playback: {error}"
     )))?;
 
