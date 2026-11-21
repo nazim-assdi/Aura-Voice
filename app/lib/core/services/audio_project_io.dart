@@ -230,6 +230,7 @@ class FileAudioProjectStore implements AudioProjectStore {
     final missing = <String>{};
     final corrupt = <String>{};
     final referencesByRelativeName = <String, String>{};
+    final resolvedByRelativeName = <String, String>{};
     String? assetFolder;
     var hasChecksumManifest = false;
     Map<String, dynamic>? checksumFiles;
@@ -241,10 +242,8 @@ class FileAudioProjectStore implements AudioProjectStore {
       }
       final segments = reference.replaceAll('\\', '/').split('/');
       if (segments.length != 2 ||
-          segments.any((segment) =>
-              segment.isEmpty || segment == '.' || segment == '..') ||
-          !segments.first.startsWith('AuraProject_') ||
-          !segments.first.contains('.assets-')) {
+          !_isSafePortableAssetFolderName(segments.first) ||
+          !_isSafePortableAssetFileName(segments.last)) {
         corrupt.add(reference);
         continue;
       }
@@ -258,8 +257,9 @@ class FileAudioProjectStore implements AudioProjectStore {
         reference,
         manifestFile.parent.path,
       );
+      resolvedByRelativeName[segments.last] = resolved;
       if (!await mediaExists(resolved)) {
-        missing.add(reference);
+        missing.add(resolved);
       }
     }
 
@@ -289,8 +289,10 @@ class FileAudioProjectStore implements AudioProjectStore {
     if (hasChecksumManifest && checksumFiles != null) {
       for (final entry in referencesByRelativeName.entries) {
         final expected = checksumFiles[entry.key];
+        final resolvedReference =
+            resolvedByRelativeName[entry.key] ?? entry.value;
         if (expected is! Map<String, dynamic>) {
-          corrupt.add(entry.value);
+          corrupt.add(resolvedReference);
           continue;
         }
         final expectedSize = expected['sizeBytes'];
@@ -306,14 +308,14 @@ class FileAudioProjectStore implements AudioProjectStore {
           if (expectedSize is! int ||
               expectedHash is! String ||
               stat.size != expectedSize) {
-            corrupt.add(entry.value);
+            corrupt.add(resolvedReference);
             continue;
           }
           final actualHash = await sha256.bind(file.openRead()).first;
           checkedAssetCount++;
           if (actualHash.toString().toLowerCase() !=
               expectedHash.toLowerCase()) {
-            corrupt.add(entry.value);
+            corrupt.add(resolvedReference);
           }
         } catch (_) {
           corrupt.add(entry.value);
@@ -484,7 +486,7 @@ class FileAudioProjectStore implements AudioProjectStore {
         }
         if (isDirectory) {
           if (segments.length != 1 ||
-              !segments.single.contains('.assets-') ||
+              !_isSafePortableAssetFolderName(segments.single) ||
               entry.size != 0) {
             throw const AudioProjectStoreUnavailable(
               'The ZIP archive contains an unsupported directory entry.',
@@ -510,7 +512,7 @@ class FileAudioProjectStore implements AudioProjectStore {
           );
         }
         if (segments.length == 1 &&
-            segments.single.endsWith('.aura.json')) {
+            _isSafeProjectManifestName(segments.single)) {
           if (manifestName != null) {
             throw const AudioProjectStoreUnavailable(
               'The ZIP archive must contain exactly one Aura Voice project manifest.',
@@ -523,7 +525,9 @@ class FileAudioProjectStore implements AudioProjectStore {
             );
           }
         } else if (segments.length == 2 &&
-            segments.first.contains('.assets-')) {
+            _isSafePortableAssetFolderName(segments.first) &&
+            (segments.last == '.aura-assets.json' ||
+                _isSafePortableAssetFileName(segments.last))) {
           if (assetFolderName != null && assetFolderName != segments.first) {
             throw const AudioProjectStoreUnavailable(
               'The ZIP archive contains more than one project asset folder.',
@@ -555,6 +559,20 @@ class FileAudioProjectStore implements AudioProjectStore {
         throw const FormatException('Invalid Aura Voice project manifest.');
       }
       final session = AudioSession.fromJson(decodedManifest);
+      if (manifestName !=
+          'AuraProject_${_safeId(session.id)}.aura.json') {
+        throw const AudioProjectStoreUnavailable(
+          'The ZIP manifest filename does not match its project identity.',
+        );
+      }
+      final expectedAssetPrefix =
+          'AuraProject_${_safeId(session.id)}.assets-';
+      if (!assetFolderName.startsWith(expectedAssetPrefix) ||
+          !_isSafePortableAssetFolderName(assetFolderName)) {
+        throw const AudioProjectStoreUnavailable(
+          'The ZIP asset folder name does not match its project identity.',
+        );
+      }
       final referencedAssets = <String>{};
       for (final track in session.tracks) {
         for (final clip in track.clips) {
@@ -567,8 +585,8 @@ class FileAudioProjectStore implements AudioProjectStore {
           final segments = reference.replaceAll('\\', '/').split('/');
           if (segments.length != 2 ||
               segments.first != assetFolderName ||
-              segments.any((segment) =>
-                  segment.isEmpty || segment == '.' || segment == '..')) {
+              !_isSafePortableAssetFolderName(segments.first) ||
+              !_isSafePortableAssetFileName(segments.last)) {
             throw const AudioProjectStoreUnavailable(
               'The project manifest references a media path outside its packaged asset folder.',
             );
@@ -696,8 +714,8 @@ class FileAudioProjectStore implements AudioProjectStore {
     for (final reference in references) {
       final segments = reference.replaceAll('\\', '/').split('/');
       if (segments.length != 2 ||
-          segments.any((segment) =>
-              segment.isEmpty || segment == '.' || segment == '..') ||
+          !_isSafePortableAssetFolderName(segments.first) ||
+          !_isSafePortableAssetFileName(segments.last) ||
           (assetFolder != null && assetFolder != segments.first)) {
         corrupt.add(reference);
         continue;
@@ -1181,11 +1199,11 @@ class FileAudioProjectStore implements AudioProjectStore {
   ) async {
     if (_isAbsoluteMediaPath(mediaPath)) return mediaPath;
     final segments = mediaPath.replaceAll('\\', '/').split('/');
-    if (segments.isEmpty ||
-        segments.any((segment) =>
-            segment.isEmpty || segment == '.' || segment == '..')) {
+    if (segments.length != 2 ||
+        !_isSafePortableAssetFolderName(segments.first) ||
+        !_isSafePortableAssetFileName(segments.last)) {
       throw const FormatException(
-        'The project contains an unsafe relative media path.',
+        'The project contains an unsafe or unsupported relative media path.',
       );
     }
     final root = await Directory(projectDirectory).resolveSymbolicLinks();
@@ -1225,6 +1243,137 @@ class FileAudioProjectStore implements AudioProjectStore {
       path.startsWith('/') ||
       path.startsWith(r'\\') ||
       RegExp(r'^[A-Za-z]:[\\/]').hasMatch(path);
+
+  bool _isSafePortableAssetFolderName(String value) =>
+      RegExp(r'^AuraProject_[A-Za-z0-9_-]+\\.assets-[0-9]+
+    String root,
+    String prefix,
+    String keepName,
+  ) async {
+    await for (final entity in Directory(root).list(followLinks: false)) {
+      if (entity is! Directory) continue;
+      final name = entity.path.split(Platform.pathSeparator).last;
+      if (name.startsWith(prefix) && name != keepName) {
+        await entity.delete(recursive: true);
+      }
+    }
+  }
+
+  String _stableHash(String value) {
+    var hash = 0x811c9dc5;
+    for (final byte in utf8.encode(value)) {
+      hash = ((hash ^ byte) * 0x01000193) & 0xffffffff;
+    }
+    return hash.toRadixString(16).padLeft(8, '0');
+  }
+
+  String _safeId(String value) {
+    final normalized = value.replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '_');
+    if (normalized.isEmpty) {
+      throw const AudioProjectStoreUnavailable('Project id is invalid.');
+    }
+    return normalized.length > 80 ? normalized.substring(0, 80) : normalized;
+  }
+
+  static String _defaultDirectoryPath() {
+    final environment = Platform.environment;
+    final home = environment['USERPROFILE'] ??
+        environment['HOME'] ??
+        Directory.current.path;
+    return '$home${Platform.pathSeparator}Documents'
+        '${Platform.pathSeparator}Aura Voice Studio'
+        '${Platform.pathSeparator}Projects';
+  }
+}
+)
+          .hasMatch(value);
+
+  bool _isSafePortableAssetFileName(String value) =>
+      RegExp(r'^[a-f0-9]{8}_[A-Za-z0-9._-]+
+    String root,
+    String prefix,
+    String keepName,
+  ) async {
+    await for (final entity in Directory(root).list(followLinks: false)) {
+      if (entity is! Directory) continue;
+      final name = entity.path.split(Platform.pathSeparator).last;
+      if (name.startsWith(prefix) && name != keepName) {
+        await entity.delete(recursive: true);
+      }
+    }
+  }
+
+  String _stableHash(String value) {
+    var hash = 0x811c9dc5;
+    for (final byte in utf8.encode(value)) {
+      hash = ((hash ^ byte) * 0x01000193) & 0xffffffff;
+    }
+    return hash.toRadixString(16).padLeft(8, '0');
+  }
+
+  String _safeId(String value) {
+    final normalized = value.replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '_');
+    if (normalized.isEmpty) {
+      throw const AudioProjectStoreUnavailable('Project id is invalid.');
+    }
+    return normalized.length > 80 ? normalized.substring(0, 80) : normalized;
+  }
+
+  static String _defaultDirectoryPath() {
+    final environment = Platform.environment;
+    final home = environment['USERPROFILE'] ??
+        environment['HOME'] ??
+        Directory.current.path;
+    return '$home${Platform.pathSeparator}Documents'
+        '${Platform.pathSeparator}Aura Voice Studio'
+        '${Platform.pathSeparator}Projects';
+  }
+}
+).hasMatch(value);
+
+  bool _isSafeProjectManifestName(String value) =>
+      RegExp(r'^AuraProject_[A-Za-z0-9_-]+\\.aura\\.json
+    String root,
+    String prefix,
+    String keepName,
+  ) async {
+    await for (final entity in Directory(root).list(followLinks: false)) {
+      if (entity is! Directory) continue;
+      final name = entity.path.split(Platform.pathSeparator).last;
+      if (name.startsWith(prefix) && name != keepName) {
+        await entity.delete(recursive: true);
+      }
+    }
+  }
+
+  String _stableHash(String value) {
+    var hash = 0x811c9dc5;
+    for (final byte in utf8.encode(value)) {
+      hash = ((hash ^ byte) * 0x01000193) & 0xffffffff;
+    }
+    return hash.toRadixString(16).padLeft(8, '0');
+  }
+
+  String _safeId(String value) {
+    final normalized = value.replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '_');
+    if (normalized.isEmpty) {
+      throw const AudioProjectStoreUnavailable('Project id is invalid.');
+    }
+    return normalized.length > 80 ? normalized.substring(0, 80) : normalized;
+  }
+
+  static String _defaultDirectoryPath() {
+    final environment = Platform.environment;
+    final home = environment['USERPROFILE'] ??
+        environment['HOME'] ??
+        Directory.current.path;
+    return '$home${Platform.pathSeparator}Documents'
+        '${Platform.pathSeparator}Aura Voice Studio'
+        '${Platform.pathSeparator}Projects';
+  }
+}
+)
+          .hasMatch(value);
 
   Future<void> _removeSupersededAssetFolders(
     String root,
