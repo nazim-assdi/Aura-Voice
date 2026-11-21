@@ -55,7 +55,7 @@ A feature is only advertised as ready after its real engine is integrated and te
 
 ## What is not implemented yet
 
-- The realtime mixer now uses a sample-time event scheduler and preallocated blocks up to 1024 frames. It visits active clips rather than scanning every project clip for each frame, and supports atomic immutable-graph replacement at the next audio block. The first DSP lane includes per-track high-pass filtering and an envelope compressor. Hardware CPU/latency/underrun benchmarks for dense sessions, resampling, output-device selection, microphone-to-output monitoring, advanced DSP/effects, buses/sends and waveform-cache persistence remain outstanding.
+- The realtime mixer uses a sample-time event scheduler and preallocated blocks up to 1024 frames. It visits active clips rather than scanning every project clip for each frame, supports atomic immutable-graph replacement at the next audio block, and converts project PCM to a selected output device's negotiated rate during worker-side graph preparation. The asset resampler uses a windowed-sinc filter. The first DSP lane includes per-track high-pass filtering and an envelope compressor. Physical Windows/macOS/Linux device benchmarks for dense-session CPU, callback deadlines, driver underruns and end-to-end latency remain outstanding; see [the hardware benchmark runbook](docs/HARDWARE_AUDIO_BENCHMARK.md).
 - Advanced DSP beyond the current high-pass/compressor lane, configurable effects graphs, noise restoration, bus/send routing, mastering and loudness/true-peak tools.
 - Production TTS inference, voice profile enrollment or voice cloning.
 - Speech recognition, translation/dubbing alignment and subtitle export.
@@ -139,9 +139,10 @@ See [docs/PRO_VOICE_STUDIO_ARCHITECTURE.md](docs/PRO_VOICE_STUDIO_ARCHITECTURE.m
 - [ ] Verify the new desktop native-library packaging and Flutter-to-Rust render call through CI.
 - [x] Flutter media-file access, waveform editor, multitrack project workflow and non-destructive DAW editing controls (source implemented; end-to-end CI verification pending).
 - [x] Native microphone device discovery/capture, real-time-safe ring, Flutter input meters and streamed local 24-bit PCM WAV recording (end-to-end CI verification pending).
-- [ ] Record Booth UI, capture-to-WAV/session writing, continuous ring draining, playback and device monitoring.
+- [x] Record Booth UI, capture-to-WAV writing, continuous ring draining, playback and selectable output-device/direct microphone monitoring (hardware latency verification pending).
 - [x] Callback-driven native realtime multitrack mixer, event-based block scheduler, live graph updates and per-track high-pass/compressor (physical-device and dense-session performance validation pending).
-- [ ] Sample-rate conversion, output-device selection, live input monitoring, advanced DSP/effects graph, restoration, buses/sends and mastering.
+- [x] Worker-side sample-rate conversion for realtime multitrack playback, output-device selection and direct microphone monitoring.
+- [ ] Real-device CPU/callback/round-trip latency benchmark on Windows, macOS and Linux; advanced DSP/effects graph, restoration, buses/sends and mastering.
 - [ ] Production multilingual TTS and optional local inference.
 - [ ] Secure, consent-based voice profile management.
 - [ ] Transcription, dubbing, translation review and subtitle export.
