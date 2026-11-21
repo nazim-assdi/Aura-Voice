@@ -1266,41 +1266,32 @@ pub unsafe extern "C" fn aura_audio_monitor_ring_capacity_frames(
     unsafe { &*handle }.ring.capacity_frames().min(u32::MAX as usize) as u32
 }
 
-/// Best available input callback buffer size in frames. Falls back to the most
-/// recently observed callback block if the host cannot report its stream size.
+/// Best available CPAL estimate of input frames per callback. Returns zero
+/// when the host cannot report it; observed callback payload sizes have a
+/// separate getter.
 #[no_mangle]
 pub unsafe extern "C" fn aura_audio_monitor_input_buffer_frames(
     handle: *const AuraAudioMonitorHandle,
 ) -> u32 {
     if handle.is_null() { return 0; }
     let monitor = unsafe { &*handle };
-    let diagnostics = &monitor.diagnostics;
-    let reported = monitor._input_stream.buffer_size().ok().unwrap_or_else(|| {
-        diagnostics.input_device_buffer_frames.load(Ordering::Relaxed)
-    });
-    if reported > 0 {
-        reported
-    } else {
-        diagnostics.input_callback_frames.load(Ordering::Relaxed)
-    }
+    monitor._input_stream.buffer_size().ok().unwrap_or_else(|| {
+        monitor.diagnostics.input_device_buffer_frames.load(Ordering::Relaxed)
+    })
 }
 
-/// Best available output callback buffer size in frames.
+/// Best available CPAL estimate of output frames per callback. Returns zero
+/// when the host cannot report it; observed callback payload sizes are exposed
+/// separately.
 #[no_mangle]
 pub unsafe extern "C" fn aura_audio_monitor_output_buffer_frames(
     handle: *const AuraAudioMonitorHandle,
 ) -> u32 {
     if handle.is_null() { return 0; }
     let monitor = unsafe { &*handle };
-    let diagnostics = &monitor.diagnostics;
-    let reported = monitor._output_stream.buffer_size().ok().unwrap_or_else(|| {
-        diagnostics.output_device_buffer_frames.load(Ordering::Relaxed)
-    });
-    if reported > 0 {
-        reported
-    } else {
-        diagnostics.output_callback_frames.load(Ordering::Relaxed)
-    }
+    monitor._output_stream.buffer_size().ok().unwrap_or_else(|| {
+        monitor.diagnostics.output_device_buffer_frames.load(Ordering::Relaxed)
+    })
 }
 
 /// Number of frames in the most recent input callback buffer.
