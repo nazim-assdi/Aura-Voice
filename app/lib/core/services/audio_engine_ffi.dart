@@ -652,7 +652,8 @@ void _checkStatus(_NativeApi api, int status) {
   }
 }
 
-class FfiAudioPlaybackSession implements AudioPlaybackSession {
+class FfiAudioPlaybackSession
+    implements AudioPlaybackSession, AudioPlaybackDiagnostics {
   FfiAudioPlaybackSession._({
     required _NativeApi api,
     required Pointer<Void> handle,
@@ -691,6 +692,37 @@ class FfiAudioPlaybackSession implements AudioPlaybackSession {
 
   @override
   final int sampleRate;
+
+  @override
+  int get outputSampleRate => _engineSampleRate;
+
+  @override
+  int get callbackCount =>
+      _stopped ? 0 : _api.playbackCallbackCount(_handle);
+
+  @override
+  int get processedFrames =>
+      _stopped ? 0 : _api.playbackProcessedFrames(_handle);
+
+  @override
+  int get totalCallbackTimeNanoseconds =>
+      _stopped ? 0 : _api.playbackTotalCallbackNs(_handle);
+
+  @override
+  int get maximumCallbackTimeNanoseconds =>
+      _stopped ? 0 : _api.playbackMaxCallbackNs(_handle);
+
+  @override
+  int get callbackDeadlineMisses =>
+      _stopped ? 0 : _api.playbackDeadlineMisses(_handle);
+
+  @override
+  double get estimatedCallbackCpuPercent {
+    final frames = processedFrames;
+    if (frames == 0 || outputSampleRate <= 0) return 0;
+    final audioTimeNs = frames * 1000000000 / outputSampleRate;
+    return totalCallbackTimeNanoseconds / audioTimeNs * 100;
+  }
 
   @override
   int get totalFrames => _totalFrames;
@@ -1011,6 +1043,31 @@ class _NativeApi {
             _PlaybackPositionFramesDart>(
           'aura_audio_playback_position_frames',
         ),
+        _playbackCallbackCount = library.lookupFunction<
+            _PlaybackMetricNative,
+            _PlaybackMetricDart>(
+          'aura_audio_playback_callback_count',
+        ),
+        _playbackProcessedFrames = library.lookupFunction<
+            _PlaybackMetricNative,
+            _PlaybackMetricDart>(
+          'aura_audio_playback_processed_frames',
+        ),
+        _playbackTotalCallbackNs = library.lookupFunction<
+            _PlaybackMetricNative,
+            _PlaybackMetricDart>(
+          'aura_audio_playback_total_callback_ns',
+        ),
+        _playbackMaxCallbackNs = library.lookupFunction<
+            _PlaybackMetricNative,
+            _PlaybackMetricDart>(
+          'aura_audio_playback_max_callback_ns',
+        ),
+        _playbackDeadlineMisses = library.lookupFunction<
+            _PlaybackMetricNative,
+            _PlaybackMetricDart>(
+          'aura_audio_playback_deadline_misses',
+        ),
         _playbackStatus = library.lookupFunction<
             _PlaybackStatusNative,
             _PlaybackStatusDart>(
@@ -1140,6 +1197,11 @@ class _NativeApi {
   final int Function(Pointer<Void>, Pointer<Void>, Pointer<Uint64>)
       _playbackReplaceSession;
   final int Function(Pointer<Void>) _playbackPositionFrames;
+  final int Function(Pointer<Void>) _playbackCallbackCount;
+  final int Function(Pointer<Void>) _playbackProcessedFrames;
+  final int Function(Pointer<Void>) _playbackTotalCallbackNs;
+  final int Function(Pointer<Void>) _playbackMaxCallbackNs;
+  final int Function(Pointer<Void>) _playbackDeadlineMisses;
   final int Function(Pointer<Void>) _playbackStatus;
   final int Function(Pointer<Void>) _playbackPause;
   final int Function(Pointer<Void>) _playbackResume;
@@ -1254,6 +1316,16 @@ class _NativeApi {
 
   int playbackPositionFrames(Pointer<Void> handle) =>
       _playbackPositionFrames(handle);
+  int playbackCallbackCount(Pointer<Void> handle) =>
+      _playbackCallbackCount(handle);
+  int playbackProcessedFrames(Pointer<Void> handle) =>
+      _playbackProcessedFrames(handle);
+  int playbackTotalCallbackNs(Pointer<Void> handle) =>
+      _playbackTotalCallbackNs(handle);
+  int playbackMaxCallbackNs(Pointer<Void> handle) =>
+      _playbackMaxCallbackNs(handle);
+  int playbackDeadlineMisses(Pointer<Void> handle) =>
+      _playbackDeadlineMisses(handle);
   int playbackStatus(Pointer<Void> handle) => _playbackStatus(handle);
   int playbackPause(Pointer<Void> handle) => _playbackPause(handle);
   int playbackResume(Pointer<Void> handle) => _playbackResume(handle);
@@ -1479,6 +1551,9 @@ typedef _PlaybackReplaceSessionDart = int Function(
   Pointer<Void>,
   Pointer<Uint64>,
 );
+
+typedef _PlaybackMetricNative = Uint64 Function(Pointer<Void>);
+typedef _PlaybackMetricDart = int Function(Pointer<Void>);
 
 typedef _PlaybackPositionFramesNative = Uint64 Function(Pointer<Void>);
 typedef _PlaybackPositionFramesDart = int Function(Pointer<Void>);
