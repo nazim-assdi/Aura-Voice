@@ -264,6 +264,11 @@ class FileAudioProjectStore implements AudioProjectStore {
     }
 
     if (assetFolder != null) {
+      final expectedFolderPrefix =
+          'AuraProject_${_safeId(session.id)}.assets-';
+      if (!assetFolder.startsWith(expectedFolderPrefix)) {
+        corrupt.addAll(resolvedByRelativeName.values);
+      }
       final metadataFile = File(
         '${manifestFile.parent.path}${Platform.pathSeparator}$assetFolder'
         '${Platform.pathSeparator}.aura-assets.json',
@@ -273,14 +278,20 @@ class FileAudioProjectStore implements AudioProjectStore {
           final metadata = jsonDecode(await metadataFile.readAsString());
           if (metadata is! Map<String, dynamic> ||
               metadata['schemaVersion'] != 1 ||
+              metadata['projectId'] != session.id ||
               metadata['assetFolder'] != assetFolder ||
               metadata['files'] is! Map<String, dynamic>) {
             throw const FormatException('Invalid portable asset inventory.');
           }
           checksumFiles = metadata['files'] as Map<String, dynamic>;
+          final inventoryNames = checksumFiles.keys.toSet();
+          if (inventoryNames.length != referencesByRelativeName.length ||
+              !inventoryNames.containsAll(referencesByRelativeName.keys)) {
+            corrupt.addAll(resolvedByRelativeName.values);
+          }
           hasChecksumManifest = true;
         } catch (_) {
-          corrupt.addAll(references);
+          corrupt.addAll(resolvedByRelativeName.values);
         }
       }
     }
@@ -338,9 +349,9 @@ class FileAudioProjectStore implements AudioProjectStore {
   ) async {
     await _assertManagedPath(projectPath);
     final report = await verifyPortableProject(projectPath);
-    if (!report.isValid) {
+    if (!report.isValid || !report.hasChecksumManifest) {
       throw AudioProjectStoreUnavailable(
-        'Project verification failed. Missing: ${report.missingMediaPaths.length}; corrupt: ${report.corruptMediaPaths.length}. Relink or repair media before export.',
+        'Project verification failed or its SHA-256 inventory is missing. Missing: ${report.missingMediaPaths.length}; corrupt: ${report.corruptMediaPaths.length}. Save the project again and repair media before export.',
       );
     }
     final manifestFile = File(projectPath);
@@ -739,11 +750,22 @@ class FileAudioProjectStore implements AudioProjectStore {
           final metadata = jsonDecode(await metadataFile.readAsString());
           if (metadata is! Map<String, dynamic> ||
               metadata['schemaVersion'] != 1 ||
+              metadata['projectId'] != session.id ||
               metadata['assetFolder'] != assetFolder ||
               metadata['files'] is! Map<String, dynamic>) {
             throw const FormatException('Invalid asset inventory.');
           }
           checksumFiles = metadata['files'] as Map<String, dynamic>;
+          final referencedNames = references
+              .map((reference) => reference.replaceAll('\\', '/').split('/').last)
+              .toSet();
+          final inventoryNames = checksumFiles.keys.toSet();
+          if (inventoryNames.length != referencedNames.length ||
+              !inventoryNames.containsAll(referencedNames)) {
+            throw const FormatException(
+              'The asset inventory does not match the project media references.',
+            );
+          }
         } catch (_) {
           corrupt.addAll(references);
         }
