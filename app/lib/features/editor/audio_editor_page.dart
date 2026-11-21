@@ -493,6 +493,17 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
         // Unsupported platforms do not expose local filesystem media checks.
       }
     }
+    final projectPath = _projectPath;
+    if (projectPath != null) {
+      try {
+        final integrity = await _projects.verifyPortableProject(projectPath);
+        missing
+          ..addAll(integrity.missingMediaPaths)
+          ..addAll(integrity.corruptMediaPaths);
+      } catch (_) {
+        // Legacy or unsaved sessions still use the normal file-existence scan.
+      }
+    }
     if (!mounted) return;
     if (_missingMediaPaths.length != missing.length ||
         !_missingMediaPaths.containsAll(missing)) {
@@ -1695,7 +1706,7 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
                 ? 'Relinking media'
                 : _missingMediaPaths.isEmpty
                     ? 'All source media is available'
-                    : 'Relink ${_missingMediaPaths.length} missing media file(s)',
+                    : 'Relink ${_missingMediaPaths.length} missing or damaged media file(s)',
             onPressed: _missingMediaPaths.isEmpty || _relinkingMedia
                 ? null
                 : _relinkMissingMedia,
