@@ -43,6 +43,7 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
   Map<String, AudioWaveformData> _waveformCache = {};
   Set<String> _missingMediaPaths = {};
   bool _relinkingMedia = false;
+  bool _exportingArchive = false;
 
   String? _selectedTrackId;
   String? _selectedClipId;
@@ -1260,6 +1261,57 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
     );
   }
 
+  Future<void> _exportProjectArchive() async {
+    if (_exportingArchive || _saving || _autosaving) return;
+    final outputPath = await FilePicker.platform.saveFile(
+      dialogTitle: 'Export Aura Voice project',
+      fileName:
+          '${_session.title.replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '_')}.auravoice.zip',
+      type: FileType.custom,
+      allowedExtensions: const ['zip'],
+    );
+    if (outputPath == null || outputPath.trim().isEmpty || !mounted) return;
+
+    final zipPath = outputPath.toLowerCase().endsWith('.zip')
+        ? outputPath
+        : '$outputPath.zip';
+    _autosaveTimer?.cancel();
+    final revision = _editRevision;
+    setState(() {
+      _exportingArchive = true;
+      _message = 'Packaging and verifying project media…';
+    });
+    try {
+      final manifestPath = await _projects.savePortable(_cloneSession(_session));
+      final exportedPath = await _projects.exportPortableArchive(
+        manifestPath,
+        zipPath,
+      );
+      if (!mounted) return;
+      setState(() {
+        _projectPath = manifestPath;
+        _autosavedRevision = revision;
+        _message = 'Portable ZIP exported and SHA-256 verified.';
+      });
+      // Keep the path available for subsequent manual save operations.
+      _projectPath = manifestPath;
+      if (exportedPath.isEmpty) {
+        throw const AudioProjectStoreUnavailable(
+          'The ZIP export did not produce an output file.',
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        setState(() => _message = 'ZIP export failed: $error');
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _exportingArchive = false);
+        if (_editRevision > revision) _scheduleAutosave();
+      }
+    }
+  }
+
   Future<void> _saveProject() async {
     if (_saving || _autosaving) {
       return;
@@ -1661,6 +1713,21 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
                         ? null
                         : Colors.orangeAccent,
                   ),
+          ),
+          IconButton(
+            tooltip: _exportingArchive
+                ? 'Creating portable ZIP'
+                : 'Export portable project ZIP',
+            onPressed: _exportingArchive || _saving || _autosaving
+                ? null
+                : _exportProjectArchive,
+            icon: _exportingArchive
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.archive_outlined),
           ),
           IconButton(
             tooltip: _autosaving ? 'Autosaving session' : 'Save session',
