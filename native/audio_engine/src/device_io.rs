@@ -1337,6 +1337,17 @@ pub unsafe extern "C" fn aura_audio_playback_set_loop(
     0
 }
 
+/// Returns the negotiated output clock for a live playback handle.
+pub(crate) unsafe fn playback_output_sample_rate(
+    handle: *const AuraAudioPlaybackHandle,
+) -> Result<u32, AudioError> {
+    if handle.is_null() {
+        return Err(AudioError::InvalidArgument("playback handle is null".into()));
+    }
+    // SAFETY: The caller must keep the playback handle alive for this query.
+    Ok(unsafe { &*handle }.output_sample_rate)
+}
+
 /// Replaces a playing session graph without stopping the output stream.
 /// The callback picks up the new immutable snapshot at the next audio block.
 pub(crate) unsafe fn replace_realtime_session(
