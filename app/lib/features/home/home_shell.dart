@@ -457,7 +457,9 @@ class _StudioPageState extends State<StudioPage> {
       }
       setState(() => _message = error.toString());
     } finally {
-      if (mounted) setState(() => _loadingDevices = false);
+      if (mounted) {
+        setState(() => _loadingDevices = false);
+      }
     }
   }
 
@@ -517,16 +519,24 @@ class _StudioPageState extends State<StudioPage> {
         (_) => _pollMonitor(),
       );
     } catch (error) {
-      if (monitor != null) await monitor.stop();
-      if (mounted) setState(() => _message = 'Live monitor could not start: $error');
+      if (monitor != null) {
+        await monitor.stop();
+      }
+      if (mounted) {
+        setState(() => _message = 'Live monitor could not start: $error');
+      }
     } finally {
-      if (mounted) setState(() => _monitorStarting = false);
+      if (mounted) {
+        setState(() => _monitorStarting = false);
+      }
     }
   }
 
   void _pollMonitor() {
     final monitor = _monitor;
-    if (monitor == null) return;
+    if (monitor == null) {
+      return;
+    }
     final failed = monitor.hasError;
     final underruns = monitor.underrunFrames;
     final droppedInput = monitor.droppedInputFrames;
@@ -542,7 +552,9 @@ class _StudioPageState extends State<StudioPage> {
     final ringCapacity = monitor.ringCapacityFrames;
     if (failed) {
       unawaited(_stopMonitor());
-      if (mounted) setState(() => _message = 'The microphone monitor device reported an audio error.');
+      if (mounted) {
+        setState(() => _message = 'The microphone monitor device reported an audio error.');
+      }
       return;
     }
     if (mounted &&
@@ -589,7 +601,9 @@ class _StudioPageState extends State<StudioPage> {
         _monitorMaximumEstimatedLatencyNs;
     final finalLatencyCount =
         monitor?.latencyEstimateCount ?? _monitorLatencyEstimateCount;
-    if (monitor != null) await monitor.stop();
+    if (monitor != null) {
+      await monitor.stop();
+    }
     if (mounted && monitor != null) {
       setState(() {
         _monitorUnderrunFrames = finalUnderruns;
@@ -665,22 +679,34 @@ class _StudioPageState extends State<StudioPage> {
         (_) => unawaited(_pollInput()),
       );
     } catch (error) {
-      if (capture != null) await capture.stop();
-      if (writer != null) await writer.discard();
-      if (mounted) setState(() => _message = error.toString());
+      if (capture != null) {
+        await capture.stop();
+      }
+      if (writer != null) {
+        await writer.discard();
+      }
+      if (mounted) {
+        setState(() => _message = error.toString());
+      }
     } finally {
-      if (mounted) setState(() => _starting = false);
+      if (mounted) {
+        setState(() => _starting = false);
+      }
     }
   }
 
   Future<void> _pollInput() async {
     final capture = _capture;
-    if (capture == null || _polling) return;
+    if (capture == null || _polling) {
+      return;
+    }
     _polling = true;
     var stopAfterPoll = false;
     try {
       final samples = await capture.readFrames(maxFrames: 4096);
-      if (!identical(capture, _capture)) return;
+      if (!identical(capture, _capture)) {
+        return;
+      }
       if (samples.isNotEmpty) {
         final writer = _writer;
         if (writer == null) {
@@ -688,12 +714,16 @@ class _StudioPageState extends State<StudioPage> {
         }
         await writer.append(samples);
       }
-      if (!mounted || !identical(capture, _capture)) return;
+      if (!mounted || !identical(capture, _capture)) {
+        return;
+      }
       var peak = 0.0;
       var sumSquares = 0.0;
       for (final sample in samples) {
         final magnitude = sample.abs();
-        if (magnitude > peak) peak = magnitude;
+        if (magnitude > peak) {
+          peak = magnitude;
+        }
         sumSquares += sample * sample;
       }
       final rms = samples.isEmpty
@@ -726,7 +756,9 @@ class _StudioPageState extends State<StudioPage> {
   }
 
   Future<void> _stopRecording() async {
-    if (_stopping) return;
+    if (_stopping) {
+      return;
+    }
     _stopping = true;
     try {
       _meterTimer?.cancel();
@@ -753,8 +785,12 @@ class _StudioPageState extends State<StudioPage> {
         if (capture != null && paused) {
           while (true) {
             final remaining = await capture.readFrames(maxFrames: 4096);
-            if (remaining.isEmpty) break;
-            if (writer != null) await writer.append(remaining);
+            if (remaining.isEmpty) {
+              break;
+            }
+            if (writer != null) {
+              await writer.append(remaining);
+            }
             _capturedFrames += remaining.length ~/ capture.channels;
           }
         }
@@ -767,10 +803,14 @@ class _StudioPageState extends State<StudioPage> {
         }
       }
       try {
-        if (writer != null) path = await writer.finish();
+        if (writer != null) {
+          path = await writer.finish();
+        }
       } catch (error) {
         warning = 'The recording could not be finalized: $error';
-        if (writer != null) await writer.discard();
+        if (writer != null) {
+          await writer.discard();
+        }
       }
       if (_droppedFrames > 0) {
         warning ??= 'Recording saved with $_droppedFrames dropped frames; this take may contain a short gap.';
@@ -795,7 +835,9 @@ class _StudioPageState extends State<StudioPage> {
 
   Future<void> _playSavedTake() async {
     final path = _savedPath;
-    if (path == null || _capture != null || _monitor != null || _starting) return;
+    if (path == null || _capture != null || _monitor != null || _starting) {
+      return;
+    }
     await _stopPlayback();
     try {
       final bytes = await readAudioFile(path);
@@ -819,13 +861,17 @@ class _StudioPageState extends State<StudioPage> {
         (_) => unawaited(_pollPlayback()),
       );
     } catch (error) {
-      if (mounted) setState(() => _message = error.toString());
+      if (mounted) {
+        setState(() => _message = error.toString());
+      }
     }
   }
 
   Future<void> _pollPlayback() async {
     final playback = _playback;
-    if (playback == null) return;
+    if (playback == null) {
+      return;
+    }
     final position = playback.positionFrames;
     final complete = playback.isComplete;
     final failed = playback.hasError;
@@ -854,14 +900,18 @@ class _StudioPageState extends State<StudioPage> {
     _playbackTimer = null;
     final playback = _playback;
     _playback = null;
-    if (playback != null) await playback.stop();
+    if (playback != null) {
+      await playback.stop();
+    }
     if (mounted && playback != null) {
       setState(() => _playbackPosition = 0);
     }
   }
 
   String _formatPlaybackTime(int frames, int sampleRate) {
-    if (sampleRate <= 0) return '00:00';
+    if (sampleRate <= 0) {
+      return '00:00';
+    }
     final totalSeconds = frames ~/ sampleRate;
     return '${(totalSeconds ~/ 60).toString().padLeft(2, '0')}:'
         '${(totalSeconds % 60).toString().padLeft(2, '0')}';
@@ -1494,7 +1544,9 @@ class _LibraryPageState extends State<LibraryPage> {
     _playbackTimer?.cancel();
     final playback = _playback;
     _playback = null;
-    if (playback != null) unawaited(playback.stop());
+    if (playback != null) {
+      unawaited(playback.stop());
+    }
     super.dispose();
   }
 
@@ -1516,9 +1568,13 @@ class _LibraryPageState extends State<LibraryPage> {
           ..addAll(items);
       });
     } catch (error) {
-      if (mounted) setState(() => _message = error.toString());
+      if (mounted) {
+        setState(() => _message = error.toString());
+      }
     } finally {
-      if (mounted) setState(() => _loading = false);
+      if (mounted) {
+        setState(() => _loading = false);
+      }
     }
   }
 
@@ -1541,9 +1597,13 @@ class _LibraryPageState extends State<LibraryPage> {
         }
       });
     } catch (error) {
-      if (mounted) setState(() => _message = 'Output devices unavailable: $error');
+      if (mounted) {
+        setState(() => _message = 'Output devices unavailable: $error');
+      }
     } finally {
-      if (mounted) setState(() => _loadingOutputDevices = false);
+      if (mounted) {
+        setState(() => _loadingOutputDevices = false);
+      }
     }
   }
 
@@ -1570,7 +1630,9 @@ class _LibraryPageState extends State<LibraryPage> {
   }
 
   Future<void> _play(AudioLibraryRecording recording) async {
-    if (_loadingPath != null) return;
+    if (_loadingPath != null) {
+      return;
+    }
     if (recording.channels < 1 || recording.channels > 2) {
       setState(() {
         _message =
@@ -1609,15 +1671,21 @@ class _LibraryPageState extends State<LibraryPage> {
         (_) => unawaited(_pollPlayback()),
       );
     } catch (error) {
-      if (mounted) setState(() => _message = error.toString());
+      if (mounted) {
+        setState(() => _message = error.toString());
+      }
     } finally {
-      if (mounted) setState(() => _loadingPath = null);
+      if (mounted) {
+        setState(() => _loadingPath = null);
+      }
     }
   }
 
   Future<void> _pollPlayback() async {
     final playback = _playback;
-    if (playback == null || _pollingPlayback) return;
+    if (playback == null || _pollingPlayback) {
+      return;
+    }
     _pollingPlayback = true;
     try {
       final complete = playback.isComplete;
@@ -1645,8 +1713,12 @@ class _LibraryPageState extends State<LibraryPage> {
     final playback = _playback;
     _playback = null;
     _playingPath = null;
-    if (playback != null) await playback.stop();
-    if (mounted) setState(() {});
+    if (playback != null) {
+      await playback.stop();
+    }
+    if (mounted) {
+      setState(() {});
+    }
   }
 
   Future<void> _showWaveform(AudioLibraryRecording recording) async {
@@ -1730,7 +1802,9 @@ class _LibraryPageState extends State<LibraryPage> {
         ),
       );
     } catch (error) {
-      if (mounted) setState(() => _message = error.toString());
+      if (mounted) {
+        setState(() => _message = error.toString());
+      }
     } finally {
       if (mounted && _waveformLoadingPath == recording.path) {
         setState(() => _waveformLoadingPath = null);
@@ -1752,10 +1826,14 @@ class _LibraryPageState extends State<LibraryPage> {
         return;
       }
     } catch (error) {
-      if (mounted) setState(() => _message = error.toString());
+      if (mounted) {
+        setState(() => _message = error.toString());
+      }
       return;
     }
-    if (_playingPath == recording.path) await _stopPlayback();
+    if (_playingPath == recording.path) {
+      await _stopPlayback();
+    }
     if (!mounted) {
       return;
     }
@@ -1787,7 +1865,9 @@ class _LibraryPageState extends State<LibraryPage> {
       ),
     );
     controller.dispose();
-    if (name == null || name.trim().isEmpty || !mounted) return;
+    if (name == null || name.trim().isEmpty || !mounted) {
+      return;
+    }
     try {
       final updated = await _library.renameRecording(recording, name);
       if (!mounted) {
@@ -1795,10 +1875,14 @@ class _LibraryPageState extends State<LibraryPage> {
       }
       final index = _recordings.indexWhere((item) => item.path == recording.path);
       setState(() {
-        if (index >= 0) _recordings[index] = updated;
+        if (index >= 0) {
+          _recordings[index] = updated;
+        }
       });
     } catch (error) {
-      if (mounted) setState(() => _message = error.toString());
+      if (mounted) {
+        setState(() => _message = error.toString());
+      }
     }
   }
 
@@ -1851,7 +1935,9 @@ class _LibraryPageState extends State<LibraryPage> {
           ],
         ),
       );
-      if (selected == null || !mounted) return;
+      if (selected == null || !mounted) {
+        return;
+      }
       final session = await _projects.load(selected.path);
       if (!mounted) {
         return;
@@ -1871,9 +1957,13 @@ class _LibraryPageState extends State<LibraryPage> {
           ),
         ),
       );
-      if (mounted) await _refresh();
+      if (mounted) {
+        await _refresh();
+      }
     } catch (error) {
-      if (mounted) setState(() => _message = error.toString());
+      if (mounted) {
+        setState(() => _message = error.toString());
+      }
     }
   }
 
@@ -1892,7 +1982,9 @@ class _LibraryPageState extends State<LibraryPage> {
         builder: (_) => AudioEditorPage(initialRecording: recording),
       ),
     );
-    if (mounted) await _refresh();
+    if (mounted) {
+      await _refresh();
+    }
   }
 
   Future<void> _delete(AudioLibraryRecording recording) async {
@@ -1918,7 +2010,9 @@ class _LibraryPageState extends State<LibraryPage> {
         ],
       ),
     );
-    if (confirmed != true || !mounted) return;
+    if (confirmed != true || !mounted) {
+      return;
+    }
     try {
       final references = await _projects.findProjectsUsingMedia(recording.path);
       if (references.isNotEmpty) {
@@ -1929,7 +2023,9 @@ class _LibraryPageState extends State<LibraryPage> {
         });
         return;
       }
-      if (_playingPath == recording.path) await _stopPlayback();
+      if (_playingPath == recording.path) {
+        await _stopPlayback();
+      }
       await _library.deleteRecording(recording);
       if (!mounted) {
         return;
@@ -1939,7 +2035,9 @@ class _LibraryPageState extends State<LibraryPage> {
         _message = 'Recording deleted from this device.';
       });
     } catch (error) {
-      if (mounted) setState(() => _message = error.toString());
+      if (mounted) {
+        setState(() => _message = error.toString());
+      }
     }
   }
 
@@ -2163,7 +2261,9 @@ class _LibraryPageState extends State<LibraryPage> {
                           DropdownMenuItem(value: 'largest', child: Text('Largest')),
                         ],
                         onChanged: (value) {
-                          if (value != null) setState(() => _sortBy = value);
+                          if (value != null) {
+                            setState(() => _sortBy = value);
+                          }
                         },
                       ),
                     ),
@@ -2383,9 +2483,15 @@ class _RecordingCard extends StatelessWidget {
             PopupMenuButton<String>(
               tooltip: 'Recording actions',
               onSelected: (value) {
-                if (value == 'editor') onEdit();
-                if (value == 'rename') onRename();
-                if (value == 'delete') onDelete();
+                if (value == 'editor') {
+                  onEdit();
+                }
+                if (value == 'rename') {
+                  onRename();
+                }
+                if (value == 'delete') {
+                  onDelete();
+                }
               },
               itemBuilder: (context) => const [
                 PopupMenuItem(
@@ -2427,7 +2533,9 @@ class _WaveformPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    if (peaks.isEmpty || size.isEmpty) return;
+    if (peaks.isEmpty || size.isEmpty) {
+      return;
+    }
     final centerY = size.height / 2;
     final slotWidth = size.width / peaks.length;
     final paint = Paint()
