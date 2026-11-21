@@ -73,7 +73,7 @@ class FileAudioLibraryService implements AudioLibraryService {
 
   @override
   Future<void> deleteRecording(AudioLibraryRecording recording) async {
-    _assertManagedPath(recording.path);
+    await _assertManagedPath(recording.path);
     final file = File(recording.path);
     if (await file.exists()) await file.delete();
   }
