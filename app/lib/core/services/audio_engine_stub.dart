@@ -17,23 +17,30 @@ class UnavailableAudioEngineService implements AudioEngineService {
     required AudioSession session,
     required Map<String, Uint8List> assetWavs,
     int? bitDepth,
-  }) {
+  }) async {
     throw const AudioEngineUnavailable(
       'The native Aura audio library is not installed for this platform yet.',
     );
   }
 
   @override
-  Future<List<AudioInputDevice>> listInputDevices() {
+  Future<List<AudioInputDevice>> listInputDevices() async {
     throw const AudioEngineUnavailable(
       'Microphone device access is not available on this platform.',
     );
   }
 
   @override
+  Future<List<AudioOutputDevice>> listOutputDevices() async {
+    throw const AudioEngineUnavailable(
+      'Audio output device access is not available on this platform.',
+    );
+  }
+
+  @override
   Future<AudioPlaybackSession> startPlayback({
     required Uint8List wavBytes,
-  }) {
+  }) async {
     throw const AudioEngineUnavailable(
       'Audio output playback is not available on this platform.',
     );
@@ -43,7 +50,8 @@ class UnavailableAudioEngineService implements AudioEngineService {
   Future<AudioPlaybackSession> startRealtimePlayback({
     required AudioSession session,
     required Map<String, Uint8List> assetWavs,
-  }) {
+    String? outputDeviceId,
+  }) async {
     throw const AudioEngineUnavailable(
       'Realtime multitrack playback is not available on this platform.',
     );
@@ -53,7 +61,7 @@ class UnavailableAudioEngineService implements AudioEngineService {
   Future<AudioCaptureSession> startCapture({
     String? deviceId,
     int bufferMilliseconds = 1000,
-  }) {
+  }) async {
     throw const AudioEngineUnavailable(
       'Microphone capture is not available on this platform.',
     );
