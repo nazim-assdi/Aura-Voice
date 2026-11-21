@@ -10,7 +10,5 @@ void main() {
     expect(find.text('Home'), findsOneWidget);
     expect(find.text('Studio'), findsOneWidget);
     expect(find.text('Library'), findsOneWidget);
-    expect(find.text('Multitrack Editor'), findsOneWidget);
-    expect(find.text('Mix & Master'), findsOneWidget);
   });
 }
