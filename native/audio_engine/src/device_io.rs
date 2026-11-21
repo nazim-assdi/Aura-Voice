@@ -975,6 +975,16 @@ pub unsafe extern "C" fn aura_audio_monitor_underrun_frames(
     unsafe { &*handle }.underrun_frames.load(Ordering::Relaxed)
 }
 
+/// Input frames dropped because the microphone producer found the SPSC
+/// ring full. This is distinct from output-side ring starvation.
+#[no_mangle]
+pub unsafe extern "C" fn aura_audio_monitor_input_dropped_frames(
+    handle: *const AuraAudioMonitorHandle,
+) -> u64 {
+    if handle.is_null() { return 0; }
+    unsafe { &*handle }.ring.dropped_frames.load(Ordering::Relaxed)
+}
+
 /// Returns 0 while the input and output callbacks are healthy, 1 on error.
 #[no_mangle]
 pub unsafe extern "C" fn aura_audio_monitor_status(
