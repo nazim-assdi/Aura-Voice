@@ -49,6 +49,9 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
   String? _projectPath;
   String? _message;
   AudioPlaybackSession? _playback;
+  final List<AudioOutputDevice> _outputDevices = [];
+  String? _selectedOutputDeviceId;
+  bool _loadingOutputDevices = false;
   Timer? _playbackTimer;
   int _playbackPosition = 0;
   bool _saving = false;
@@ -82,6 +85,7 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
     _library = createAudioLibraryService();
     _projects = createAudioProjectStore();
     _waveforms = createAudioWaveformService();
+    unawaited(_refreshOutputDevices());
 
     final existingSession = widget.initialSession;
     if (existingSession != null) {
@@ -1036,6 +1040,29 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
     }
   }
 
+  Future<void> _refreshOutputDevices() async {
+    setState(() => _loadingOutputDevices = true);
+    try {
+      final devices = await _engine.listOutputDevices();
+      if (!mounted) return;
+      setState(() {
+        _outputDevices
+          ..clear()
+          ..addAll(devices);
+        if (!_outputDevices.any((device) => device.id == _selectedOutputDeviceId)) {
+          final defaults = _outputDevices.where((device) => device.isDefault);
+          _selectedOutputDeviceId = defaults.isNotEmpty
+              ? defaults.first.id
+              : (_outputDevices.isEmpty ? null : _outputDevices.first.id);
+        }
+      });
+    } catch (error) {
+      if (mounted) setState(() => _message = 'Output devices unavailable: $error');
+    } finally {
+      if (mounted) setState(() => _loadingOutputDevices = false);
+    }
+  }
+
   Future<void> _startRealtimePlayback() async {
     if (_rendering) return;
     await _stopPlayback();
@@ -1074,6 +1101,7 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
       final playback = await _engine.startRealtimePlayback(
         session: _session,
         assetWavs: assets,
+        outputDeviceId: _selectedOutputDeviceId,
       );
       try {
         if (_loopEnabled) {
@@ -1356,7 +1384,7 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
                   SizedBox(
                     width: 205,
                     child: Text(
-                      '${_session.sampleRate} Hz · ${_session.channels} channel(s) · '
+                      '${_session.sampleRate} Hz project · ${_session.channels} channel(s) · '
                       '${_session.tracks.length} tracks',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                             color: AuraTheme.muted,
@@ -1391,6 +1419,45 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
                         },
                       ),
                     ],
+                  ),
+                  SizedBox(
+                    width: 250,
+                    child: DropdownButton<String>(
+                      isExpanded: true,
+                      value: _outputDevices.any(
+                        (device) => device.id == _selectedOutputDeviceId,
+                      )
+                          ? _selectedOutputDeviceId
+                          : null,
+                      hint: Text(
+                        _loadingOutputDevices
+                            ? 'Finding output devices…'
+                            : 'System default output',
+                      ),
+                      underline: const SizedBox.shrink(),
+                      items: [
+                        for (final device in _outputDevices)
+                          DropdownMenuItem(
+                            value: device.id,
+                            child: Text(
+                              '${device.name}${device.isDefault ? ' · Default' : ''} · ${device.minSampleRate}–${device.maxSampleRate} Hz',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                      ],
+                      onChanged: _playback != null || _rendering
+                          ? null
+                          : (value) => setState(() => _selectedOutputDeviceId = value),
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Refresh output devices',
+                    visualDensity: VisualDensity.compact,
+                    onPressed: _playback != null || _rendering || _loadingOutputDevices
+                        ? null
+                        : _refreshOutputDevices,
+                    icon: const Icon(Icons.speaker_group_outlined),
                   ),
                   Row(
                     mainAxisSize: MainAxisSize.min,
