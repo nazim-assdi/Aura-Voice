@@ -90,6 +90,32 @@ uint64_t aura_audio_capture_dropped_frames(const AuraAudioCaptureHandle *handle)
 uint32_t aura_audio_capture_status(const AuraAudioCaptureHandle *handle);
 void aura_audio_capture_stop(AuraAudioCaptureHandle *handle);
 
+/* Direct microphone-to-output monitor. buffer_milliseconds requests both the
+ * SPSC ring target and a CPAL callback buffer size; actual host sizes vary. */
+typedef struct AuraAudioMonitorHandle AuraAudioMonitorHandle;
+AuraAudioMonitorHandle *aura_audio_monitor_start(
+    const char *input_device_id,
+    const char *output_device_id,
+    uint32_t buffer_milliseconds,
+    float initial_gain
+);
+uint64_t aura_audio_monitor_underrun_frames(const AuraAudioMonitorHandle *handle);
+uint64_t aura_audio_monitor_input_dropped_frames(const AuraAudioMonitorHandle *handle);
+uint32_t aura_audio_monitor_status(const AuraAudioMonitorHandle *handle);
+uint32_t aura_audio_monitor_input_sample_rate(const AuraAudioMonitorHandle *handle);
+uint32_t aura_audio_monitor_output_sample_rate(const AuraAudioMonitorHandle *handle);
+uint32_t aura_audio_monitor_requested_buffer_milliseconds(const AuraAudioMonitorHandle *handle);
+uint32_t aura_audio_monitor_ring_capacity_frames(const AuraAudioMonitorHandle *handle);
+uint32_t aura_audio_monitor_input_buffer_frames(const AuraAudioMonitorHandle *handle);
+uint32_t aura_audio_monitor_output_buffer_frames(const AuraAudioMonitorHandle *handle);
+uint64_t aura_audio_monitor_input_capture_to_callback_ns(const AuraAudioMonitorHandle *handle);
+uint64_t aura_audio_monitor_output_callback_to_playback_ns(const AuraAudioMonitorHandle *handle);
+uint64_t aura_audio_monitor_estimated_latency_ns(const AuraAudioMonitorHandle *handle);
+uint64_t aura_audio_monitor_maximum_estimated_latency_ns(const AuraAudioMonitorHandle *handle);
+uint64_t aura_audio_monitor_latency_estimate_count(const AuraAudioMonitorHandle *handle);
+int32_t aura_audio_monitor_set_gain(const AuraAudioMonitorHandle *handle, float gain);
+void aura_audio_monitor_stop(AuraAudioMonitorHandle *handle);
+
 /* OS-device playback. Multitrack sessions and standalone WAV preview both
  * support explicit output-device selection and worker-side sample-rate
  * conversion before the CPAL callback. Both support sample-frame transport. */
@@ -99,6 +125,8 @@ typedef struct AuraAudioPlaybackHandle AuraAudioPlaybackHandle;
  * Decoded clip buffers are mixed on the audio callback; no mix WAV is rendered. */
 AuraAudioPlaybackHandle *aura_engine_realtime_playback_start(
     AuraEngineHandle *handle,
+    const char *output_device_id,
+    uint32_t *out_engine_sample_rate,
     uint64_t *out_total_frames
 );
 
