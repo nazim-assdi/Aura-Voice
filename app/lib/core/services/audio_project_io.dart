@@ -1,7 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:archive/archive.dart';
 import 'package:archive/archive_io.dart';
 import 'package:crypto/crypto.dart';
 
@@ -452,7 +451,7 @@ class FileAudioProjectStore implements AudioProjectStore {
       } finally {
         input.closeSync();
       }
-      if (archive.length == 0 || archive.length > maximumEntries) {
+      if (archive.isEmpty || archive.length > maximumEntries) {
         throw const AudioProjectStoreUnavailable(
           'The ZIP archive has an invalid number of entries.',
         );
