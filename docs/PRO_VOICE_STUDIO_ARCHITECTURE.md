@@ -6,7 +6,7 @@
 
 The full production workspace is desktop-first (Windows, macOS and Linux). Android and iOS provide voice recording, script/TTS workflows, review, light edits and project handoff. A consistent project format keeps sessions portable across supported platforms.
 
-This repository is an early Flutter/FastAPI/native-engine foundation. Source includes local 24-bit PCM recording and audition plus a non-destructive sample-frame editor with waveform clips, trim/split, crossfade, snap grid, timeline zoom, bounded undo/redo and autosave. The native callback-driven mixer uses an event-based block scheduler, updates immutable graph snapshots during playback and provides per-track high-pass/compressor processing. Physical-device performance/underrun validation, resampling, output-device selection, microphone monitoring, advanced DSP, production TTS, voice cloning, dubbing and mastering remain in development.
+This repository is an early Flutter/FastAPI/native-engine foundation. Source includes local 24-bit PCM recording and audition plus a non-destructive sample-frame editor with waveform clips, trim/split, crossfade, snap grid, timeline zoom, bounded undo/redo and autosave. The native callback-driven mixer uses an event-based block scheduler, updates immutable graph snapshots during playback, performs worker-side sample-rate conversion to a selected output device, and provides per-track high-pass/compressor processing. Studio also contains a direct microphone-to-output monitoring path. Physical-device performance/round-trip latency validation, device reconnect recovery, advanced DSP, production TTS, voice cloning, dubbing and mastering remain in development.
 
 ## Product principles
 
@@ -175,7 +175,7 @@ The current implementation of native output uses a sample-frame transport and no
 
 ### Still not implemented
 - Take management, non-destructive media relinking, project asset import/copy strategy and recovery snapshots.
-- Sample-rate conversion, output-device selection, live input-to-output monitoring, device reconnect/latency measurement and physical-device CPU/underrun benchmarks for dense sessions.
+- Device reconnect recovery, calibrated output/round-trip latency measurement and physical-device CPU/deadline/underrun benchmarks for dense sessions. Software callback metrics and monitor ring counters are available, but do not substitute for those hardware measurements.
 - Sample-rate conversion and additional microphone sample formats.
 - Android/iOS native audio library packaging and native app linking.
 - Waveform-cache persistence, portable media relinking, project asset copy/import strategy, crash-recovery snapshots, and edit operations that persist as a journal rather than only in-memory undo history. Current trim is inward-only because source-media end boundaries are not yet stored in the project schema.
