@@ -318,7 +318,7 @@ class FileAudioProjectStore implements AudioProjectStore {
             corrupt.add(resolvedReference);
           }
         } catch (_) {
-          corrupt.add(entry.value);
+          corrupt.add(resolvedReference);
         }
       }
     }
@@ -1245,7 +1245,17 @@ class FileAudioProjectStore implements AudioProjectStore {
       RegExp(r'^[A-Za-z]:[\\/]').hasMatch(path);
 
   bool _isSafePortableAssetFolderName(String value) =>
-      RegExp(r'^AuraProject_[A-Za-z0-9_-]+\\.assets-[0-9]+
+      RegExp(r'^AuraProject_[A-Za-z0-9_-]+\.assets-[0-9]+$')
+          .hasMatch(value);
+
+  bool _isSafePortableAssetFileName(String value) =>
+      RegExp(r'^[a-f0-9]{8}_[A-Za-z0-9._-]+$').hasMatch(value);
+
+  bool _isSafeProjectManifestName(String value) =>
+      RegExp(r'^AuraProject_[A-Za-z0-9_-]+\.aura\.json$')
+          .hasMatch(value);
+
+  Future<void> _removeSupersededAssetFolders(
     String root,
     String prefix,
     String keepName,
