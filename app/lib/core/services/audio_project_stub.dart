@@ -18,6 +18,20 @@ class UnavailableAudioProjectStore implements AudioProjectStore {
   }
 
   @override
+  Future<String> savePortable(AudioSession session) async {
+    throw const AudioProjectStoreUnavailable(
+      'Portable local project storage is not available on this platform.',
+    );
+  }
+
+  @override
+  Future<bool> mediaExists(String path) async {
+    throw const AudioProjectStoreUnavailable(
+      'Local media checks are not available on this platform.',
+    );
+  }
+
+  @override
   Future<AudioSession> load(String path) async {
     throw const AudioProjectStoreUnavailable(
       'Local project storage is not available on this platform.',
