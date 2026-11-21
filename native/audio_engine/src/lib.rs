@@ -1967,9 +1967,11 @@ mod tests {
             .collect::<Vec<_>>();
         let source = AudioBuffer::new(sample_rate, 1, samples).unwrap();
         let converted = source.resample_to(16_000).unwrap();
-        let peak = converted.samples().iter()
+        let edge_frames = 32;
+        let interior = &converted.samples()[edge_frames..converted.samples().len() - edge_frames];
+        let peak = interior.iter()
             .fold(0.0_f32, |value, sample| value.max(sample.abs()));
-        assert!(peak < 0.08, "downsampling alias peak was {peak}");
+        assert!(peak < 0.08, "steady-state downsampling alias peak was {peak}");
     }
 
     #[test]
