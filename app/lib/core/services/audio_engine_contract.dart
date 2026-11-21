@@ -70,6 +70,17 @@ abstract interface class AudioCaptureSession {
   Future<void> stop();
 }
 
+/// Handle for a direct microphone-to-output monitor stream.
+abstract interface class AudioMonitorSession {
+  int get inputSampleRate;
+  int get outputSampleRate;
+  int get underrunFrames;
+  bool get hasError;
+
+  Future<void> setGain(double gain);
+  Future<void> stop();
+}
+
 /// Handle for an operating-system audio playback stream.
 abstract interface class AudioPlaybackSession {
   int get sampleRate;
@@ -130,6 +141,15 @@ abstract interface class AudioEngineService {
 
   /// Returns the current OS output devices and their supported rate range.
   Future<List<AudioOutputDevice>> listOutputDevices();
+
+  /// Opens input and output streams and bridges their clocks using a
+  /// preallocated ring buffer. Use headphones to avoid acoustic feedback.
+  Future<AudioMonitorSession> startMonitor({
+    String? inputDeviceId,
+    String? outputDeviceId,
+    int bufferMilliseconds = 30,
+    double gain = 1.0,
+  });
 
   /// Starts a capture stream. A null deviceId selects the OS default input.
   Future<AudioCaptureSession> startCapture({
