@@ -137,13 +137,13 @@ See [docs/PRO_VOICE_STUDIO_ARCHITECTURE.md](docs/PRO_VOICE_STUDIO_ARCHITECTURE.m
 
 - [x] Flutter/FastAPI foundation, health/capabilities and safe provider contract.
 - [x] Voice-studio dashboard, versioned sample-frame session model and serialization tests.
-- [x] Initial offline PCM WAV renderer with multitrack mixing, gain/pan, mute/solo, fades and WAV export (native CI verification pending).
+- [x] Initial offline PCM WAV renderer with multitrack mixing, gain/pan, mute/solo, fades and WAV export (native CI passes on the current Rust engine).
 - [ ] Verify the new desktop native-library packaging and Flutter-to-Rust render call through CI.
 - [x] Flutter media-file access, waveform editor, multitrack project workflow and non-destructive DAW editing controls (source implemented; end-to-end CI verification pending).
 - [x] Native microphone device discovery/capture, real-time-safe ring, Flutter input meters and streamed local 24-bit PCM WAV recording (end-to-end CI verification pending).
 - [x] Record Booth UI, capture-to-WAV writing, continuous ring draining, playback and selectable output-device/direct microphone monitoring (hardware latency verification pending).
 - [x] Callback-driven native realtime multitrack mixer, event-based block scheduler, live graph updates and per-track high-pass/compressor (physical-device and dense-session performance validation pending).
-- [x] Worker-side sample-rate conversion for realtime multitrack playback, output-device selection and direct microphone monitoring.
+- [x] Worker-side sample-rate conversion for realtime multitrack playback and standalone WAV preview, output-device selection, and direct microphone monitoring with requested/observed device buffer sizes and CPAL host-timestamp latency estimates.
 - [ ] Real-device CPU/callback/round-trip latency benchmark on Windows, macOS and Linux; advanced DSP/effects graph, restoration, buses/sends and mastering.
 - [ ] Production multilingual TTS and optional local inference.
 - [ ] Secure, consent-based voice profile management.
