@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:file_picker/file_picker.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../../core/services/api_client.dart';
@@ -1763,6 +1764,7 @@ class _LibraryPageState extends State<LibraryPage> {
   String? _waveformLoadingPath;
   String? _message;
   bool _loading = true;
+  bool _importingProject = false;
   bool _pollingPlayback = false;
   String _sortBy = 'recent';
 
@@ -2125,6 +2127,53 @@ class _LibraryPageState extends State<LibraryPage> {
     }
   }
 
+  Future<void> _importProjectArchive() async {
+    if (_importingProject) return;
+    final selection = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: const ['zip'],
+      allowMultiple: false,
+    );
+    final zipPath = selection?.files.single.path;
+    if (zipPath == null || zipPath.trim().isEmpty || !mounted) return;
+
+    setState(() {
+      _importingProject = true;
+      _message = 'Importing and verifying portable project…';
+    });
+    try {
+      final manifestPath = await _projects.importPortableArchive(zipPath);
+      final session = await _projects.load(manifestPath);
+      if (!mounted) return;
+      if (session.channels < 1 || session.channels > 2) {
+        setState(() {
+          _message =
+              'Project imported and verified, but its ${session.channels}-channel format is not supported by the current native renderer.';
+        });
+        await _refresh();
+        return;
+      }
+      setState(() => _message = 'Project imported and SHA-256 verified.');
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => AudioEditorPage(
+            initialSession: session,
+            initialProjectPath: manifestPath,
+          ),
+        ),
+      );
+      if (mounted) await _refresh();
+    } catch (error) {
+      if (mounted) {
+        setState(() => _message = 'ZIP import failed: $error');
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _importingProject = false);
+      }
+    }
+  }
+
   Future<void> _openSavedProjects() async {
     try {
       final projects = await _projects.listProjects();
@@ -2351,6 +2400,21 @@ class _LibraryPageState extends State<LibraryPage> {
                           ),
                         ],
                       ),
+                    ),
+                    IconButton(
+                      tooltip: _importingProject
+                          ? 'Importing portable project'
+                          : 'Import portable ZIP project',
+                      onPressed: _loading || _importingProject
+                          ? null
+                          : _importProjectArchive,
+                      icon: _importingProject
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.archive_outlined),
                     ),
                     IconButton(
                       tooltip: 'Open saved sessions',
