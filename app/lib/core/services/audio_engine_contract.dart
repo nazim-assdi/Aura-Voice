@@ -171,12 +171,13 @@ abstract interface class AudioEngineService {
     int bufferMilliseconds = 1000,
   });
 
-  /// Plays a PCM or IEEE-float WAV through the default OS output device.
+  /// Plays a PCM or IEEE-float WAV through a selected OS output device.
   ///
-  /// The output device must support the WAV's sample rate. The native engine
-  /// reports a clear error instead of playing at the wrong speed.
+  /// The native engine converts the source WAV to the negotiated output rate
+  /// before opening the stream; transport positions remain source-clock based.
   Future<AudioPlaybackSession> startPlayback({
     required Uint8List wavBytes,
+    String? outputDeviceId,
   });
 }
 
