@@ -599,7 +599,9 @@ class _StudioPageState extends State<StudioPage> {
     try {
       await monitor.setGain(value);
     } catch (error) {
-      if (mounted) setState(() => _message = error.toString());
+      if (mounted) {
+        setState(() => _message = error.toString());
+      }
     }
   }
 
@@ -854,7 +856,9 @@ class _StudioPageState extends State<StudioPage> {
   }
 
   String get _elapsed {
-    if (_sampleRate <= 0) return '00:00';
+    if (_sampleRate <= 0) {
+      return '00:00';
+    }
     final totalSeconds = _capturedFrames ~/ _sampleRate;
     final minutes = (totalSeconds ~/ 60).toString().padLeft(2, '0');
     final seconds = (totalSeconds % 60).toString().padLeft(2, '0');
@@ -1627,7 +1631,9 @@ class _LibraryPageState extends State<LibraryPage> {
   }
 
   Future<void> _showWaveform(AudioLibraryRecording recording) async {
-    if (_waveformLoadingPath != null) return;
+    if (_waveformLoadingPath != null) {
+      return;
+    }
     setState(() {
       _waveformLoadingPath = recording.path;
       _message = null;
