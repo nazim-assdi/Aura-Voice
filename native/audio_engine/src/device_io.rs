@@ -641,6 +641,8 @@ pub unsafe extern "C" fn aura_audio_capture_start(
             supported.sample_format(),
             Arc::clone(&ring),
             input_channels,
+            None,
+            None,
         )?;
         stream
             .play()
@@ -836,6 +838,8 @@ fn build_monitor_output_stream(
     gain: Arc<AtomicU32>,
     underrun_frames: Arc<AtomicU64>,
     output_error: Arc<AtomicU32>,
+    clock: Arc<MonitorClock>,
+    diagnostics: Arc<MonitorDiagnostics>,
 ) -> Result<Stream, AudioError> {
     let error_state = Arc::clone(&output_error);
     let on_error = move |_error: cpal::Error| {
@@ -850,16 +854,37 @@ fn build_monitor_output_stream(
             let callback_gain = Arc::clone(&gain);
             let callback_underruns = Arc::clone(&underrun_frames);
             let callback_error = Arc::clone(&output_error);
+            let callback_clock = Arc::clone(&clock);
+            let callback_diagnostics = Arc::clone(&diagnostics);
             let mut phase = 0.0_f64;
             device
                 .build_output_stream::<$sample, _, _>(
                     config,
-                    move |data: &mut [$sample], _| {
+                    move |data: &mut [$sample], info| {
                         if output_channels == 0 {
                             callback_error.store(1, Ordering::Release);
                             return;
                         }
                         let frames = data.len() / output_channels;
+                        callback_diagnostics.output_callback_frames.store(
+                            frames as u32,
+                            Ordering::Relaxed,
+                        );
+                        let timestamp = info.timestamp();
+                        let output_callback_to_playback_ns = timestamp
+                            .playback
+                            .checked_duration_since(timestamp.callback)
+                            .map(|duration| duration.as_nanos().min(u64::MAX as u128) as u64)
+                            .unwrap_or(0);
+                        callback_diagnostics.output_callback_to_playback_ns.store(
+                            output_callback_to_playback_ns,
+                            Ordering::Relaxed,
+                        );
+                        let output_callback_ns = callback_clock
+                            .origin
+                            .elapsed()
+                            .as_nanos()
+                            .min(u64::MAX as u128) as u64;
                         let monitor_gain =
                             f32::from_bits(callback_gain.load(Ordering::Acquire));
                         let target_queued_frames =
@@ -875,8 +900,29 @@ fn build_monitor_output_stream(
                                 &mut phase,
                                 adjusted_source_step,
                             ) {
-                                Some((left, right)) =>
-                                    (left * monitor_gain, right * monitor_gain),
+                                Some((left, right, timing)) => {
+                                    let handoff_ns =
+                                        output_callback_ns.saturating_sub(timing.input_callback_ns);
+                                    let frame_offset_ns = (frame as u128
+                                        * 1_000_000_000_u128
+                                        / u128::from(output_sample_rate.max(1)))
+                                        .min(u64::MAX as u128) as u64;
+                                    let estimate = timing
+                                        .input_capture_to_callback_ns
+                                        .saturating_add(handoff_ns)
+                                        .saturating_add(output_callback_to_playback_ns)
+                                        .saturating_add(frame_offset_ns);
+                                    callback_diagnostics
+                                        .estimated_capture_to_playback_ns
+                                        .store(estimate, Ordering::Relaxed);
+                                    callback_diagnostics
+                                        .maximum_estimated_latency_ns
+                                        .fetch_max(estimate, Ordering::Relaxed);
+                                    callback_diagnostics
+                                        .latency_estimate_count
+                                        .fetch_add(1, Ordering::Relaxed);
+                                    (left * monitor_gain, right * monitor_gain)
+                                },
                                 None => {
                                     missed += 1;
                                     (0.0, 0.0)
@@ -1008,13 +1054,23 @@ pub unsafe extern "C" fn aura_audio_monitor_start(
             .map(|value| value / 1000)
             .ok_or(AudioError::SizeOverflow)?;
         let ring = Arc::new(FloatRing::new(requested_samples, ring_channels)?);
-        let capture_config: cpal::StreamConfig = input_config.clone().into();
+        let monitor_clock = Arc::new(MonitorClock { origin: Instant::now() });
+        let diagnostics = Arc::new(MonitorDiagnostics::new());
+        let requested_device_frames =
+            ((input_sample_rate as u64 * buffer_ms as u64) / 1000)
+                .clamp(1, u64::from(u32::MAX)) as u32;
+        let mut capture_config = requested_stream_config(
+            &input_config,
+            requested_device_frames,
+        );
         let input_stream = build_capture_stream(
             &input_device,
             &capture_config,
             input_config.sample_format(),
             Arc::clone(&ring),
             input_channels,
+            Some(Arc::clone(&monitor_clock)),
+            Some(Arc::clone(&diagnostics)),
         )?;
 
         let target = select_output_target(
@@ -1025,7 +1081,13 @@ pub unsafe extern "C" fn aura_audio_monitor_start(
         let output_sample_rate = target.sample_rate();
         let output_channels = usize::from(target.supported.channels());
         let output_format = target.supported.sample_format();
-        let output_config = target.supported.config();
+        let output_requested_frames =
+            ((output_sample_rate as u64 * buffer_ms as u64) / 1000)
+                .clamp(1, u64::from(u32::MAX)) as u32;
+        let output_config = requested_stream_config(
+            &target.supported,
+            output_requested_frames,
+        );
         let gain = Arc::new(AtomicU32::new(initial_gain.to_bits()));
         let underrun_frames = Arc::new(AtomicU64::new(0));
         let output_error = Arc::new(AtomicU32::new(0));
@@ -1040,7 +1102,18 @@ pub unsafe extern "C" fn aura_audio_monitor_start(
             Arc::clone(&gain),
             Arc::clone(&underrun_frames),
             Arc::clone(&output_error),
+            Arc::clone(&monitor_clock),
+            Arc::clone(&diagnostics),
         )?;
+
+        diagnostics.input_device_buffer_frames.store(
+            input_stream.buffer_size().unwrap_or(0),
+            Ordering::Relaxed,
+        );
+        diagnostics.output_device_buffer_frames.store(
+            output_stream.buffer_size().unwrap_or(0),
+            Ordering::Relaxed,
+        );
 
         input_stream.play().map_err(|error| {
             AudioError::InvalidArgument(format!(
@@ -1062,6 +1135,8 @@ pub unsafe extern "C" fn aura_audio_monitor_start(
             output_error,
             input_sample_rate,
             output_sample_rate,
+            requested_buffer_milliseconds: buffer_ms as u32,
+            diagnostics,
         })))
     }));
 
