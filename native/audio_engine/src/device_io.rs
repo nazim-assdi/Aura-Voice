@@ -106,6 +106,60 @@ impl FloatRing {
         }
     }
 
+
+    /// Reads one interpolated source frame at the output clock rate. The SPSC
+    /// consumer owns the read cursor; no locks or allocations occur here.
+    fn read_resampled_frame(
+        &self,
+        phase: &mut f64,
+        source_frames_per_output: f64,
+    ) -> Option<(f32, f32)> {
+        let read = self.read_index.load(Ordering::Relaxed);
+        let write = self.write_index.load(Ordering::Acquire);
+        let available_frames = write.wrapping_sub(read) / self.channels;
+        let source_index = phase.floor() as usize;
+        if available_frames <= source_index + 1 {
+            return None;
+        }
+
+        let fraction = (*phase - source_index as f64) as f32;
+        let sample_at = |frame: usize, channel: usize| -> f32 {
+            let source_channel = if self.channels == 1 { 0 } else { channel.min(1) };
+            let index = read
+                .wrapping_add(frame * self.channels)
+                .wrapping_add(source_channel);
+            // SAFETY: Acquire observed these producer-published frames. The
+            // SPSC read cursor is owned exclusively by this callback.
+            unsafe { *self.slots[index & self.mask].get() }
+        };
+        let left_a = sample_at(source_index, 0);
+        let left_b = sample_at(source_index + 1, 0);
+        let right_a = if self.channels == 1 {
+            left_a
+        } else {
+            sample_at(source_index, 1)
+        };
+        let right_b = if self.channels == 1 {
+            right_a
+        } else {
+            sample_at(source_index + 1, 1)
+        };
+        let left = left_a + (left_b - left_a) * fraction;
+        let right = right_a + (right_b - right_a) * fraction;
+
+        *phase += source_frames_per_output;
+        let requested_advance = phase.floor() as usize;
+        if requested_advance > 0 {
+            let advance = requested_advance.min(available_frames.saturating_sub(1));
+            self.read_index.store(
+                read.wrapping_add(advance * self.channels),
+                Ordering::Release,
+            );
+            *phase -= advance as f64;
+        }
+        Some((left, right))
+    }
+
     fn read_frames(&self, output: &mut [f32], max_frames: usize) -> usize {
         let requested_samples = max_frames.saturating_mul(self.channels);
         let writable_samples = requested_samples.min(output.len());
@@ -612,6 +666,340 @@ pub unsafe extern "C" fn aura_audio_capture_stop(handle: *mut AuraAudioCaptureHa
     }
 }
 
+
+/// Direct microphone-to-output monitor. Two independent device callbacks
+/// communicate through a preallocated SPSC ring; the output side converts the
+/// input clock to the negotiated output clock without blocking.
+pub struct AuraAudioMonitorHandle {
+    _input_stream: Stream,
+    _output_stream: Stream,
+    ring: Arc<FloatRing>,
+    gain: AtomicU32,
+    underrun_frames: AtomicU64,
+    output_error: AtomicU32,
+    input_sample_rate: u32,
+    output_sample_rate: u32,
+}
+
+fn build_monitor_output_stream(
+    device: &cpal::Device,
+    config: cpal::StreamConfig,
+    format: SampleFormat,
+    ring: Arc<FloatRing>,
+    input_sample_rate: u32,
+    output_sample_rate: u32,
+    output_channels: usize,
+    gain: Arc<AtomicU32>,
+    underrun_frames: Arc<AtomicU64>,
+    output_error: Arc<AtomicU32>,
+) -> Result<Stream, AudioError> {
+    let error_state = Arc::clone(&output_error);
+    let on_error = move |_error: cpal::Error| {
+        error_state.store(1, Ordering::Release);
+    };
+    let source_frames_per_output =
+        f64::from(input_sample_rate) / f64::from(output_sample_rate);
+
+    macro_rules! build_output {
+        ($sample:ty, $convert:expr) => {{
+            let callback_ring = Arc::clone(&ring);
+            let callback_gain = Arc::clone(&gain);
+            let callback_underruns = Arc::clone(&underrun_frames);
+            let callback_error = Arc::clone(&output_error);
+            let mut phase = 0.0_f64;
+            device
+                .build_output_stream::<$sample, _, _>(
+                    config,
+                    move |data: &mut [$sample], _| {
+                        if output_channels == 0 {
+                            callback_error.store(1, Ordering::Release);
+                            return;
+                        }
+                        let frames = data.len() / output_channels;
+                        let monitor_gain =
+                            f32::from_bits(callback_gain.load(Ordering::Acquire));
+                        let mut missed = 0_u64;
+                        for frame in 0..frames {
+                            let (left, right) = match callback_ring.read_resampled_frame(
+                                &mut phase,
+                                source_frames_per_output,
+                            ) {
+                                Some((left, right)) =>
+                                    (left * monitor_gain, right * monitor_gain),
+                                None => {
+                                    missed += 1;
+                                    (0.0, 0.0)
+                                }
+                            };
+                            let offset = frame * output_channels;
+                            data[offset] = ($convert)(left);
+                            if output_channels > 1 {
+                                data[offset + 1] = ($convert)(right);
+                                for channel in 2..output_channels {
+                                    data[offset + channel] = ($convert)(0.0);
+                                }
+                            }
+                        }
+                        for sample in data.iter_mut().skip(frames * output_channels) {
+                            *sample = ($convert)(0.0);
+                        }
+                        if missed > 0 {
+                            callback_underruns.fetch_add(missed, Ordering::Relaxed);
+                        }
+                    },
+                    on_error,
+                    None,
+                )
+                .map_err(|error| {
+                    AudioError::InvalidArgument(format!(
+                        "cannot open microphone monitor output: {error}"
+                    ))
+                })?
+        }};
+    }
+
+    let stream = match format {
+        SampleFormat::F32 => build_output!(f32, |sample: f32| sample),
+        SampleFormat::F64 => build_output!(f64, |sample: f32| sample as f64),
+        SampleFormat::I16 => build_output!(i16, |sample: f32| {
+            (sample.clamp(-1.0, 1.0) * 32767.0).round() as i16
+        }),
+        SampleFormat::U16 => build_output!(u16, |sample: f32| {
+            (sample.clamp(-1.0, 1.0) * 32767.5 + 32767.5).round() as u16
+        }),
+        SampleFormat::I32 => build_output!(i32, |sample: f32| {
+            (sample.clamp(-1.0, 1.0) * 2_147_483_647.0).round() as i32
+        }),
+        SampleFormat::U32 => build_output!(u32, |sample: f32| {
+            (sample.clamp(-1.0, 1.0) as f64 * 2_147_483_647.5 + 2_147_483_647.5)
+                .round() as u32
+        }),
+        SampleFormat::I8 => build_output!(i8, |sample: f32| {
+            (sample.clamp(-1.0, 1.0) * 127.0).round() as i8
+        }),
+        SampleFormat::U8 => build_output!(u8, |sample: f32| {
+            (sample.clamp(-1.0, 1.0) * 127.5 + 127.5).round() as u8
+        }),
+        unsupported => {
+            return Err(AudioError::InvalidArgument(format!(
+                "monitor output sample format {unsupported} is not supported yet"
+            )));
+        }
+    };
+    Ok(stream)
+}
+
+/// Starts direct low-latency microphone monitoring. Null device ids select the
+/// OS defaults. The ring target is 30 ms and is bounded between 20 and 250 ms.
+#[no_mangle]
+pub unsafe extern "C" fn aura_audio_monitor_start(
+    input_device_id: *const c_char,
+    output_device_id: *const c_char,
+    buffer_milliseconds: u32,
+    initial_gain: f32,
+) -> *mut AuraAudioMonitorHandle {
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        if !initial_gain.is_finite() || !(0.0..=2.0).contains(&initial_gain) {
+            return Err(AudioError::InvalidArgument(
+                "monitor gain must be between 0.0 and 2.0".into(),
+            ));
+        }
+        let requested_input = if input_device_id.is_null() {
+            None
+        } else {
+            let raw = unsafe { CStr::from_ptr(input_device_id) };
+            let value = raw.to_str().map_err(|_| {
+                AudioError::InvalidArgument("input device id must be valid UTF-8".into())
+            })?;
+            if value.trim().is_empty() { None } else { Some(value.to_owned()) }
+        };
+        let requested_output = if output_device_id.is_null() {
+            None
+        } else {
+            let raw = unsafe { CStr::from_ptr(output_device_id) };
+            let value = raw.to_str().map_err(|_| {
+                AudioError::InvalidArgument("output device id must be valid UTF-8".into())
+            })?;
+            if value.trim().is_empty() { None } else { Some(value.to_owned()) }
+        };
+
+        let input_device = if let Some(value) = requested_input {
+            let id = DeviceId::from_str(&value).map_err(|error| {
+                AudioError::InvalidArgument(format!("invalid input device id: {error}"))
+            })?;
+            let host = cpal::host_from_id(id.host()).map_err(|error| {
+                AudioError::InvalidArgument(format!("input audio host unavailable: {error}"))
+            })?;
+            host.device_by_id(&id).ok_or_else(|| {
+                AudioError::InvalidArgument("selected microphone is no longer available".into())
+            })?
+        } else {
+            cpal::default_host().default_input_device().ok_or_else(|| {
+                AudioError::InvalidArgument("no default microphone is available".into())
+            })?
+        };
+
+        let input_config = input_device.default_input_config().map_err(|error| {
+            AudioError::InvalidArgument(format!("cannot read microphone format: {error}"))
+        })?;
+        let input_channels = usize::from(input_config.channels());
+        if input_channels == 0 {
+            return Err(AudioError::InvalidArgument(
+                "microphone reports zero channels".into(),
+            ));
+        }
+        let ring_channels = input_channels.min(2);
+        let input_sample_rate = input_config.sample_rate();
+        let buffer_ms = buffer_milliseconds.clamp(20, 250) as usize;
+        let requested_samples = (input_sample_rate as usize)
+            .checked_mul(ring_channels)
+            .and_then(|value| value.checked_mul(buffer_ms))
+            .map(|value| value / 1000)
+            .ok_or(AudioError::SizeOverflow)?;
+        let ring = Arc::new(FloatRing::new(requested_samples, ring_channels)?);
+        let capture_config: cpal::StreamConfig = input_config.clone().into();
+        let input_stream = build_capture_stream(
+            &input_device,
+            &capture_config,
+            input_config.sample_format(),
+            Arc::clone(&ring),
+            input_channels,
+        )?;
+
+        let target = select_output_target(
+            requested_output.as_deref(),
+            input_sample_rate,
+            1,
+        )?;
+        let output_sample_rate = target.sample_rate();
+        let output_channels = usize::from(target.supported.channels());
+        let output_format = target.supported.sample_format();
+        let output_config = target.supported.config();
+        let gain = Arc::new(AtomicU32::new(initial_gain.to_bits()));
+        let underrun_frames = Arc::new(AtomicU64::new(0));
+        let output_error = Arc::new(AtomicU32::new(0));
+        let output_stream = build_monitor_output_stream(
+            &target.device,
+            output_config,
+            output_format,
+            Arc::clone(&ring),
+            input_sample_rate,
+            output_sample_rate,
+            output_channels,
+            Arc::clone(&gain),
+            Arc::clone(&underrun_frames),
+            Arc::clone(&output_error),
+        )?;
+
+        input_stream.play().map_err(|error| {
+            AudioError::InvalidArgument(format!(
+                "cannot start microphone monitor input: {error}"
+            ))
+        })?;
+        output_stream.play().map_err(|error| {
+            AudioError::InvalidArgument(format!(
+                "cannot start microphone monitor output: {error}"
+            ))
+        })?;
+
+        Ok::<_, AudioError>(Box::into_raw(Box::new(AuraAudioMonitorHandle {
+            _input_stream: input_stream,
+            _output_stream: output_stream,
+            ring,
+            gain,
+            underrun_frames,
+            output_error,
+            input_sample_rate,
+            output_sample_rate,
+        })))
+    }));
+
+    match result {
+        Ok(Ok(handle)) => {
+            set_ffi_error("");
+            handle
+        }
+        Ok(Err(error)) => {
+            set_ffi_error(&error.to_string());
+            ptr::null_mut()
+        }
+        Err(_) => {
+            set_ffi_error("microphone monitoring failed unexpectedly");
+            ptr::null_mut()
+        }
+    }
+}
+
+/// Returns the number of output frames where no input interpolation pair was
+/// available. This detects ring starvation but is not a hardware latency test.
+#[no_mangle]
+pub unsafe extern "C" fn aura_audio_monitor_underrun_frames(
+    handle: *const AuraAudioMonitorHandle,
+) -> u64 {
+    if handle.is_null() { return 0; }
+    unsafe { &*handle }.underrun_frames.load(Ordering::Relaxed)
+}
+
+/// Returns 0 while the input and output callbacks are healthy, 1 on error.
+#[no_mangle]
+pub unsafe extern "C" fn aura_audio_monitor_status(
+    handle: *const AuraAudioMonitorHandle,
+) -> u32 {
+    if handle.is_null() { return 1; }
+    let monitor = unsafe { &*handle };
+    if monitor.ring.callback_error.load(Ordering::Acquire) != 0
+        || monitor.output_error.load(Ordering::Acquire) != 0
+    {
+        1
+    } else {
+        0
+    }
+}
+
+/// Returns the active input rate in Hz.
+#[no_mangle]
+pub unsafe extern "C" fn aura_audio_monitor_input_sample_rate(
+    handle: *const AuraAudioMonitorHandle,
+) -> u32 {
+    if handle.is_null() { return 0; }
+    unsafe { &*handle }.input_sample_rate
+}
+
+/// Returns the active output rate in Hz.
+#[no_mangle]
+pub unsafe extern "C" fn aura_audio_monitor_output_sample_rate(
+    handle: *const AuraAudioMonitorHandle,
+) -> u32 {
+    if handle.is_null() { return 0; }
+    unsafe { &*handle }.output_sample_rate
+}
+
+/// Changes monitor gain atomically without restarting either device stream.
+#[no_mangle]
+pub unsafe extern "C" fn aura_audio_monitor_set_gain(
+    handle: *const AuraAudioMonitorHandle,
+    gain: f32,
+) -> i32 {
+    if handle.is_null() || !gain.is_finite() || !(0.0..=2.0).contains(&gain) {
+        set_ffi_error("monitor gain must be between 0.0 and 2.0");
+        return -1;
+    }
+    unsafe { &*handle }.gain.store(gain.to_bits(), Ordering::Release);
+    set_ffi_error("");
+    0
+}
+
+/// Stops both CPAL streams and releases the monitor ring.
+#[no_mangle]
+pub unsafe extern "C" fn aura_audio_monitor_stop(
+    handle: *mut AuraAudioMonitorHandle,
+) {
+    if !handle.is_null() {
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| unsafe {
+            drop(Box::from_raw(handle));
+        }));
+    }
+}
 
 /// Opaque OS output stream for standalone WAV or realtime session playback.
 pub struct AuraAudioPlaybackHandle {
@@ -1492,6 +1880,19 @@ mod tests {
             Some(73)
         );
         assert_eq!(position.load(Ordering::Acquire), 74);
+    }
+
+    #[test]
+    fn monitor_resampler_interpolates_input_clock_without_channel_skew() {
+        let ring = FloatRing::new(16, 1).unwrap();
+        ring.push_interleaved(&[0.0, 1.0, 0.0, -1.0], 1);
+        let mut phase = 0.0;
+        let first = ring.read_resampled_frame(&mut phase, 0.5).unwrap();
+        let second = ring.read_resampled_frame(&mut phase, 0.5).unwrap();
+        assert!((first.0 - 0.0).abs() < 0.000001);
+        assert!((first.1 - 0.0).abs() < 0.000001);
+        assert!((second.0 - 0.5).abs() < 0.000001);
+        assert!((second.1 - 0.5).abs() < 0.000001);
     }
 
     #[test]
