@@ -1927,11 +1927,11 @@ pub unsafe extern "C" fn aura_audio_playback_start_wav(
         let loop_start_frames = Arc::new(AtomicUsize::new(0));
         let loop_end_frames = Arc::new(AtomicUsize::new(0));
         let stream_error = Arc::new(AtomicU32::new(0));
-        let stream = build_playback_stream(
+        let stream = match build_playback_stream(
             &target.device,
             config,
             format,
-            samples,
+            Arc::clone(&samples),
             source_channels,
             output_channels,
             Arc::clone(&position_frames),
@@ -1940,7 +1940,28 @@ pub unsafe extern "C" fn aura_audio_playback_start_wav(
             Arc::clone(&loop_start_frames),
             Arc::clone(&loop_end_frames),
             Arc::clone(&stream_error),
-        )?;
+        ) {
+            Ok(stream) => stream,
+            Err(request_error) if config.buffer_size != BufferSize::Default => {
+                build_playback_stream(
+                    &target.device,
+                    target.supported.config(),
+                    format,
+                    Arc::clone(&samples),
+                    source_channels,
+                    output_channels,
+                    Arc::clone(&position_frames),
+                    Arc::clone(&paused),
+                    Arc::clone(&loop_enabled),
+                    Arc::clone(&loop_start_frames),
+                    Arc::clone(&loop_end_frames),
+                    Arc::clone(&stream_error),
+                ).map_err(|fallback_error| AudioError::InvalidArgument(format!(
+                    "requested low-latency WAV preview buffer was rejected ({request_error}); the OS-default buffer also failed ({fallback_error})"
+                )))?
+            }
+            Err(error) => return Err(error),
+        };
         stream
             .play()
             .map_err(|error| AudioError::InvalidArgument(format!(
