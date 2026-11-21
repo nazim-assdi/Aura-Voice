@@ -954,6 +954,1336 @@ class FileAudioProjectStore implements AudioProjectStore {
   }
 
   @override
+  Future<String> createProjectVersion(
+    String projectPath, {
+    String? label,
+  }) async {
+    await _assertManagedPath(projectPath);
+    final currentFile = File(projectPath);
+    final decoded = jsonDecode(await currentFile.readAsString());
+    if (decoded is! Map<String, dynamic>) {
+      throw const FormatException('Invalid Aura Voice project manifest.');
+    }
+    final session = AudioSession.fromJson(decoded);
+    final integrity = await verifyPortableProject(projectPath);
+    if (!integrity.isValid) {
+      throw AudioProjectStoreUnavailable(
+        'Cannot create a version while media is missing or corrupt. Missing: ${integrity.missingMediaPaths.length}; corrupt: ${integrity.corruptMediaPaths.length}.',
+      );
+    }
+
+    final root = await Directory(_directoryPath).resolveSymbolicLinks();
+    final versionsRoot = Directory(
+      '$root${Platform.pathSeparator}Versions',
+    );
+    await versionsRoot.create(recursive: true);
+    final versionsDirectory = Directory(
+      '${versionsRoot.path}${Platform.pathSeparator}${_safeId(session.id)}',
+    );
+    await versionsDirectory.create(recursive: true);
+    final resolvedVersionsRoot = await versionsRoot.resolveSymbolicLinks();
+    final resolvedVersionsDirectory =
+        await versionsDirectory.resolveSymbolicLinks();
+    if (!_isPathWithin(resolvedVersionsDirectory, resolvedVersionsRoot) ||
+        !_isPathWithin(resolvedVersionsRoot, root)) {
+      throw const AudioProjectStoreUnavailable(
+        'The project version folder must remain inside the Projects directory.',
+      );
+    }
+
+    final createdAt = DateTime.now().toUtc();
+    final versionPath = File(
+      '${resolvedVersionsDirectory}${Platform.pathSeparator}'
+      '${createdAt.microsecondsSinceEpoch}.json',
+    );
+    final temporary = File(
+      '${versionPath.path}.${DateTime.now().microsecondsSinceEpoch}.tmp',
+    );
+    final versionLabel = (label?.trim().isNotEmpty ?? false)
+        ? label!.trim().substring(
+            0,
+            label.trim().length > 100 ? 100 : label.trim().length,
+          )
+        : 'Saved version ${createdAt.toLocal()}';
+    await temporary.writeAsString(
+      jsonEncode({
+        'schemaVersion': 1,
+        'projectId': session.id,
+        'label': versionLabel,
+        'createdAt': createdAt.toIso8601String(),
+        'session': decoded,
+      }),
+      flush: true,
+    );
+    try {
+      await temporary.rename(versionPath.path);
+    } finally {
+      if (await temporary.exists()) await temporary.delete();
+    }
+    return versionPath.path;
+  }
+
+  @override
+  Future<List<AudioProjectVersionSummary>> listProjectVersions(
+    String projectPath,
+  ) async {
+    await _assertManagedPath(projectPath);
+    final decoded = jsonDecode(await File(projectPath).readAsString());
+    if (decoded is! Map<String, dynamic>) {
+      throw const FormatException('Invalid Aura Voice project manifest.');
+    }
+    final session = AudioSession.fromJson(decoded);
+    final root = await Directory(_directoryPath).resolveSymbolicLinks();
+    final versionsDirectory = Directory(
+      '$root${Platform.pathSeparator}Versions'
+      '${Platform.pathSeparator}${_safeId(session.id)}',
+    );
+    if (!await versionsDirectory.exists()) return const [];
+    final resolvedDirectory = await versionsDirectory.resolveSymbolicLinks();
+    final versionsRoot = await Directory(
+      '$root${Platform.pathSeparator}Versions',
+    ).resolveSymbolicLinks();
+    if (!_isPathWithin(resolvedDirectory, versionsRoot) ||
+        !_isPathWithin(versionsRoot, root)) {
+      throw const AudioProjectStoreUnavailable(
+        'The project version folder resolves outside the Projects directory.',
+      );
+    }
+
+    final summaries = <AudioProjectVersionSummary>[];
+    await for (final entity in versionsDirectory.list(followLinks: false)) {
+      if (entity is! File ||
+          !RegExp(r'^[0-9]+\.json
+    final directory = await _ensureRecoveryDirectory();
+    await _recoverRecoveryBackups(directory);
+    final filename =
+        'AuraRecovery_${_safeId(session.id)}.recovery.aura.json';
+    final file = File(
+      '${directory.path}${Platform.pathSeparator}$filename',
+    );
+    final temporary = File(
+      '${file.path}.${DateTime.now().microsecondsSinceEpoch}.tmp',
+    );
+    final backup = File('${file.path}.backup');
+    final manifest = jsonEncode(session.toJson());
+    final sink = await temporary.open(mode: FileMode.write);
+    try {
+      await sink.writeString(manifest);
+      await sink.flush();
+    } finally {
+      await sink.close();
+    }
+
+    var movedOldFile = false;
+    try {
+      if (await file.exists()) {
+        if (await backup.exists()) {
+          await backup.delete();
+        }
+        await file.rename(backup.path);
+        movedOldFile = true;
+      }
+      await temporary.rename(file.path);
+      if (movedOldFile && await backup.exists()) {
+        await backup.delete();
+      }
+      return file.path;
+    } catch (_) {
+      if (movedOldFile && !await file.exists() && await backup.exists()) {
+        await backup.rename(file.path);
+      }
+      rethrow;
+    } finally {
+      if (await temporary.exists()) {
+        await temporary.delete();
+      }
+    }
+  }
+
+  @override
+  Future<AudioSession> loadRecoverySnapshot(String path) async {
+    await _assertManagedRecoveryPath(path);
+    final source = await File(path).readAsString();
+    final json = jsonDecode(source);
+    if (json is! Map<String, dynamic>) {
+      throw const FormatException('Invalid Aura Voice recovery snapshot.');
+    }
+    return AudioSession.fromJson(json);
+  }
+
+  @override
+  Future<List<AudioProjectSummary>> listRecoverySnapshots() async {
+    final rootDirectory = Directory(_directoryPath);
+    if (!await rootDirectory.exists()) {
+      return const [];
+    }
+    final root = await rootDirectory.resolveSymbolicLinks();
+    final recoveryDirectory = Directory(
+      '$root${Platform.pathSeparator}Recovery',
+    );
+    if (!await recoveryDirectory.exists()) {
+      return const [];
+    }
+    final recoveryRoot = await recoveryDirectory.resolveSymbolicLinks();
+    if (!_isPathWithin(recoveryRoot, root)) {
+      throw const AudioProjectStoreUnavailable(
+        'The recovery folder must remain inside the Aura Voice Projects folder.',
+      );
+    }
+    await _recoverRecoveryBackups(Directory(recoveryRoot));
+
+    final summaries = <AudioProjectSummary>[];
+    await for (final entity
+        in Directory(recoveryRoot).list(followLinks: false)) {
+      if (entity is! File ||
+          !entity.path.toLowerCase().endsWith('.recovery.aura.json')) {
+        continue;
+      }
+      try {
+        final source = await entity.readAsString();
+        final json = jsonDecode(source);
+        if (json is! Map<String, dynamic>) {
+          continue;
+        }
+        final session = AudioSession.fromJson(json);
+        final stat = await entity.stat();
+        summaries.add(
+          AudioProjectSummary(
+            path: entity.path,
+            title: session.title,
+            modifiedAt: stat.modified,
+            sampleRate: session.sampleRate,
+            trackCount: session.tracks.length,
+          ),
+        );
+      } catch (_) {
+        // Ignore damaged snapshots; they must not block valid recovery points.
+      }
+    }
+    summaries.sort((a, b) => b.modifiedAt.compareTo(a.modifiedAt));
+    return summaries;
+  }
+
+  @override
+  Future<void> deleteRecoverySnapshot(String path) async {
+    await _assertManagedRecoveryPath(path);
+    await File(path).delete();
+    final backup = File('$path.backup');
+    if (await FileSystemEntity.type(backup.path, followLinks: false) ==
+        FileSystemEntityType.file) {
+      await backup.delete();
+    }
+  }
+
+  @override
+  Future<AudioSession> load(String path) async {
+    await _assertManagedPath(path);
+    final file = File(path);
+    if (!await file.exists()) {
+      throw const AudioProjectStoreUnavailable('The project file no longer exists.');
+    }
+    final source = await file.readAsString();
+    final json = jsonDecode(source);
+    if (json is! Map<String, dynamic>) {
+      throw const FormatException('Invalid Aura Voice project manifest.');
+    }
+    final session = AudioSession.fromJson(json);
+    return _resolveSessionMedia(session, file.parent.path);
+  }
+
+  @override
+  Future<List<AudioProjectSummary>> listProjects() async {
+    final directory = Directory(_directoryPath);
+    if (!await directory.exists()) return const [];
+    await _recoverBackups(directory);
+    final summaries = <AudioProjectSummary>[];
+    await for (final entity in directory.list(followLinks: false)) {
+      if (entity is! File ||
+          !entity.path.toLowerCase().endsWith('.aura.json')) {
+        continue;
+      }
+      try {
+        final source = await entity.readAsString();
+        final json = jsonDecode(source);
+        if (json is! Map<String, dynamic>) continue;
+        final session = AudioSession.fromJson(json);
+        final stat = await entity.stat();
+        summaries.add(
+          AudioProjectSummary(
+            path: entity.path,
+            title: session.title,
+            modifiedAt: stat.modified,
+            sampleRate: session.sampleRate,
+            trackCount: session.tracks.length,
+          ),
+        );
+      } catch (_) {
+        // Ignore invalid manifests or files changed while the list was read.
+      }
+    }
+    summaries.sort((a, b) => b.modifiedAt.compareTo(a.modifiedAt));
+    return summaries;
+  }
+
+  Future<void> _recoverBackups(Directory directory) async {
+    await for (final entity in directory.list(followLinks: false)) {
+      if (entity is! File ||
+          !entity.path.toLowerCase().endsWith('.aura.json.backup')) {
+        continue;
+      }
+      final backup = entity;
+      final targetPath = backup.path.substring(
+        0,
+        backup.path.length - '.backup'.length,
+      );
+      final target = File(targetPath);
+      try {
+        if (await target.exists()) {
+          await backup.delete();
+        } else {
+          await backup.rename(target.path);
+        }
+      } on FileSystemException {
+        // A recovery file may be locked or changed by another process.
+      }
+    }
+  }
+
+  @override
+  Future<List<AudioProjectSummary>> findProjectsUsingMedia(String mediaPath) async {
+    final summaries = await listProjects();
+    final matches = <AudioProjectSummary>[];
+    for (final summary in summaries) {
+      try {
+        final session = await load(summary.path);
+        final referencesMedia = session.tracks.any(
+          (track) => track.clips.any((clip) => clip.mediaId == mediaPath),
+        );
+        if (referencesMedia) matches.add(summary);
+      } catch (_) {
+        // Skip a project that became invalid or disappeared during the scan.
+      }
+    }
+    return matches;
+  }
+
+  @override
+  Future<void> delete(String path) async {
+    await _assertManagedPath(path);
+    final file = File(path);
+    if (await file.exists()) await file.delete();
+  }
+
+  Future<void> _recoverRecoveryBackups(Directory directory) async {
+    await for (final entity in directory.list(followLinks: false)) {
+      if (entity is! File ||
+          !entity.path.toLowerCase().endsWith('.recovery.aura.json.backup')) {
+        continue;
+      }
+      final backup = entity;
+      final targetPath = backup.path.substring(
+        0,
+        backup.path.length - '.backup'.length,
+      );
+      final target = File(targetPath);
+      try {
+        if (await target.exists()) {
+          await backup.delete();
+        } else {
+          await backup.rename(target.path);
+        }
+      } on FileSystemException {
+        // Keep a locked recovery backup for the next application launch.
+      }
+    }
+  }
+
+  Future<Directory> _ensureRecoveryDirectory() async {
+    final rootDirectory = Directory(_directoryPath);
+    await rootDirectory.create(recursive: true);
+    final root = await rootDirectory.resolveSymbolicLinks();
+    final recoveryDirectory = Directory(
+      '$root${Platform.pathSeparator}Recovery',
+    );
+    await recoveryDirectory.create(recursive: true);
+    final recoveryRoot = await recoveryDirectory.resolveSymbolicLinks();
+    if (!_isPathWithin(recoveryRoot, root)) {
+      throw const AudioProjectStoreUnavailable(
+        'The recovery folder must remain inside the Aura Voice Projects folder.',
+      );
+    }
+    return Directory(recoveryRoot);
+  }
+
+  Future<void> _assertManagedRecoveryPath(String path) async {
+    if (!path.toLowerCase().endsWith('.recovery.aura.json') ||
+        await FileSystemEntity.type(path, followLinks: false) !=
+            FileSystemEntityType.file) {
+      throw const AudioProjectStoreUnavailable(
+        'Only regular recovery snapshots inside the Recovery folder can be changed.',
+      );
+    }
+    await _assertManagedPath(path);
+    final root = await Directory(_directoryPath).resolveSymbolicLinks();
+    final recoveryDirectory = Directory(
+      '$root${Platform.pathSeparator}Recovery',
+    );
+    if (!await recoveryDirectory.exists()) {
+      throw const AudioProjectStoreUnavailable(
+        'The recovery snapshot folder no longer exists.',
+      );
+    }
+    final recoveryRoot = await recoveryDirectory.resolveSymbolicLinks();
+    if (!_isPathWithin(recoveryRoot, root)) {
+      throw const AudioProjectStoreUnavailable(
+        'The recovery folder must remain inside the Aura Voice Projects folder.',
+      );
+    }
+    final lexicalPath = File(path).absolute.path;
+    final resolvedPath = await File(path).resolveSymbolicLinks();
+    if (!_isPathWithin(lexicalPath, recoveryRoot) ||
+        !_isPathWithin(resolvedPath, recoveryRoot)) {
+      throw const AudioProjectStoreUnavailable(
+        'Only recovery snapshots inside the Recovery folder can be changed.',
+      );
+    }
+  }
+
+  Future<void> _deleteRecoverySnapshotForId(String id) async {
+    final rootDirectory = Directory(_directoryPath);
+    if (!await rootDirectory.exists()) {
+      return;
+    }
+    final root = await rootDirectory.resolveSymbolicLinks();
+    final recoveryDirectory = Directory(
+      '$root${Platform.pathSeparator}Recovery',
+    );
+    if (!await recoveryDirectory.exists()) {
+      return;
+    }
+    final recoveryRoot = await recoveryDirectory.resolveSymbolicLinks();
+    if (!_isPathWithin(recoveryRoot, root)) {
+      return;
+    }
+    final filename =
+        '$recoveryRoot${Platform.pathSeparator}AuraRecovery_${_safeId(id)}.recovery.aura.json';
+    for (final path in [filename, '$filename.backup']) {
+      if (await FileSystemEntity.type(path, followLinks: false) ==
+          FileSystemEntityType.file) {
+        await File(path).delete();
+      }
+    }
+  }
+
+  bool _isPathWithin(String candidate, String root) {
+    final normalizedRoot = Platform.isWindows ? root.toLowerCase() : root;
+    final normalizedCandidate =
+        Platform.isWindows ? candidate.toLowerCase() : candidate;
+    return normalizedCandidate.startsWith(
+      '$normalizedRoot${Platform.pathSeparator}',
+    );
+  }
+
+  Future<void> _assertManagedPath(String path) async {
+    final file = File(path);
+    if (!path.toLowerCase().endsWith('.aura.json') ||
+        !await file.exists()) {
+      throw const AudioProjectStoreUnavailable(
+        'Only existing Aura Voice project manifests can be changed.',
+      );
+    }
+    final root = await Directory(_directoryPath).resolveSymbolicLinks();
+    final candidate = await file.resolveSymbolicLinks();
+    final separator = Platform.pathSeparator;
+    final normalizedRoot = Platform.isWindows ? root.toLowerCase() : root;
+    final normalizedCandidate =
+        Platform.isWindows ? candidate.toLowerCase() : candidate;
+    if (!normalizedCandidate.startsWith('$normalizedRoot$separator')) {
+      throw const AudioProjectStoreUnavailable(
+        'Only Aura Voice project manifests inside the Projects folder can be changed.',
+      );
+    }
+  }
+
+  Future<AudioSession> _resolveSessionMedia(
+    AudioSession session,
+    String projectDirectory,
+  ) async {
+    final tracks = <AudioTrack>[];
+    for (final track in session.tracks) {
+      final clips = <AudioClip>[];
+      for (final clip in track.clips) {
+        final resolvedPath =
+            await _resolvePortableMediaPath(clip.mediaId, projectDirectory);
+        clips.add(
+          AudioClip(
+            id: clip.id,
+            mediaId: resolvedPath,
+            startFrame: clip.startFrame,
+            sourceStartFrame: clip.sourceStartFrame,
+            durationFrames: clip.durationFrames,
+            gain: clip.gain,
+            pan: clip.pan,
+            muted: clip.muted,
+            fadeInFrames: clip.fadeInFrames,
+            fadeOutFrames: clip.fadeOutFrames,
+          ),
+        );
+      }
+      tracks.add(
+        AudioTrack(
+          id: track.id,
+          name: track.name,
+          kind: track.kind,
+          gain: track.gain,
+          pan: track.pan,
+          muted: track.muted,
+          solo: track.solo,
+          armed: track.armed,
+          highPassHz: track.highPassHz,
+          compressorThreshold: track.compressorThreshold,
+          compressorRatio: track.compressorRatio,
+          clips: clips,
+        ),
+      );
+    }
+    return AudioSession(
+      id: session.id,
+      title: session.title,
+      sampleRate: session.sampleRate,
+      channels: session.channels,
+      bitDepth: session.bitDepth,
+      tracks: tracks,
+      markers: session.markers,
+    );
+  }
+
+  Future<String> _resolvePortableMediaPath(
+    String mediaPath,
+    String projectDirectory,
+  ) async {
+    if (_isAbsoluteMediaPath(mediaPath)) return mediaPath;
+    final segments = mediaPath.replaceAll('\\', '/').split('/');
+    if (segments.length != 2 ||
+        !_isSafePortableAssetFolderName(segments.first) ||
+        !_isSafePortableAssetFileName(segments.last)) {
+      throw const FormatException(
+        'The project contains an unsafe or unsupported relative media path.',
+      );
+    }
+    final root = await Directory(projectDirectory).resolveSymbolicLinks();
+    var candidate = root;
+    for (final segment in segments) {
+      candidate = '$candidate${Platform.pathSeparator}$segment';
+    }
+    candidate = File(candidate).absolute.path;
+    if (!_isPathWithin(candidate, root)) {
+      throw const FormatException(
+        'The project media path points outside its project folder.',
+      );
+    }
+    final parent = File(candidate).parent;
+    if (await parent.exists()) {
+      final resolvedParent = await parent.resolveSymbolicLinks();
+      if (resolvedParent != root && !_isPathWithin(resolvedParent, root)) {
+        throw const FormatException(
+          'A project asset folder resolves outside its project folder.',
+        );
+      }
+    }
+    final file = File(candidate);
+    if (await file.exists()) {
+      final resolvedFile = await file.resolveSymbolicLinks();
+      if (!_isPathWithin(resolvedFile, root)) {
+        throw const FormatException(
+          'A project media file resolves outside its project folder.',
+        );
+      }
+      return resolvedFile;
+    }
+    return candidate;
+  }
+
+  bool _isAbsoluteMediaPath(String path) =>
+      path.startsWith('/') ||
+      path.startsWith(r'\\') ||
+      RegExp(r'^[A-Za-z]:[\\/]').hasMatch(path);
+
+  bool _isSafePortableAssetFolderName(String value) =>
+      RegExp(r'^AuraProject_[A-Za-z0-9_-]+\.assets-[0-9]+$')
+          .hasMatch(value);
+
+  bool _isSafePortableAssetFileName(String value) =>
+      RegExp(r'^(?:[a-f0-9]{8}_[A-Za-z0-9._-]+|[a-f0-9]{64}\.wav)$')
+          .hasMatch(value);
+
+  bool _isSafeProjectManifestName(String value) =>
+      RegExp(r'^AuraProject_[A-Za-z0-9_-]+\.aura\.json$')
+          .hasMatch(value);
+
+  Future<void> _removeSupersededAssetFolders(
+    String root,
+    String prefix,
+    String keepName,
+  ) async {
+    await for (final entity in Directory(root).list(followLinks: false)) {
+      if (entity is! Directory) continue;
+      final name = entity.path.split(Platform.pathSeparator).last;
+      if (name.startsWith(prefix) && name != keepName) {
+        await entity.delete(recursive: true);
+      }
+    }
+  }
+
+  String _stableHash(String value) {
+    var hash = 0x811c9dc5;
+    for (final byte in utf8.encode(value)) {
+      hash = ((hash ^ byte) * 0x01000193) & 0xffffffff;
+    }
+    return hash.toRadixString(16).padLeft(8, '0');
+  }
+
+  String _safeId(String value) {
+    final normalized = value.replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '_');
+    if (normalized.isEmpty) {
+      throw const AudioProjectStoreUnavailable('Project id is invalid.');
+    }
+    return normalized.length > 80 ? normalized.substring(0, 80) : normalized;
+  }
+
+  static String _defaultDirectoryPath() {
+    final environment = Platform.environment;
+    final home = environment['USERPROFILE'] ??
+        environment['HOME'] ??
+        Directory.current.path;
+    return '$home${Platform.pathSeparator}Documents'
+        '${Platform.pathSeparator}Aura Voice Studio'
+        '${Platform.pathSeparator}Projects';
+  }
+}
+)
+              .hasMatch(entity.uri.pathSegments.last) ||
+          await FileSystemEntity.type(entity.path, followLinks: false) !=
+              FileSystemEntityType.file) {
+        continue;
+      }
+      try {
+        final metadata = jsonDecode(await entity.readAsString());
+        if (metadata is! Map<String, dynamic> ||
+            metadata['schemaVersion'] != 1 ||
+            metadata['projectId'] != session.id ||
+            metadata['session'] is! Map<String, dynamic> ||
+            metadata['createdAt'] is! String ||
+            metadata['label'] is! String) {
+          continue;
+        }
+        final versionSession = AudioSession.fromJson(
+          metadata['session'] as Map<String, dynamic>,
+        );
+        if (versionSession.id != session.id) continue;
+        final createdAt =
+            DateTime.tryParse(metadata['createdAt'] as String)?.toLocal();
+        if (createdAt == null) continue;
+        summaries.add(
+          AudioProjectVersionSummary(
+            path: entity.path,
+            label: metadata['label'] as String,
+            createdAt: createdAt,
+            trackCount: versionSession.tracks.length,
+            sampleRate: versionSession.sampleRate,
+          ),
+        );
+      } catch (_) {
+        // Ignore damaged version records without hiding valid history.
+      }
+    }
+    summaries.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    return summaries;
+  }
+
+  @override
+  Future<String> restoreProjectVersion(
+    String projectPath,
+    String versionPath,
+  ) async {
+    await _assertManagedPath(projectPath);
+    await _assertManagedVersionPath(projectPath, versionPath);
+    final wrapper = jsonDecode(await File(versionPath).readAsString());
+    if (wrapper is! Map<String, dynamic> ||
+        wrapper['schemaVersion'] != 1 ||
+        wrapper['session'] is! Map<String, dynamic>) {
+      throw const FormatException('Invalid Aura Voice project version.');
+    }
+    final currentJson = jsonDecode(await File(projectPath).readAsString());
+    if (currentJson is! Map<String, dynamic>) {
+      throw const FormatException('Invalid current Aura Voice project.');
+    }
+    final currentSession = AudioSession.fromJson(currentJson);
+    final versionSession = AudioSession.fromJson(
+      wrapper['session'] as Map<String, dynamic>,
+    );
+    if (wrapper['projectId'] != currentSession.id ||
+        versionSession.id != currentSession.id) {
+      throw const AudioProjectStoreUnavailable(
+        'This version does not belong to the selected project.',
+      );
+    }
+
+    final root = await Directory(_directoryPath).resolveSymbolicLinks();
+    final restoredSession = await _resolveSessionMedia(versionSession, root);
+    await _verifyVersionMedia(restoredSession);
+    // Keep the current state as a recovery point before changing the manifest.
+    try {
+      await createProjectVersion(projectPath, label: 'Before version restore');
+    } catch (_) {
+      // A damaged current project must not prevent restoring a valid version.
+    }
+    return savePortable(restoredSession);
+  }
+
+  @override
+  Future<void> deleteProjectVersion(
+    String projectPath,
+    String versionPath,
+  ) async {
+    await _assertManagedPath(projectPath);
+    await _assertManagedVersionPath(projectPath, versionPath);
+    await File(versionPath).delete();
+    // Media blobs are intentionally retained because another version may
+    // still reference them. Explicit compaction can safely collect orphans.
+  }
+
+  Future<void> _assertManagedVersionPath(
+    String projectPath,
+    String versionPath,
+  ) async {
+    final projectJson = jsonDecode(await File(projectPath).readAsString());
+    if (projectJson is! Map<String, dynamic>) {
+      throw const FormatException('Invalid Aura Voice project manifest.');
+    }
+    final session = AudioSession.fromJson(projectJson);
+    final root = await Directory(_directoryPath).resolveSymbolicLinks();
+    final versionsRoot = Directory(
+      '$root${Platform.pathSeparator}Versions',
+    );
+    final versionsDirectory = Directory(
+      '${versionsRoot.path}${Platform.pathSeparator}${_safeId(session.id)}',
+    );
+    final file = File(versionPath);
+    if (!RegExp(r'^[0-9]+\.json
+    final directory = await _ensureRecoveryDirectory();
+    await _recoverRecoveryBackups(directory);
+    final filename =
+        'AuraRecovery_${_safeId(session.id)}.recovery.aura.json';
+    final file = File(
+      '${directory.path}${Platform.pathSeparator}$filename',
+    );
+    final temporary = File(
+      '${file.path}.${DateTime.now().microsecondsSinceEpoch}.tmp',
+    );
+    final backup = File('${file.path}.backup');
+    final manifest = jsonEncode(session.toJson());
+    final sink = await temporary.open(mode: FileMode.write);
+    try {
+      await sink.writeString(manifest);
+      await sink.flush();
+    } finally {
+      await sink.close();
+    }
+
+    var movedOldFile = false;
+    try {
+      if (await file.exists()) {
+        if (await backup.exists()) {
+          await backup.delete();
+        }
+        await file.rename(backup.path);
+        movedOldFile = true;
+      }
+      await temporary.rename(file.path);
+      if (movedOldFile && await backup.exists()) {
+        await backup.delete();
+      }
+      return file.path;
+    } catch (_) {
+      if (movedOldFile && !await file.exists() && await backup.exists()) {
+        await backup.rename(file.path);
+      }
+      rethrow;
+    } finally {
+      if (await temporary.exists()) {
+        await temporary.delete();
+      }
+    }
+  }
+
+  @override
+  Future<AudioSession> loadRecoverySnapshot(String path) async {
+    await _assertManagedRecoveryPath(path);
+    final source = await File(path).readAsString();
+    final json = jsonDecode(source);
+    if (json is! Map<String, dynamic>) {
+      throw const FormatException('Invalid Aura Voice recovery snapshot.');
+    }
+    return AudioSession.fromJson(json);
+  }
+
+  @override
+  Future<List<AudioProjectSummary>> listRecoverySnapshots() async {
+    final rootDirectory = Directory(_directoryPath);
+    if (!await rootDirectory.exists()) {
+      return const [];
+    }
+    final root = await rootDirectory.resolveSymbolicLinks();
+    final recoveryDirectory = Directory(
+      '$root${Platform.pathSeparator}Recovery',
+    );
+    if (!await recoveryDirectory.exists()) {
+      return const [];
+    }
+    final recoveryRoot = await recoveryDirectory.resolveSymbolicLinks();
+    if (!_isPathWithin(recoveryRoot, root)) {
+      throw const AudioProjectStoreUnavailable(
+        'The recovery folder must remain inside the Aura Voice Projects folder.',
+      );
+    }
+    await _recoverRecoveryBackups(Directory(recoveryRoot));
+
+    final summaries = <AudioProjectSummary>[];
+    await for (final entity
+        in Directory(recoveryRoot).list(followLinks: false)) {
+      if (entity is! File ||
+          !entity.path.toLowerCase().endsWith('.recovery.aura.json')) {
+        continue;
+      }
+      try {
+        final source = await entity.readAsString();
+        final json = jsonDecode(source);
+        if (json is! Map<String, dynamic>) {
+          continue;
+        }
+        final session = AudioSession.fromJson(json);
+        final stat = await entity.stat();
+        summaries.add(
+          AudioProjectSummary(
+            path: entity.path,
+            title: session.title,
+            modifiedAt: stat.modified,
+            sampleRate: session.sampleRate,
+            trackCount: session.tracks.length,
+          ),
+        );
+      } catch (_) {
+        // Ignore damaged snapshots; they must not block valid recovery points.
+      }
+    }
+    summaries.sort((a, b) => b.modifiedAt.compareTo(a.modifiedAt));
+    return summaries;
+  }
+
+  @override
+  Future<void> deleteRecoverySnapshot(String path) async {
+    await _assertManagedRecoveryPath(path);
+    await File(path).delete();
+    final backup = File('$path.backup');
+    if (await FileSystemEntity.type(backup.path, followLinks: false) ==
+        FileSystemEntityType.file) {
+      await backup.delete();
+    }
+  }
+
+  @override
+  Future<AudioSession> load(String path) async {
+    await _assertManagedPath(path);
+    final file = File(path);
+    if (!await file.exists()) {
+      throw const AudioProjectStoreUnavailable('The project file no longer exists.');
+    }
+    final source = await file.readAsString();
+    final json = jsonDecode(source);
+    if (json is! Map<String, dynamic>) {
+      throw const FormatException('Invalid Aura Voice project manifest.');
+    }
+    final session = AudioSession.fromJson(json);
+    return _resolveSessionMedia(session, file.parent.path);
+  }
+
+  @override
+  Future<List<AudioProjectSummary>> listProjects() async {
+    final directory = Directory(_directoryPath);
+    if (!await directory.exists()) return const [];
+    await _recoverBackups(directory);
+    final summaries = <AudioProjectSummary>[];
+    await for (final entity in directory.list(followLinks: false)) {
+      if (entity is! File ||
+          !entity.path.toLowerCase().endsWith('.aura.json')) {
+        continue;
+      }
+      try {
+        final source = await entity.readAsString();
+        final json = jsonDecode(source);
+        if (json is! Map<String, dynamic>) continue;
+        final session = AudioSession.fromJson(json);
+        final stat = await entity.stat();
+        summaries.add(
+          AudioProjectSummary(
+            path: entity.path,
+            title: session.title,
+            modifiedAt: stat.modified,
+            sampleRate: session.sampleRate,
+            trackCount: session.tracks.length,
+          ),
+        );
+      } catch (_) {
+        // Ignore invalid manifests or files changed while the list was read.
+      }
+    }
+    summaries.sort((a, b) => b.modifiedAt.compareTo(a.modifiedAt));
+    return summaries;
+  }
+
+  Future<void> _recoverBackups(Directory directory) async {
+    await for (final entity in directory.list(followLinks: false)) {
+      if (entity is! File ||
+          !entity.path.toLowerCase().endsWith('.aura.json.backup')) {
+        continue;
+      }
+      final backup = entity;
+      final targetPath = backup.path.substring(
+        0,
+        backup.path.length - '.backup'.length,
+      );
+      final target = File(targetPath);
+      try {
+        if (await target.exists()) {
+          await backup.delete();
+        } else {
+          await backup.rename(target.path);
+        }
+      } on FileSystemException {
+        // A recovery file may be locked or changed by another process.
+      }
+    }
+  }
+
+  @override
+  Future<List<AudioProjectSummary>> findProjectsUsingMedia(String mediaPath) async {
+    final summaries = await listProjects();
+    final matches = <AudioProjectSummary>[];
+    for (final summary in summaries) {
+      try {
+        final session = await load(summary.path);
+        final referencesMedia = session.tracks.any(
+          (track) => track.clips.any((clip) => clip.mediaId == mediaPath),
+        );
+        if (referencesMedia) matches.add(summary);
+      } catch (_) {
+        // Skip a project that became invalid or disappeared during the scan.
+      }
+    }
+    return matches;
+  }
+
+  @override
+  Future<void> delete(String path) async {
+    await _assertManagedPath(path);
+    final file = File(path);
+    if (await file.exists()) await file.delete();
+  }
+
+  Future<void> _recoverRecoveryBackups(Directory directory) async {
+    await for (final entity in directory.list(followLinks: false)) {
+      if (entity is! File ||
+          !entity.path.toLowerCase().endsWith('.recovery.aura.json.backup')) {
+        continue;
+      }
+      final backup = entity;
+      final targetPath = backup.path.substring(
+        0,
+        backup.path.length - '.backup'.length,
+      );
+      final target = File(targetPath);
+      try {
+        if (await target.exists()) {
+          await backup.delete();
+        } else {
+          await backup.rename(target.path);
+        }
+      } on FileSystemException {
+        // Keep a locked recovery backup for the next application launch.
+      }
+    }
+  }
+
+  Future<Directory> _ensureRecoveryDirectory() async {
+    final rootDirectory = Directory(_directoryPath);
+    await rootDirectory.create(recursive: true);
+    final root = await rootDirectory.resolveSymbolicLinks();
+    final recoveryDirectory = Directory(
+      '$root${Platform.pathSeparator}Recovery',
+    );
+    await recoveryDirectory.create(recursive: true);
+    final recoveryRoot = await recoveryDirectory.resolveSymbolicLinks();
+    if (!_isPathWithin(recoveryRoot, root)) {
+      throw const AudioProjectStoreUnavailable(
+        'The recovery folder must remain inside the Aura Voice Projects folder.',
+      );
+    }
+    return Directory(recoveryRoot);
+  }
+
+  Future<void> _assertManagedRecoveryPath(String path) async {
+    if (!path.toLowerCase().endsWith('.recovery.aura.json') ||
+        await FileSystemEntity.type(path, followLinks: false) !=
+            FileSystemEntityType.file) {
+      throw const AudioProjectStoreUnavailable(
+        'Only regular recovery snapshots inside the Recovery folder can be changed.',
+      );
+    }
+    await _assertManagedPath(path);
+    final root = await Directory(_directoryPath).resolveSymbolicLinks();
+    final recoveryDirectory = Directory(
+      '$root${Platform.pathSeparator}Recovery',
+    );
+    if (!await recoveryDirectory.exists()) {
+      throw const AudioProjectStoreUnavailable(
+        'The recovery snapshot folder no longer exists.',
+      );
+    }
+    final recoveryRoot = await recoveryDirectory.resolveSymbolicLinks();
+    if (!_isPathWithin(recoveryRoot, root)) {
+      throw const AudioProjectStoreUnavailable(
+        'The recovery folder must remain inside the Aura Voice Projects folder.',
+      );
+    }
+    final lexicalPath = File(path).absolute.path;
+    final resolvedPath = await File(path).resolveSymbolicLinks();
+    if (!_isPathWithin(lexicalPath, recoveryRoot) ||
+        !_isPathWithin(resolvedPath, recoveryRoot)) {
+      throw const AudioProjectStoreUnavailable(
+        'Only recovery snapshots inside the Recovery folder can be changed.',
+      );
+    }
+  }
+
+  Future<void> _deleteRecoverySnapshotForId(String id) async {
+    final rootDirectory = Directory(_directoryPath);
+    if (!await rootDirectory.exists()) {
+      return;
+    }
+    final root = await rootDirectory.resolveSymbolicLinks();
+    final recoveryDirectory = Directory(
+      '$root${Platform.pathSeparator}Recovery',
+    );
+    if (!await recoveryDirectory.exists()) {
+      return;
+    }
+    final recoveryRoot = await recoveryDirectory.resolveSymbolicLinks();
+    if (!_isPathWithin(recoveryRoot, root)) {
+      return;
+    }
+    final filename =
+        '$recoveryRoot${Platform.pathSeparator}AuraRecovery_${_safeId(id)}.recovery.aura.json';
+    for (final path in [filename, '$filename.backup']) {
+      if (await FileSystemEntity.type(path, followLinks: false) ==
+          FileSystemEntityType.file) {
+        await File(path).delete();
+      }
+    }
+  }
+
+  bool _isPathWithin(String candidate, String root) {
+    final normalizedRoot = Platform.isWindows ? root.toLowerCase() : root;
+    final normalizedCandidate =
+        Platform.isWindows ? candidate.toLowerCase() : candidate;
+    return normalizedCandidate.startsWith(
+      '$normalizedRoot${Platform.pathSeparator}',
+    );
+  }
+
+  Future<void> _assertManagedPath(String path) async {
+    final file = File(path);
+    if (!path.toLowerCase().endsWith('.aura.json') ||
+        !await file.exists()) {
+      throw const AudioProjectStoreUnavailable(
+        'Only existing Aura Voice project manifests can be changed.',
+      );
+    }
+    final root = await Directory(_directoryPath).resolveSymbolicLinks();
+    final candidate = await file.resolveSymbolicLinks();
+    final separator = Platform.pathSeparator;
+    final normalizedRoot = Platform.isWindows ? root.toLowerCase() : root;
+    final normalizedCandidate =
+        Platform.isWindows ? candidate.toLowerCase() : candidate;
+    if (!normalizedCandidate.startsWith('$normalizedRoot$separator')) {
+      throw const AudioProjectStoreUnavailable(
+        'Only Aura Voice project manifests inside the Projects folder can be changed.',
+      );
+    }
+  }
+
+  Future<AudioSession> _resolveSessionMedia(
+    AudioSession session,
+    String projectDirectory,
+  ) async {
+    final tracks = <AudioTrack>[];
+    for (final track in session.tracks) {
+      final clips = <AudioClip>[];
+      for (final clip in track.clips) {
+        final resolvedPath =
+            await _resolvePortableMediaPath(clip.mediaId, projectDirectory);
+        clips.add(
+          AudioClip(
+            id: clip.id,
+            mediaId: resolvedPath,
+            startFrame: clip.startFrame,
+            sourceStartFrame: clip.sourceStartFrame,
+            durationFrames: clip.durationFrames,
+            gain: clip.gain,
+            pan: clip.pan,
+            muted: clip.muted,
+            fadeInFrames: clip.fadeInFrames,
+            fadeOutFrames: clip.fadeOutFrames,
+          ),
+        );
+      }
+      tracks.add(
+        AudioTrack(
+          id: track.id,
+          name: track.name,
+          kind: track.kind,
+          gain: track.gain,
+          pan: track.pan,
+          muted: track.muted,
+          solo: track.solo,
+          armed: track.armed,
+          highPassHz: track.highPassHz,
+          compressorThreshold: track.compressorThreshold,
+          compressorRatio: track.compressorRatio,
+          clips: clips,
+        ),
+      );
+    }
+    return AudioSession(
+      id: session.id,
+      title: session.title,
+      sampleRate: session.sampleRate,
+      channels: session.channels,
+      bitDepth: session.bitDepth,
+      tracks: tracks,
+      markers: session.markers,
+    );
+  }
+
+  Future<String> _resolvePortableMediaPath(
+    String mediaPath,
+    String projectDirectory,
+  ) async {
+    if (_isAbsoluteMediaPath(mediaPath)) return mediaPath;
+    final segments = mediaPath.replaceAll('\\', '/').split('/');
+    if (segments.length != 2 ||
+        !_isSafePortableAssetFolderName(segments.first) ||
+        !_isSafePortableAssetFileName(segments.last)) {
+      throw const FormatException(
+        'The project contains an unsafe or unsupported relative media path.',
+      );
+    }
+    final root = await Directory(projectDirectory).resolveSymbolicLinks();
+    var candidate = root;
+    for (final segment in segments) {
+      candidate = '$candidate${Platform.pathSeparator}$segment';
+    }
+    candidate = File(candidate).absolute.path;
+    if (!_isPathWithin(candidate, root)) {
+      throw const FormatException(
+        'The project media path points outside its project folder.',
+      );
+    }
+    final parent = File(candidate).parent;
+    if (await parent.exists()) {
+      final resolvedParent = await parent.resolveSymbolicLinks();
+      if (resolvedParent != root && !_isPathWithin(resolvedParent, root)) {
+        throw const FormatException(
+          'A project asset folder resolves outside its project folder.',
+        );
+      }
+    }
+    final file = File(candidate);
+    if (await file.exists()) {
+      final resolvedFile = await file.resolveSymbolicLinks();
+      if (!_isPathWithin(resolvedFile, root)) {
+        throw const FormatException(
+          'A project media file resolves outside its project folder.',
+        );
+      }
+      return resolvedFile;
+    }
+    return candidate;
+  }
+
+  bool _isAbsoluteMediaPath(String path) =>
+      path.startsWith('/') ||
+      path.startsWith(r'\\') ||
+      RegExp(r'^[A-Za-z]:[\\/]').hasMatch(path);
+
+  bool _isSafePortableAssetFolderName(String value) =>
+      RegExp(r'^AuraProject_[A-Za-z0-9_-]+\.assets-[0-9]+$')
+          .hasMatch(value);
+
+  bool _isSafePortableAssetFileName(String value) =>
+      RegExp(r'^(?:[a-f0-9]{8}_[A-Za-z0-9._-]+|[a-f0-9]{64}\.wav)$')
+          .hasMatch(value);
+
+  bool _isSafeProjectManifestName(String value) =>
+      RegExp(r'^AuraProject_[A-Za-z0-9_-]+\.aura\.json$')
+          .hasMatch(value);
+
+  Future<void> _removeSupersededAssetFolders(
+    String root,
+    String prefix,
+    String keepName,
+  ) async {
+    await for (final entity in Directory(root).list(followLinks: false)) {
+      if (entity is! Directory) continue;
+      final name = entity.path.split(Platform.pathSeparator).last;
+      if (name.startsWith(prefix) && name != keepName) {
+        await entity.delete(recursive: true);
+      }
+    }
+  }
+
+  String _stableHash(String value) {
+    var hash = 0x811c9dc5;
+    for (final byte in utf8.encode(value)) {
+      hash = ((hash ^ byte) * 0x01000193) & 0xffffffff;
+    }
+    return hash.toRadixString(16).padLeft(8, '0');
+  }
+
+  String _safeId(String value) {
+    final normalized = value.replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '_');
+    if (normalized.isEmpty) {
+      throw const AudioProjectStoreUnavailable('Project id is invalid.');
+    }
+    return normalized.length > 80 ? normalized.substring(0, 80) : normalized;
+  }
+
+  static String _defaultDirectoryPath() {
+    final environment = Platform.environment;
+    final home = environment['USERPROFILE'] ??
+        environment['HOME'] ??
+        Directory.current.path;
+    return '$home${Platform.pathSeparator}Documents'
+        '${Platform.pathSeparator}Aura Voice Studio'
+        '${Platform.pathSeparator}Projects';
+  }
+}
+)
+            .hasMatch(file.uri.pathSegments.last) ||
+        await FileSystemEntity.type(file.path, followLinks: false) !=
+            FileSystemEntityType.file ||
+        !await versionsDirectory.exists()) {
+      throw const AudioProjectStoreUnavailable(
+        'Only regular version snapshots for this project can be changed.',
+      );
+    }
+    final resolvedRoot = await versionsRoot.resolveSymbolicLinks();
+    final resolvedDirectory = await versionsDirectory.resolveSymbolicLinks();
+    final lexicalPath = file.absolute.path;
+    final resolvedPath = await file.resolveSymbolicLinks();
+    if (!_isPathWithin(resolvedRoot, root) ||
+        !_isPathWithin(resolvedDirectory, resolvedRoot) ||
+        !_isPathWithin(lexicalPath, resolvedDirectory) ||
+        !_isPathWithin(resolvedPath, resolvedDirectory)) {
+      throw const AudioProjectStoreUnavailable(
+        'The selected version snapshot resolves outside its project history folder.',
+      );
+    }
+  }
+
+  Future<void> _verifyVersionMedia(AudioSession session) async {
+    final inventories = <String, Map<String, dynamic>>{};
+    final root = await Directory(_directoryPath).resolveSymbolicLinks();
+    for (final track in session.tracks) {
+      for (final clip in track.clips) {
+        final mediaPath = clip.mediaId;
+        if (_isAbsoluteMediaPath(mediaPath)) {
+          if (!await File(mediaPath).exists()) {
+            throw AudioProjectStoreUnavailable(
+              'A version references missing media: "$mediaPath".',
+            );
+          }
+          continue;
+        }
+        final segments = mediaPath.replaceAll('\\', '/').split('/');
+        if (segments.length != 2 ||
+            !_isSafePortableAssetFolderName(segments.first) ||
+            !_isSafePortableAssetFileName(segments.last)) {
+          throw const AudioProjectStoreUnavailable(
+            'A version contains an unsafe media reference.',
+          );
+        }
+        final resolved = await _resolvePortableMediaPath(mediaPath, root);
+        final mediaFile = File(resolved);
+        if (!await mediaFile.exists()) {
+          throw AudioProjectStoreUnavailable(
+            'A version references missing media: "$mediaPath".',
+          );
+        }
+        var inventory = inventories[segments.first];
+        if (inventory == null) {
+          final inventoryFile = File(
+            '$root${Platform.pathSeparator}${segments.first}'
+            '${Platform.pathSeparator}.aura-assets.json',
+          );
+          if (await FileSystemEntity.type(
+                inventoryFile.path,
+                followLinks: false,
+              ) !=
+              FileSystemEntityType.file) {
+            throw AudioProjectStoreUnavailable(
+              'The asset inventory is missing for version media: "$mediaPath".',
+            );
+          }
+          final decoded = jsonDecode(await inventoryFile.readAsString());
+          if (decoded is! Map<String, dynamic> ||
+              decoded['schemaVersion'] != 1 ||
+              decoded['projectId'] != session.id ||
+              decoded['assetFolder'] != segments.first ||
+              decoded['files'] is! Map<String, dynamic>) {
+            throw AudioProjectStoreUnavailable(
+              'The asset inventory is invalid for version media: "$mediaPath".',
+            );
+          }
+          inventory = decoded['files'] as Map<String, dynamic>;
+          inventories[segments.first] = inventory;
+        }
+        final expected = inventory[segments.last];
+        if (expected is! Map<String, dynamic> ||
+            expected['sizeBytes'] is! int ||
+            expected['sha256'] is! String) {
+          throw AudioProjectStoreUnavailable(
+            'The asset checksum is missing for version media: "$mediaPath".',
+          );
+        }
+        final stat = await mediaFile.stat();
+        if (stat.size != expected['sizeBytes']) {
+          throw AudioProjectStoreUnavailable(
+            'Version media failed its size check: "$mediaPath".',
+          );
+        }
+        final digest = await sha256.bind(mediaFile.openRead()).first;
+        if (digest.toString().toLowerCase() !=
+            (expected['sha256'] as String).toLowerCase()) {
+          throw AudioProjectStoreUnavailable(
+            'Version media failed its SHA-256 check: "$mediaPath".',
+          );
+        }
+      }
+    }
+  }
+
+  @override
   Future<String> saveRecoverySnapshot(AudioSession session) async {
     final directory = await _ensureRecoveryDirectory();
     await _recoverRecoveryBackups(directory);
