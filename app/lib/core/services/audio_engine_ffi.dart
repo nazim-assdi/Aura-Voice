@@ -894,6 +894,14 @@ class FfiAudioMonitorSession implements AudioMonitorSession {
       _stopped ? 0 : _api.monitorOutputBufferFrames(_handle);
 
   @override
+  int get observedInputCallbackFrames =>
+      _stopped ? 0 : _api.monitorInputCallbackFrames(_handle);
+
+  @override
+  int get observedOutputCallbackFrames =>
+      _stopped ? 0 : _api.monitorOutputCallbackFrames(_handle);
+
+  @override
   int get inputCaptureToCallbackNanoseconds =>
       _stopped ? 0 : _api.monitorInputCaptureLatency(_handle);
 
@@ -1078,6 +1086,16 @@ class _NativeApi {
             _MonitorSampleRateDart>(
           'aura_audio_monitor_output_buffer_frames',
         ),
+        _monitorInputCallbackFrames = library.lookupFunction<
+            _MonitorSampleRateNative,
+            _MonitorSampleRateDart>(
+          'aura_audio_monitor_input_callback_frames',
+        ),
+        _monitorOutputCallbackFrames = library.lookupFunction<
+            _MonitorSampleRateNative,
+            _MonitorSampleRateDart>(
+          'aura_audio_monitor_output_callback_frames',
+        ),
         _monitorInputCaptureLatency = library.lookupFunction<
             _MonitorUnderrunFramesNative,
             _MonitorUnderrunFramesDart>(
@@ -1256,9 +1274,9 @@ class _NativeApi {
           'aura_engine_last_error',
         ) {
     final abi = _abiVersion();
-    if (abi != 6) {
+    if (abi != 7) {
       throw AudioEngineUnavailable(
-        'Native audio ABI mismatch: expected 6, found $abi.',
+        'Native audio ABI mismatch: expected 7, found $abi.',
       );
     }
   }
@@ -1284,6 +1302,8 @@ class _NativeApi {
   final int Function(Pointer<Void>) _monitorRingCapacityFrames;
   final int Function(Pointer<Void>) _monitorInputBufferFrames;
   final int Function(Pointer<Void>) _monitorOutputBufferFrames;
+  final int Function(Pointer<Void>) _monitorInputCallbackFrames;
+  final int Function(Pointer<Void>) _monitorOutputCallbackFrames;
   final int Function(Pointer<Void>) _monitorInputCaptureLatency;
   final int Function(Pointer<Void>) _monitorOutputPlaybackLatency;
   final int Function(Pointer<Void>) _monitorEstimatedLatency;
@@ -1416,6 +1436,10 @@ class _NativeApi {
       _monitorInputBufferFrames(handle);
   int monitorOutputBufferFrames(Pointer<Void> handle) =>
       _monitorOutputBufferFrames(handle);
+  int monitorInputCallbackFrames(Pointer<Void> handle) =>
+      _monitorInputCallbackFrames(handle);
+  int monitorOutputCallbackFrames(Pointer<Void> handle) =>
+      _monitorOutputCallbackFrames(handle);
   int monitorInputCaptureLatency(Pointer<Void> handle) =>
       _monitorInputCaptureLatency(handle);
   int monitorOutputPlaybackLatency(Pointer<Void> handle) =>
