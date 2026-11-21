@@ -424,8 +424,8 @@ class _StudioPageState extends State<StudioPage> {
       final devices = await _engine.listInputDevices();
       final outputs = await _engine.listOutputDevices();
       if (!mounted) {
-      return;
-    }
+        return;
+      }
       setState(() {
         _devices
           ..clear()
@@ -453,8 +453,8 @@ class _StudioPageState extends State<StudioPage> {
       });
     } catch (error) {
       if (!mounted) {
-      return;
-    }
+        return;
+      }
       setState(() => _message = error.toString());
     } finally {
       if (mounted) setState(() => _loadingDevices = false);
@@ -1508,8 +1508,8 @@ class _LibraryPageState extends State<LibraryPage> {
     try {
       final items = await _library.listRecordings();
       if (!mounted) {
-      return;
-    }
+        return;
+      }
       setState(() {
         _recordings
           ..clear()
@@ -1527,8 +1527,8 @@ class _LibraryPageState extends State<LibraryPage> {
     try {
       final devices = await _engine.listOutputDevices();
       if (!mounted) {
-      return;
-    }
+        return;
+      }
       setState(() {
         _outputDevices
           ..clear()
@@ -1791,8 +1791,8 @@ class _LibraryPageState extends State<LibraryPage> {
     try {
       final updated = await _library.renameRecording(recording, name);
       if (!mounted) {
-      return;
-    }
+        return;
+      }
       final index = _recordings.indexWhere((item) => item.path == recording.path);
       setState(() {
         if (index >= 0) _recordings[index] = updated;
@@ -1806,8 +1806,8 @@ class _LibraryPageState extends State<LibraryPage> {
     try {
       final projects = await _projects.listProjects();
       if (!mounted) {
-      return;
-    }
+        return;
+      }
       if (projects.isEmpty) {
         setState(() => _message = 'No saved sessions yet. Open a recording in the editor and save a project.');
         return;
@@ -1854,8 +1854,8 @@ class _LibraryPageState extends State<LibraryPage> {
       if (selected == null || !mounted) return;
       final session = await _projects.load(selected.path);
       if (!mounted) {
-      return;
-    }
+        return;
+      }
       if (session.channels < 1 || session.channels > 2) {
         setState(() {
           _message =
@@ -1932,8 +1932,8 @@ class _LibraryPageState extends State<LibraryPage> {
       if (_playingPath == recording.path) await _stopPlayback();
       await _library.deleteRecording(recording);
       if (!mounted) {
-      return;
-    }
+        return;
+      }
       setState(() {
         _recordings.removeWhere((item) => item.path == recording.path);
         _message = 'Recording deleted from this device.';
