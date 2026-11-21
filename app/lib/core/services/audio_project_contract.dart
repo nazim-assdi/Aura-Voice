@@ -21,6 +21,13 @@ abstract interface class AudioProjectStore {
 
   Future<String> save(AudioSession session);
 
+  /// Copies every referenced source WAV beside the manifest and saves
+  /// portable, project-relative media references.
+  Future<String> savePortable(AudioSession session);
+
+  /// Checks whether a referenced local media file is currently available.
+  Future<bool> mediaExists(String path);
+
   Future<AudioSession> load(String path);
 
   Future<List<AudioProjectSummary>> listProjects();
