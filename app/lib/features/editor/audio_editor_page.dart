@@ -95,6 +95,7 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
     if (existingSession != null) {
       _session = existingSession;
       _projectPath = widget.initialProjectPath;
+      if (_projectPath != null) _autosavedRevision = 0;
       if (_session.tracks.isNotEmpty) {
         _selectedTrackId = _session.tracks.first.id;
         if (_session.tracks.first.clips.isNotEmpty) {
@@ -494,7 +495,7 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
       }
     }
     final projectPath = _projectPath;
-    if (projectPath != null) {
+    if (projectPath != null && _editRevision == _autosavedRevision) {
       try {
         final integrity = await _projects.verifyPortableProject(projectPath);
         missing
@@ -1304,6 +1305,7 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
         _autosavedRevision = revision;
         _message = 'Portable ZIP exported and SHA-256 verified.';
       });
+      unawaited(_refreshMissingMedia());
       // Keep the path available for subsequent manual save operations.
       _projectPath = manifestPath;
       if (exportedPath.isEmpty) {
@@ -1344,6 +1346,7 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
           _autosavedRevision = revision;
           _message = 'Project saved with packaged media assets.';
         });
+        unawaited(_refreshMissingMedia());
       }
     } catch (error) {
       if (mounted) {
