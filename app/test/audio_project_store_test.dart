@@ -5,6 +5,19 @@ import 'package:aura_voice_ai/core/services/audio_project_contract.dart';
 import 'package:aura_voice_ai/core/services/audio_project_io.dart';
 import 'package:aura_voice_ai/features/session/models/audio_session.dart';
 
+Future<void> _copyDirectory(Directory source, Directory destination) async {
+  await destination.create(recursive: true);
+  await for (final entity in source.list(followLinks: false)) {
+    final name = entity.path.split(Platform.pathSeparator).last;
+    final target = '${destination.path}${Platform.pathSeparator}$name';
+    if (entity is File) {
+      await entity.copy(target);
+    } else if (entity is Directory) {
+      await _copyDirectory(entity, Directory(target));
+    }
+  }
+}
+
 void main() {
   group('FileAudioProjectStore', () {
     late Directory temporaryDirectory;
@@ -210,6 +223,69 @@ void main() {
       );
       expect(await outside.exists(), isTrue);
       await outside.delete();
+    });
+
+    test('packages source media and resolves it from a moved project folder', () async {
+      final source = File(
+        '${temporaryDirectory.path}${Platform.pathSeparator}portable-source.wav',
+      );
+      final sourceBytes = List<int>.generate(256, (index) => index % 255);
+      await source.writeAsBytes(sourceBytes);
+      final session = AudioSession(
+        id: 'portable-project',
+        title: 'Portable Voice Session',
+        sampleRate: 48000,
+        channels: 2,
+        bitDepth: 24,
+        tracks: [
+          AudioTrack(
+            id: 'portable-track',
+            name: 'Voice',
+            clips: [
+              AudioClip(
+                id: 'portable-clip',
+                mediaId: source.path,
+                startFrame: 0,
+                sourceStartFrame: 0,
+                durationFrames: 100,
+              ),
+            ],
+          ),
+        ],
+      );
+
+      final manifestPath = await store.savePortable(session);
+      final loaded = await store.load(manifestPath);
+      final packagedPath = loaded.tracks.single.clips.single.mediaId;
+      expect(packagedPath, isNot(source.path));
+      expect(await File(packagedPath).readAsBytes(), sourceBytes);
+      expect(await File(manifestPath).readAsString(), contains('.assets-'));
+
+      final assetFolderName =
+          File(packagedPath).parent.path.split(Platform.pathSeparator).last;
+      final movedDirectory = Directory(
+        '${temporaryDirectory.path}${Platform.pathSeparator}moved-project',
+      );
+      await movedDirectory.create(recursive: true);
+      final manifestName = File(manifestPath).uri.pathSegments.last;
+      final movedManifest = await File(manifestPath).copy(
+        '${movedDirectory.path}${Platform.pathSeparator}$manifestName',
+      );
+      final sourceAssets = Directory(
+        '${store.directoryPath}${Platform.pathSeparator}$assetFolderName',
+      );
+      final movedAssets = Directory(
+        '${movedDirectory.path}${Platform.pathSeparator}$assetFolderName',
+      );
+      await _copyDirectory(sourceAssets, movedAssets);
+
+      final movedStore = FileAudioProjectStore(
+        directoryPath: movedDirectory.path,
+      );
+      final movedSession = await movedStore.load(movedManifest.path);
+      final movedMediaPath = movedSession.tracks.single.clips.single.mediaId;
+      expect(movedMediaPath, startsWith(movedDirectory.path));
+      expect(await File(movedMediaPath).readAsBytes(), sourceBytes);
     });
 
     test('restores a backup when the main manifest is missing', () async {
