@@ -74,6 +74,15 @@ abstract interface class AudioCaptureSession {
 abstract interface class AudioMonitorSession {
   int get inputSampleRate;
   int get outputSampleRate;
+  int get requestedBufferMilliseconds;
+  int get ringCapacityFrames;
+  int get inputBufferFrames;
+  int get outputBufferFrames;
+  int get inputCaptureToCallbackNanoseconds;
+  int get outputCallbackToPlaybackNanoseconds;
+  int get estimatedLatencyNanoseconds;
+  int get maximumEstimatedLatencyNanoseconds;
+  int get latencyEstimateCount;
   int get underrunFrames;
   int get droppedInputFrames;
   bool get hasError;
