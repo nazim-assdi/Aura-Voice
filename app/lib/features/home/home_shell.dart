@@ -718,7 +718,10 @@ class _StudioPageState extends State<StudioPage> {
     await _stopPlayback();
     try {
       final bytes = await readAudioFile(path);
-      final playback = await _engine.startPlayback(wavBytes: bytes);
+      final playback = await _engine.startPlayback(
+        wavBytes: bytes,
+        outputDeviceId: _selectedOutputDeviceId,
+      );
       if (!mounted) {
         await playback.stop();
         return;
@@ -726,7 +729,9 @@ class _StudioPageState extends State<StudioPage> {
       setState(() {
         _playback = playback;
         _playbackPosition = 0;
-        _message = 'Playing saved WAV through the default audio output.';
+        _message = playback is AudioPlaybackDiagnostics
+            ? 'Playing through ${playback.outputSampleRate} Hz output.'
+            : 'Playing saved WAV through the selected output device.';
       });
       _playbackTimer = Timer.periodic(
         const Duration(milliseconds: 50),
@@ -1319,7 +1324,10 @@ class _LibraryPageState extends State<LibraryPage> {
   late final AudioWaveformService _waveforms;
   final TextEditingController _searchController = TextEditingController();
   final List<AudioLibraryRecording> _recordings = [];
+  final List<AudioOutputDevice> _outputDevices = [];
   AudioPlaybackSession? _playback;
+  String? _selectedOutputDeviceId;
+  bool _loadingOutputDevices = false;
   Timer? _playbackTimer;
   String? _playingPath;
   String? _loadingPath;
@@ -1337,6 +1345,7 @@ class _LibraryPageState extends State<LibraryPage> {
     _engine = createAudioEngineService();
     _waveforms = createAudioWaveformService();
     unawaited(_refresh());
+    unawaited(_refreshOutputDevices());
   }
 
   @override
@@ -1368,6 +1377,29 @@ class _LibraryPageState extends State<LibraryPage> {
       if (mounted) setState(() => _message = error.toString());
     } finally {
       if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _refreshOutputDevices() async {
+    setState(() => _loadingOutputDevices = true);
+    try {
+      final devices = await _engine.listOutputDevices();
+      if (!mounted) return;
+      setState(() {
+        _outputDevices
+          ..clear()
+          ..addAll(devices);
+        if (!_outputDevices.any((device) => device.id == _selectedOutputDeviceId)) {
+          final defaults = _outputDevices.where((device) => device.isDefault);
+          _selectedOutputDeviceId = defaults.isNotEmpty
+              ? defaults.first.id
+              : (_outputDevices.isEmpty ? null : _outputDevices.first.id);
+        }
+      });
+    } catch (error) {
+      if (mounted) setState(() => _message = 'Output devices unavailable: $error');
+    } finally {
+      if (mounted) setState(() => _loadingOutputDevices = false);
     }
   }
 
@@ -1414,7 +1446,10 @@ class _LibraryPageState extends State<LibraryPage> {
     });
     try {
       final bytes = await readAudioFile(recording.path);
-      final playback = await _engine.startPlayback(wavBytes: bytes);
+      final playback = await _engine.startPlayback(
+        wavBytes: bytes,
+        outputDeviceId: _selectedOutputDeviceId,
+      );
       if (!mounted) {
         await playback.stop();
         return;
@@ -1832,7 +1867,62 @@ class _LibraryPageState extends State<LibraryPage> {
                     ),
                   ],
                 ),
-                const SizedBox(height: 18),
+                const SizedBox(height: 14),
+                Row(
+                  children: [
+                    const Icon(Icons.speaker_rounded, color: AuraTheme.mint, size: 18),
+                    const SizedBox(width: 9),
+                    Expanded(
+                      child: DropdownButton<String>(
+                        isExpanded: true,
+                        value: _outputDevices.any(
+                          (device) => device.id == _selectedOutputDeviceId,
+                        )
+                            ? _selectedOutputDeviceId
+                            : null,
+                        hint: Text(
+                          _loadingOutputDevices
+                              ? 'Finding output devices…'
+                              : 'System default output',
+                        ),
+                        items: [
+                          for (final device in _outputDevices)
+                            DropdownMenuItem(
+                              value: device.id,
+                              child: Text(
+                                '${device.name}${device.isDefault ? ' · Default' : ''} · ${device.minSampleRate}–${device.maxSampleRate} Hz',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                        ],
+                        onChanged: _playback != null || _loadingPath != null
+                            ? null
+                            : (value) => setState(() => _selectedOutputDeviceId = value),
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: 'Refresh output devices',
+                      onPressed: _playback != null || _loadingPath != null || _loadingOutputDevices
+                          ? null
+                          : _refreshOutputDevices,
+                      icon: _loadingOutputDevices
+                          ? const SizedBox(
+                              width: 17,
+                              height: 17,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.refresh_rounded),
+                    ),
+                  ],
+                ),
+                Text(
+                  'WAV preview will be resampled to the selected device’s output rate.',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: AuraTheme.muted,
+                      ),
+                ),
+                const SizedBox(height: 14),
                 Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
