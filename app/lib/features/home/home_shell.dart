@@ -2129,12 +2129,11 @@ class _LibraryPageState extends State<LibraryPage> {
 
   Future<void> _importProjectArchive() async {
     if (_importingProject) return;
-    final selection = await FilePicker.pickFiles(
+    final selection = await FilePicker.pickFile(
       type: FileType.custom,
       allowedExtensions: const ['zip'],
-      allowMultiple: false,
     );
-    final zipPath = selection?.files.single.path;
+    final zipPath = selection?.path;
     if (zipPath == null || zipPath.trim().isEmpty || !mounted) return;
 
     setState(() {

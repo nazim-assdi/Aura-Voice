@@ -557,12 +557,11 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
 
     setState(() => _relinkingMedia = true);
     try {
-      final selection = await FilePicker.pickFiles(
+      final selection = await FilePicker.pickFile(
         type: FileType.custom,
         allowedExtensions: const ['wav'],
-        allowMultiple: false,
       );
-      final replacementPath = selection?.files.single.path;
+      final replacementPath = selection?.path;
       if (replacementPath == null ||
           replacementPath.trim().isEmpty ||
           !mounted) {
@@ -1275,15 +1274,23 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
 
   Future<void> _exportProjectArchive() async {
     if (_exportingArchive || _saving || _autosaving) return;
-    final outputPath = await FilePicker.saveFile(
+    final outputUri = await FilePicker.saveFile(
       dialogTitle: 'Export Aura Voice project',
       fileName:
           '${_session.title.replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '_')}.auravoice.zip',
-      type: FileType.custom,
-      allowedExtensions: const ['zip'],
+      bytes: Uint8List(0),
     );
-    if (outputPath == null || outputPath.trim().isEmpty || !mounted) return;
+    if (outputUri == null || !mounted) return;
 
+    late final String outputPath;
+    try {
+      outputPath = outputUri.toFilePath();
+    } on UnsupportedError {
+      setState(() {
+        _message = 'Portable ZIP export requires a local file-system location.';
+      });
+      return;
+    }
     final zipPath = outputPath.toLowerCase().endsWith('.zip')
         ? outputPath
         : '$outputPath.zip';
