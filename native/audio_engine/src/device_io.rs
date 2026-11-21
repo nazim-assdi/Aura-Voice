@@ -2315,9 +2315,13 @@ mod tests {
     }
 
     #[test]
-    fn monitor_resampler_interpolates_input_clock_without_channel_skew() {
+    fn monitor_resampler_interpolates_audio_and_preserves_capture_timestamps() {
         let ring = FloatRing::new(16, 1).unwrap();
-        ring.push_interleaved(&[0.0, 1.0, 0.0, -1.0], 1);
+        let timing = MonitorFrameTiming {
+            input_callback_ns: 1_000_000,
+            input_capture_to_callback_ns: 2_000_000,
+        };
+        ring.push_interleaved_timed(&[0.0, 1.0, 0.0, -1.0], 1, timing);
         let mut phase = 0.0;
         let first = ring.read_resampled_frame(&mut phase, 0.5).unwrap();
         let second = ring.read_resampled_frame(&mut phase, 0.5).unwrap();
@@ -2325,6 +2329,30 @@ mod tests {
         assert!((first.1 - 0.0).abs() < 0.000001);
         assert!((second.0 - 0.5).abs() < 0.000001);
         assert!((second.1 - 0.5).abs() < 0.000001);
+        assert_eq!(first.2.input_callback_ns, 1_000_000);
+        assert_eq!(second.2.input_capture_to_callback_ns, 2_000_000);
+    }
+
+    #[test]
+    fn requested_monitor_buffer_is_clamped_to_supported_device_limits() {
+        let supported = SupportedStreamConfig::new(
+            2,
+            48_000,
+            SupportedBufferSize::Range { min: 128, max: 512 },
+            SampleFormat::F32,
+        );
+        assert_eq!(
+            requested_stream_config(&supported, 256).buffer_size,
+            BufferSize::Fixed(256),
+        );
+        assert_eq!(
+            requested_stream_config(&supported, 64).buffer_size,
+            BufferSize::Fixed(128),
+        );
+        assert_eq!(
+            requested_stream_config(&supported, 1024).buffer_size,
+            BufferSize::Fixed(512),
+        );
     }
 
     #[test]
