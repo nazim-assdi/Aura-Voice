@@ -4,7 +4,7 @@
 
 This runbook validates the realtime mixer and the direct microphone monitor on actual audio hardware. It is deliberately separate from deterministic unit tests: an 8,192-clip scheduling test proves scheduler correctness for its fixture, not device latency, callback deadlines or hardware underruns.
 
-The current engine exposes software callback diagnostics and monitor-ring counters. These help identify regressions, but they do not reveal the complete driver/hardware signal path.
+The current engine exposes software callback diagnostics, separately reported/observed stream buffer sizes and monitor-ring counters. These help identify regressions, but they do not reveal the complete driver/hardware signal path.
 
 ## Required test machines
 
@@ -20,7 +20,7 @@ Use both a built-in audio device and a USB interface where possible. Record the 
 
 ## Mixer playback procedure
 
-1. Build a release desktop app and native library from the same commit. Record the commit SHA, OS build, CPU model, RAM, native library version and Aura audio ABI version (currently v6).
+1. Build a release desktop app and native library from the same commit. Record the commit SHA, OS build, CPU model, RAM, native library version and Aura audio ABI version (currently v7).
 2. Select a physical output device in the Multitrack Editor and in the Voice Studio/Audio Library standalone WAV preview. Use a session and a WAV source at 44.1 kHz and repeat at 48 kHz. Also test source/project rates that differ from the device's negotiated rate to exercise worker-side windowed-sinc conversion.
 3. Create repeatable sessions with 1, 8, 16 and 32 active tracks. Include overlapping clips, short clips, fades, panning and the track high-pass/compressor lane. Keep the audio source files and session manifests identical between machines.
 4. Run each session for at least five minutes after a short warm-up. Repeat each case three times. Do not change the device sample rate or sample format while a stream is running.
@@ -33,7 +33,7 @@ The callback deadline metric compares a callback's measured execution duration w
 ## Live microphone monitoring procedure
 
 1. Connect a physical microphone and headphones. Do not begin with speakers: acoustic feedback can become dangerous and may damage hearing or equipment.
-2. Select the input and output devices in Voice Studio and start Live microphone monitor. Record the negotiated input/output sample rates, the requested callback-buffer target (the UI defaults to 20 ms), SPSC ring capacity, queried input/output stream buffer sizes and observed callback block sizes.
+2. Select the input and output devices in Voice Studio and start Live microphone monitor. Record the negotiated input/output sample rates, the requested callback-buffer target (the UI defaults to 20 ms), SPSC ring capacity, CPAL-reported input/output stream buffer-size estimates and the latest observed input/output callback block sizes.
 3. Speak or play a known test signal for five minutes. Repeat with the same-clock device pair and with devices that negotiate different sample rates.
 4. Record the host-timestamp capture-to-predicted-playback estimate (current and maximum), input capture-to-callback time, output callback-to-playback time, output ring-starvation frames and input ring dropped frames. The timestamp estimate sums durations measured within each stream's own clock plus the app handoff measured from one shared monotonic clock; it is not a physical loopback calibration. Ring starvation/input drops report SPSC starvation/overflow, not hardware driver underruns.
 5. Repeat after disconnecting/reconnecting a device and after changing the OS default device. Note whether the stream stops cleanly or requires a manual restart.
