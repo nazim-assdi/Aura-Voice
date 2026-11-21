@@ -78,6 +78,8 @@ abstract interface class AudioMonitorSession {
   int get ringCapacityFrames;
   int get inputBufferFrames;
   int get outputBufferFrames;
+  int get observedInputCallbackFrames;
+  int get observedOutputCallbackFrames;
   int get inputCaptureToCallbackNanoseconds;
   int get outputCallbackToPlaybackNanoseconds;
   int get estimatedLatencyNanoseconds;
