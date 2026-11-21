@@ -63,6 +63,134 @@ class FileAudioProjectStore implements AudioProjectStore {
   }
 
   @override
+  Future<String> savePortable(AudioSession session) async {
+    final rootDirectory = Directory(_directoryPath);
+    await rootDirectory.create(recursive: true);
+    final root = await rootDirectory.resolveSymbolicLinks();
+    final assetFolderName =
+        'AuraProject_${_safeId(session.id)}.assets-${DateTime.now().microsecondsSinceEpoch}';
+    final stagingDirectory = Directory(
+      '$root${Platform.pathSeparator}$assetFolderName.tmp',
+    );
+    final publishedDirectory = Directory(
+      '$root${Platform.pathSeparator}$assetFolderName',
+    );
+    await stagingDirectory.create(recursive: true);
+
+    final relativeByCanonicalPath = <String, String>{};
+    final mediaReferences = <String, String>{};
+    var manifestSaved = false;
+    try {
+      for (final track in session.tracks) {
+        for (final clip in track.clips) {
+          if (mediaReferences.containsKey(clip.mediaId)) continue;
+          final source = File(clip.mediaId);
+          if (await FileSystemEntity.type(source.path, followLinks: true) !=
+              FileSystemEntityType.file) {
+            throw AudioProjectStoreUnavailable(
+              'Cannot package missing media "${clip.mediaId}". Relink this WAV file and save the project again.',
+            );
+          }
+          final canonicalPath = await source.resolveSymbolicLinks();
+          final canonicalKey =
+              Platform.isWindows ? canonicalPath.toLowerCase() : canonicalPath;
+          var relativeName = relativeByCanonicalPath[canonicalKey];
+          if (relativeName == null) {
+            final sourceName = clip.mediaId.split(RegExp(r'[\\/]')).last;
+            var safeName =
+                sourceName.replaceAll(RegExp(r'[^A-Za-z0-9._-]'), '_');
+            if (safeName.isEmpty) safeName = 'audio.wav';
+            if (safeName.length > 100) {
+              safeName = safeName.substring(safeName.length - 100);
+            }
+            relativeName = '${_stableHash(canonicalPath)}_$safeName';
+            final sourceStat = await source.stat();
+            final copied = await source.copy(
+              '${stagingDirectory.path}${Platform.pathSeparator}$relativeName',
+            );
+            if (await copied.length() != sourceStat.size) {
+              throw AudioProjectStoreUnavailable(
+                'The media copy did not complete successfully for "${clip.mediaId}".',
+              );
+            }
+            relativeByCanonicalPath[canonicalKey] = relativeName;
+          }
+          mediaReferences[clip.mediaId] = '$assetFolderName/$relativeName';
+        }
+      }
+
+      final portableTracks = session.tracks.map((track) {
+        return AudioTrack(
+          id: track.id,
+          name: track.name,
+          kind: track.kind,
+          gain: track.gain,
+          pan: track.pan,
+          muted: track.muted,
+          solo: track.solo,
+          armed: track.armed,
+          highPassHz: track.highPassHz,
+          compressorThreshold: track.compressorThreshold,
+          compressorRatio: track.compressorRatio,
+          clips: track.clips.map((clip) {
+            return AudioClip(
+              id: clip.id,
+              mediaId: mediaReferences[clip.mediaId]!,
+              startFrame: clip.startFrame,
+              sourceStartFrame: clip.sourceStartFrame,
+              durationFrames: clip.durationFrames,
+              gain: clip.gain,
+              pan: clip.pan,
+              muted: clip.muted,
+              fadeInFrames: clip.fadeInFrames,
+              fadeOutFrames: clip.fadeOutFrames,
+            );
+          }).toList(),
+        );
+      }).toList();
+      final portableSession = AudioSession(
+        id: session.id,
+        title: session.title,
+        sampleRate: session.sampleRate,
+        channels: session.channels,
+        bitDepth: session.bitDepth,
+        tracks: portableTracks,
+        markers: session.markers,
+      );
+
+      await stagingDirectory.rename(publishedDirectory.path);
+      final manifestPath = await save(portableSession);
+      manifestSaved = true;
+      try {
+        await _removeSupersededAssetFolders(
+          root,
+          'AuraProject_${_safeId(session.id)}.assets-',
+          assetFolderName,
+        );
+      } catch (_) {
+        // The manifest and its new assets are already committed. Old asset
+        // folders are harmless and can be cleaned up on a later save.
+      }
+      return manifestPath;
+    } catch (_) {
+      if (!manifestSaved) {
+        if (await stagingDirectory.exists()) {
+          await stagingDirectory.delete(recursive: true);
+        }
+        if (await publishedDirectory.exists()) {
+          await publishedDirectory.delete(recursive: true);
+        }
+      }
+      rethrow;
+    }
+  }
+
+  @override
+  Future<bool> mediaExists(String path) async =>
+      await FileSystemEntity.type(path, followLinks: true) ==
+      FileSystemEntityType.file;
+
+  @override
   Future<String> saveRecoverySnapshot(AudioSession session) async {
     final directory = await _ensureRecoveryDirectory();
     await _recoverRecoveryBackups(directory);
@@ -197,7 +325,8 @@ class FileAudioProjectStore implements AudioProjectStore {
     if (json is! Map<String, dynamic>) {
       throw const FormatException('Invalid Aura Voice project manifest.');
     }
-    return AudioSession.fromJson(json);
+    final session = AudioSession.fromJson(json);
+    return _resolveSessionMedia(session, file.parent.path);
   }
 
   @override
@@ -412,6 +541,132 @@ class FileAudioProjectStore implements AudioProjectStore {
         'Only Aura Voice project manifests inside the Projects folder can be changed.',
       );
     }
+  }
+
+  Future<AudioSession> _resolveSessionMedia(
+    AudioSession session,
+    String projectDirectory,
+  ) async {
+    final tracks = <AudioTrack>[];
+    for (final track in session.tracks) {
+      final clips = <AudioClip>[];
+      for (final clip in track.clips) {
+        final resolvedPath =
+            await _resolvePortableMediaPath(clip.mediaId, projectDirectory);
+        clips.add(
+          AudioClip(
+            id: clip.id,
+            mediaId: resolvedPath,
+            startFrame: clip.startFrame,
+            sourceStartFrame: clip.sourceStartFrame,
+            durationFrames: clip.durationFrames,
+            gain: clip.gain,
+            pan: clip.pan,
+            muted: clip.muted,
+            fadeInFrames: clip.fadeInFrames,
+            fadeOutFrames: clip.fadeOutFrames,
+          ),
+        );
+      }
+      tracks.add(
+        AudioTrack(
+          id: track.id,
+          name: track.name,
+          kind: track.kind,
+          gain: track.gain,
+          pan: track.pan,
+          muted: track.muted,
+          solo: track.solo,
+          armed: track.armed,
+          highPassHz: track.highPassHz,
+          compressorThreshold: track.compressorThreshold,
+          compressorRatio: track.compressorRatio,
+          clips: clips,
+        ),
+      );
+    }
+    return AudioSession(
+      id: session.id,
+      title: session.title,
+      sampleRate: session.sampleRate,
+      channels: session.channels,
+      bitDepth: session.bitDepth,
+      tracks: tracks,
+      markers: session.markers,
+    );
+  }
+
+  Future<String> _resolvePortableMediaPath(
+    String mediaPath,
+    String projectDirectory,
+  ) async {
+    if (_isAbsoluteMediaPath(mediaPath)) return mediaPath;
+    final segments = mediaPath.replaceAll(r'\\', '/').split('/');
+    if (segments.isEmpty ||
+        segments.any((segment) =>
+            segment.isEmpty || segment == '.' || segment == '..')) {
+      throw const FormatException(
+        'The project contains an unsafe relative media path.',
+      );
+    }
+    final root = Directory(projectDirectory).absolute.path;
+    var candidate = root;
+    for (final segment in segments) {
+      candidate = '$candidate${Platform.pathSeparator}$segment';
+    }
+    candidate = File(candidate).absolute.path;
+    if (!_isPathWithin(candidate, root)) {
+      throw const FormatException(
+        'The project media path points outside its project folder.',
+      );
+    }
+    final parent = File(candidate).parent;
+    if (await parent.exists()) {
+      final resolvedParent = await parent.resolveSymbolicLinks();
+      if (resolvedParent != root && !_isPathWithin(resolvedParent, root)) {
+        throw const FormatException(
+          'A project asset folder resolves outside its project folder.',
+        );
+      }
+    }
+    final file = File(candidate);
+    if (await file.exists()) {
+      final resolvedFile = await file.resolveSymbolicLinks();
+      if (!_isPathWithin(resolvedFile, root)) {
+        throw const FormatException(
+          'A project media file resolves outside its project folder.',
+        );
+      }
+      return resolvedFile;
+    }
+    return candidate;
+  }
+
+  bool _isAbsoluteMediaPath(String path) =>
+      path.startsWith('/') ||
+      path.startsWith(r'\\') ||
+      RegExp(r'^[A-Za-z]:[\\/]').hasMatch(path);
+
+  Future<void> _removeSupersededAssetFolders(
+    String root,
+    String prefix,
+    String keepName,
+  ) async {
+    await for (final entity in Directory(root).list(followLinks: false)) {
+      if (entity is! Directory) continue;
+      final name = entity.path.split(Platform.pathSeparator).last;
+      if (name.startsWith(prefix) && name != keepName) {
+        await entity.delete(recursive: true);
+      }
+    }
+  }
+
+  String _stableHash(String value) {
+    var hash = 0x811c9dc5;
+    for (final byte in utf8.encode(value)) {
+      hash = ((hash ^ byte) * 0x01000193) & 0xffffffff;
+    }
+    return hash.toRadixString(16).padLeft(8, '0');
   }
 
   String _safeId(String value) {
