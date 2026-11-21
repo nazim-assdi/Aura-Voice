@@ -1,5 +1,22 @@
 import '../../features/session/models/audio_session.dart';
 
+class AudioProjectIntegrityReport {
+  const AudioProjectIntegrityReport({
+    required this.checkedAssetCount,
+    required this.missingMediaPaths,
+    required this.corruptMediaPaths,
+    required this.hasChecksumManifest,
+  });
+
+  final int checkedAssetCount;
+  final List<String> missingMediaPaths;
+  final List<String> corruptMediaPaths;
+  final bool hasChecksumManifest;
+
+  bool get isValid =>
+      missingMediaPaths.isEmpty && corruptMediaPaths.isEmpty;
+}
+
 class AudioProjectSummary {
   const AudioProjectSummary({
     required this.path,
@@ -27,6 +44,15 @@ abstract interface class AudioProjectStore {
 
   /// Checks whether a referenced local media file is currently available.
   Future<bool> mediaExists(String path);
+
+  /// Checks the media references and SHA-256 inventory for a portable project.
+  Future<AudioProjectIntegrityReport> verifyPortableProject(String path);
+
+  /// Writes a verified portable project manifest and its assets to a ZIP file.
+  Future<String> exportPortableArchive(String projectPath, String zipPath);
+
+  /// Safely imports a ZIP project into the managed Projects directory.
+  Future<String> importPortableArchive(String zipPath);
 
   Future<AudioSession> load(String path);
 
