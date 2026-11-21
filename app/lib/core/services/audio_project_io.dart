@@ -275,6 +275,16 @@ class FileAudioProjectStore implements AudioProjectStore {
       );
       if (await metadataFile.exists()) {
         try {
+          if (await FileSystemEntity.type(
+                metadataFile.path,
+                followLinks: false,
+              ) !=
+              FileSystemEntityType.file ||
+              (await metadataFile.stat()).size > 16 * 1024 * 1024) {
+            throw const FormatException(
+              'The portable asset inventory is not a regular file or is too large.',
+            );
+          }
           final metadata = jsonDecode(await metadataFile.readAsString());
           if (metadata is! Map<String, dynamic> ||
               metadata['schemaVersion'] != 1 ||
@@ -539,6 +549,12 @@ class FileAudioProjectStore implements AudioProjectStore {
             _isSafePortableAssetFolderName(segments.first) &&
             (segments.last == '.aura-assets.json' ||
                 _isSafePortableAssetFileName(segments.last))) {
+          if (segments.last == '.aura-assets.json' &&
+              entry.size > maximumManifestBytes) {
+            throw const AudioProjectStoreUnavailable(
+              'The portable asset inventory is too large.',
+            );
+          }
           if (assetFolderName != null && assetFolderName != segments.first) {
             throw const AudioProjectStoreUnavailable(
               'The ZIP archive contains more than one project asset folder.',
@@ -695,6 +711,9 @@ class FileAudioProjectStore implements AudioProjectStore {
           'The imported project failed final integrity verification.',
         );
       }
+      if (await stagingDirectory.exists()) {
+        await stagingDirectory.delete(recursive: true);
+      }
       return finalManifest.path;
     } catch (_) {
       if (await stagingDirectory.exists()) {
@@ -747,6 +766,16 @@ class FileAudioProjectStore implements AudioProjectStore {
       );
       if (await metadataFile.exists()) {
         try {
+          if (await FileSystemEntity.type(
+                metadataFile.path,
+                followLinks: false,
+              ) !=
+              FileSystemEntityType.file ||
+              (await metadataFile.stat()).size > 16 * 1024 * 1024) {
+            throw const FormatException(
+              'The portable asset inventory is not a regular file or is too large.',
+            );
+          }
           final metadata = jsonDecode(await metadataFile.readAsString());
           if (metadata is! Map<String, dynamic> ||
               metadata['schemaVersion'] != 1 ||
