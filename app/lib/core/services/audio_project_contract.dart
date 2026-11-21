@@ -17,6 +17,22 @@ class AudioProjectIntegrityReport {
       missingMediaPaths.isEmpty && corruptMediaPaths.isEmpty;
 }
 
+class AudioProjectVersionSummary {
+  const AudioProjectVersionSummary({
+    required this.path,
+    required this.label,
+    required this.createdAt,
+    required this.trackCount,
+    required this.sampleRate,
+  });
+
+  final String path;
+  final String label;
+  final DateTime createdAt;
+  final int trackCount;
+  final int sampleRate;
+}
+
 class AudioProjectSummary {
   const AudioProjectSummary({
     required this.path,
@@ -53,6 +69,24 @@ abstract interface class AudioProjectStore {
 
   /// Safely imports a ZIP project into the managed Projects directory.
   Future<String> importPortableArchive(String zipPath);
+
+  /// Creates a lightweight immutable version manifest sharing content-addressed media.
+  Future<String> createProjectVersion(String projectPath, {String? label});
+
+  Future<List<AudioProjectVersionSummary>> listProjectVersions(
+    String projectPath,
+  );
+
+  /// Restores a version after validating all referenced media and checksums.
+  Future<String> restoreProjectVersion(
+    String projectPath,
+    String versionPath,
+  );
+
+  Future<void> deleteProjectVersion(
+    String projectPath,
+    String versionPath,
+  );
 
   Future<AudioSession> load(String path);
 
