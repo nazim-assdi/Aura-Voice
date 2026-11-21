@@ -108,6 +108,16 @@ impl FloatRing {
     }
 
 
+    fn available_frames(&self) -> usize {
+        let write = self.write_index.load(Ordering::Acquire);
+        let read = self.read_index.load(Ordering::Acquire);
+        write.wrapping_sub(read) / self.channels
+    }
+
+    fn capacity_frames(&self) -> usize {
+        self.slots.len() / self.channels
+    }
+
     /// Reads one interpolated source frame at the output clock rate. The SPSC
     /// consumer owns the read cursor; no locks or allocations occur here.
     fn read_resampled_frame(
@@ -682,6 +692,23 @@ pub struct AuraAudioMonitorHandle {
     output_sample_rate: u32,
 }
 
+fn monitor_clock_step(
+    nominal_source_frames_per_output: f64,
+    queued_input_frames: usize,
+    target_queued_frames: usize,
+) -> f64 {
+    if target_queued_frames == 0 {
+        return nominal_source_frames_per_output;
+    }
+    // A bounded 500 ppm occupancy servo compensates for independent hardware
+    // oscillator drift without making audible pitch changes or blocking either
+    // device callback. More queued input means the output side consumes faster.
+    let error = (queued_input_frames as f64 - target_queued_frames as f64)
+        / target_queued_frames as f64;
+    let correction = (error * 0.0005).clamp(-0.0005, 0.0005);
+    nominal_source_frames_per_output * (1.0 + correction)
+}
+
 fn build_monitor_output_stream(
     device: &cpal::Device,
     config: cpal::StreamConfig,
@@ -719,11 +746,18 @@ fn build_monitor_output_stream(
                         let frames = data.len() / output_channels;
                         let monitor_gain =
                             f32::from_bits(callback_gain.load(Ordering::Acquire));
+                        let target_queued_frames =
+                            (callback_ring.capacity_frames() / 2).max(2);
+                        let adjusted_source_step = monitor_clock_step(
+                            source_frames_per_output,
+                            callback_ring.available_frames(),
+                            target_queued_frames,
+                        );
                         let mut missed = 0_u64;
                         for frame in 0..frames {
                             let (left, right) = match callback_ring.read_resampled_frame(
                                 &mut phase,
-                                source_frames_per_output,
+                                adjusted_source_step,
                             ) {
                                 Some((left, right)) =>
                                     (left * monitor_gain, right * monitor_gain),
@@ -1964,6 +1998,18 @@ mod tests {
             Some(73)
         );
         assert_eq!(position.load(Ordering::Acquire), 74);
+    }
+
+    #[test]
+    fn monitor_clock_servo_corrects_queue_drift_within_500_ppm() {
+        let nominal = 3.0_f64;
+        let low = monitor_clock_step(nominal, 0, 1000);
+        let high = monitor_clock_step(nominal, 2000, 1000);
+        assert!(low < nominal);
+        assert!(high > nominal);
+        assert!((low / nominal - 1.0).abs() <= 0.0005);
+        assert!((high / nominal - 1.0).abs() <= 0.0005);
+        assert_eq!(monitor_clock_step(nominal, 500, 0), nominal);
     }
 
     #[test]
