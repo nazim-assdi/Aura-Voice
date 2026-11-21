@@ -35,3 +35,24 @@ cache files are ignored and never prevent normal WAV analysis.
 
 The cache is derived data and is safe to delete. The source WAV remains the
 authoritative audio asset.
+
+
+## ZIP export, import and integrity verification
+
+Use the Editor's **Export portable project ZIP** action to create a single
+`.auravoice.zip` archive. The archive contains the existing project manifest,
+the complete sibling assets folder, and its `.aura-assets.json` inventory.
+
+The inventory stores each packaged WAV's byte length and SHA-256 digest. The
+Editor verifies these values before ZIP export. The ZIP import action in the
+Audio Library validates archive checksums, rejects symbolic links and unsafe
+paths, enforces entry-count and expanded-size limits, extracts into a temporary
+staging directory, and verifies every referenced WAV against the SHA-256
+inventory before moving the project into the Projects folder.
+
+If any WAV is missing or differs from its SHA-256 inventory, the project
+verification report marks that media reference as missing or corrupt. ZIP
+import leaves the Projects folder unchanged when validation fails. Existing
+portable projects created before the integrity inventory was introduced can
+still be opened; they simply do not provide SHA-256 verification until saved
+again as a portable project.
