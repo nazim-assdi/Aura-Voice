@@ -164,6 +164,7 @@ class FfiAudioEngineService implements AudioEngineService {
   @override
   Future<AudioPlaybackSession> startPlayback({
     required Uint8List wavBytes,
+    String? outputDeviceId,
   }) async {
     final api = _api;
     if (api == null) {
@@ -179,14 +180,18 @@ class FfiAudioEngineService implements AudioEngineService {
       );
     }
     final data = calloc<Uint8>(wavBytes.length);
-    final sampleRate = calloc<Uint32>();
+    final nativeDeviceId = outputDeviceId?.toNativeUtf8() ?? nullptr;
+    final sourceSampleRate = calloc<Uint32>();
+    final engineSampleRate = calloc<Uint32>();
     final totalFrames = calloc<Uint64>();
     try {
       data.asTypedList(wavBytes.length).setAll(0, wavBytes);
       final handle = api.playbackStartWav(
         data,
         wavBytes.length,
-        sampleRate,
+        nativeDeviceId,
+        sourceSampleRate,
+        engineSampleRate,
         totalFrames,
       );
       if (handle == nullptr) {
@@ -195,12 +200,15 @@ class FfiAudioEngineService implements AudioEngineService {
       return FfiAudioPlaybackSession._(
         api: api,
         handle: handle,
-        sampleRate: sampleRate.value,
+        sampleRate: sourceSampleRate.value,
+        engineSampleRate: engineSampleRate.value,
         totalFrames: totalFrames.value,
       );
     } finally {
       calloc.free(data);
-      calloc.free(sampleRate);
+      if (nativeDeviceId != nullptr) calloc.free(nativeDeviceId);
+      calloc.free(sourceSampleRate);
+      calloc.free(engineSampleRate);
       calloc.free(totalFrames);
     }
   }
@@ -1163,9 +1171,9 @@ class _NativeApi {
           'aura_engine_last_error',
         ) {
     final abi = _abiVersion();
-    if (abi != 5) {
+    if (abi != 6) {
       throw AudioEngineUnavailable(
-        'Native audio ABI mismatch: expected 5, found $abi.',
+        'Native audio ABI mismatch: expected 6, found $abi.',
       );
     }
   }
@@ -1201,6 +1209,8 @@ class _NativeApi {
   final Pointer<Void> Function(
     Pointer<Uint8>,
     int,
+    Pointer<Utf8>,
+    Pointer<Uint32>,
     Pointer<Uint32>,
     Pointer<Uint64>,
   ) _playbackStartWav;
@@ -1315,10 +1325,19 @@ class _NativeApi {
   Pointer<Void> playbackStartWav(
     Pointer<Uint8> bytes,
     int length,
-    Pointer<Uint32> sampleRate,
+    Pointer<Utf8> outputDeviceId,
+    Pointer<Uint32> sourceSampleRate,
+    Pointer<Uint32> engineSampleRate,
     Pointer<Uint64> totalFrames,
   ) =>
-      _playbackStartWav(bytes, length, sampleRate, totalFrames);
+      _playbackStartWav(
+        bytes,
+        length,
+        outputDeviceId,
+        sourceSampleRate,
+        engineSampleRate,
+        totalFrames,
+      );
   int playbackReplaceSession(
     Pointer<Void> playback,
     Pointer<Void> builder,
@@ -1543,12 +1562,16 @@ typedef _RealtimePlaybackStartDart = Pointer<Void> Function(
 typedef _PlaybackStartWavNative = Pointer<Void> Function(
   Pointer<Uint8>,
   IntPtr,
+  Pointer<Utf8>,
+  Pointer<Uint32>,
   Pointer<Uint32>,
   Pointer<Uint64>,
 );
 typedef _PlaybackStartWavDart = Pointer<Void> Function(
   Pointer<Uint8>,
   int,
+  Pointer<Utf8>,
+  Pointer<Uint32>,
   Pointer<Uint32>,
   Pointer<Uint64>,
 );
