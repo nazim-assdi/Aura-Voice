@@ -1098,6 +1098,81 @@ pub(crate) fn build_realtime_mixer_owned(
     build_realtime_mixer_shared(session, &shared)
 }
 
+/// Converts a session and all of its clips to the output device clock before
+/// the device stream is opened. The realtime callback therefore mixes directly
+/// at the negotiated hardware rate and performs no sample-rate conversion.
+pub(crate) fn build_realtime_mixer_for_output_rate(
+    session: &MixSession,
+    assets: HashMap<String, AudioBuffer>,
+    output_rate: u32,
+) -> Result<Arc<RealtimeMixer>, AudioError> {
+    validate_audio_format(output_rate, session.channels)?;
+    if output_rate == session.sample_rate {
+        return build_realtime_mixer_owned(session, assets);
+    }
+
+    let mut converted_session = session.clone();
+    let source_rate = session.sample_rate;
+    converted_session.sample_rate = output_rate;
+
+    for track in &mut converted_session.tracks {
+        for clip in &mut track.clips {
+            let timeline_start = scale_sample_frame(clip.start_frame, source_rate, output_rate)?;
+            let timeline_end = scale_sample_frame(
+                clip.start_frame.checked_add(clip.duration_frames)
+                    .ok_or(AudioError::SizeOverflow)?,
+                source_rate,
+                output_rate,
+            )?;
+            let source_start = scale_sample_frame(
+                clip.source_start_frame,
+                source_rate,
+                output_rate,
+            )?;
+            let source_end = scale_sample_frame(
+                clip.source_start_frame.checked_add(clip.duration_frames)
+                    .ok_or(AudioError::SizeOverflow)?,
+                source_rate,
+                output_rate,
+            )?;
+            clip.start_frame = timeline_start;
+            clip.source_start_frame = source_start;
+            clip.duration_frames = timeline_end
+                .saturating_sub(timeline_start)
+                .min(source_end.saturating_sub(source_start));
+            clip.fade_in_frames = scale_sample_frame(
+                clip.fade_in_frames,
+                source_rate,
+                output_rate,
+            )?.min(clip.duration_frames);
+            clip.fade_out_frames = scale_sample_frame(
+                clip.fade_out_frames,
+                source_rate,
+                output_rate,
+            )?.min(clip.duration_frames);
+        }
+    }
+
+    let converted_assets = assets
+        .into_iter()
+        .map(|(id, asset)| Ok((id, asset.resample_to(output_rate)?)))
+        .collect::<Result<HashMap<_, _>, AudioError>>()?;
+    build_realtime_mixer_owned(&converted_session, converted_assets)
+}
+
+fn scale_sample_frame(
+    frame: u64,
+    source_rate: u32,
+    target_rate: u32,
+) -> Result<u64, AudioError> {
+    let numerator = u128::from(frame)
+        .checked_mul(u128::from(target_rate))
+        .and_then(|value| value.checked_add(u128::from(source_rate / 2)))
+        .ok_or(AudioError::SizeOverflow)?;
+    u64::try_from(numerator / u128::from(source_rate))
+        .map_err(|_| AudioError::SizeOverflow)
+}
+
 
 fn validate_track_dsp(
     sample_rate: u32,
