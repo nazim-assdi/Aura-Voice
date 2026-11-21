@@ -14,7 +14,7 @@ use std::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, AtomicU64, Ordering}
 use std::sync::Arc;
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use cpal::{DeviceId, SampleFormat, Stream};
+use cpal::{DeviceId, SampleFormat, SampleRate, Stream, SupportedStreamConfig};
 
 use crate::{
     set_ffi_error, AudioError, RealtimeMixer, RealtimeRenderState,
@@ -190,6 +190,145 @@ fn list_input_devices_json() -> Result<String, AudioError> {
     }
     json.push(']');
     Ok(json)
+}
+
+/// Negotiated output device and stream format. It is selected before the
+/// graph is converted, so the device callback always runs at this exact rate.
+pub(crate) struct OutputTarget {
+    device: cpal::Device,
+    supported: SupportedStreamConfig,
+}
+
+impl OutputTarget {
+    pub(crate) fn sample_rate(&self) -> u32 {
+        self.supported.sample_rate()
+    }
+}
+
+fn preferred_rate_in_range(minimum: u32, maximum: u32, preferred: u32) -> u32 {
+    preferred.clamp(minimum, maximum)
+}
+
+pub(crate) fn select_output_target(
+    requested_id: Option<&str>,
+    preferred_sample_rate: u32,
+    required_channels: u16,
+) -> Result<OutputTarget, AudioError> {
+    let host = cpal::default_host();
+    let device = if let Some(value) = requested_id.filter(|value| !value.trim().is_empty()) {
+        let id = DeviceId::from_str(value).map_err(|error| {
+            AudioError::InvalidArgument(format!("invalid output device id: {error}"))
+        })?;
+        let device_host = cpal::host_from_id(id.host()).map_err(|error| {
+            AudioError::InvalidArgument(format!("output audio host unavailable: {error}"))
+        })?;
+        device_host.device_by_id(&id).ok_or_else(|| {
+            AudioError::InvalidArgument("selected output device is no longer available".into())
+        })?
+    } else {
+        host.default_output_device().ok_or_else(|| {
+            AudioError::InvalidArgument("no default audio output device is available".into())
+        })?
+    };
+
+    let ranges = device.supported_output_configs().map_err(|error| {
+        AudioError::InvalidArgument(format!("cannot query output configurations: {error}"))
+    })?;
+    let mut best: Option<(u32, SupportedStreamConfig)> = None;
+    for range in ranges.filter(|range| range.channels() >= required_channels) {
+        let rate = preferred_rate_in_range(
+            range.min_sample_rate().0,
+            range.max_sample_rate().0,
+            preferred_sample_rate,
+        );
+        let candidate = range.with_sample_rate(SampleRate(rate));
+        let distance = rate.abs_diff(preferred_sample_rate);
+        if best.as_ref().map(|(best_distance, _)| distance < *best_distance).unwrap_or(true) {
+            best = Some((distance, candidate));
+        }
+    }
+    let (_, supported) = best.ok_or_else(|| {
+        AudioError::InvalidArgument(format!(
+            "output device does not support at least {required_channels} channel(s)"
+        ))
+    })?;
+    Ok(OutputTarget { device, supported })
+}
+
+/// Returns JSON describing the available operating-system output devices.
+/// Release the returned value with aura_audio_string_free.
+fn list_output_devices_json() -> Result<String, AudioError> {
+    let host = cpal::default_host();
+    let default_id = host
+        .default_output_device()
+        .and_then(|device| device.id().ok())
+        .map(|id| id.to_string());
+    let devices = host.output_devices().map_err(|error| {
+        AudioError::InvalidArgument(format!("cannot enumerate output devices: {error}"))
+    })?;
+
+    let mut json = String::from("[");
+    let mut first = true;
+    for device in devices {
+        let id = device.id().map_err(|error| {
+            AudioError::InvalidArgument(format!("cannot read output device id: {error}"))
+        })?.to_string();
+        let name = device.to_string();
+        let default = device.default_output_config().ok();
+        let mut min_rate = u32::MAX;
+        let mut max_rate = 0_u32;
+        let mut max_channels = 0_u16;
+        if let Ok(ranges) = device.supported_output_configs() {
+            for range in ranges {
+                min_rate = min_rate.min(range.min_sample_rate().0);
+                max_rate = max_rate.max(range.max_sample_rate().0);
+                max_channels = max_channels.max(range.channels());
+            }
+        }
+        if !first {
+            json.push(',');
+        }
+        first = false;
+        let _ = write!(
+            json,
+            "{{\"id\":\"{}\",\"name\":\"{}\",\"isDefault\":{},\"channels\":{},\"sampleRate\":{},\"minSampleRate\":{},\"maxSampleRate\":{}}}",
+            json_escape(&id),
+            json_escape(&name),
+            default_id.as_deref() == Some(id.as_str()),
+            default.as_ref().map(|value| value.channels()).unwrap_or(max_channels),
+            default.as_ref().map(|value| value.sample_rate()).unwrap_or(0),
+            if min_rate == u32::MAX { 0 } else { min_rate },
+            max_rate,
+        );
+    }
+    json.push(']');
+    Ok(json)
+}
+
+/// Lists system output devices. The JSON string must be released with
+/// aura_audio_string_free.
+#[no_mangle]
+pub extern "C" fn aura_audio_output_devices_json() -> *mut c_char {
+    match std::panic::catch_unwind(list_output_devices_json) {
+        Ok(Ok(json)) => match CString::new(json) {
+            Ok(value) => {
+                set_ffi_error("");
+                value.into_raw()
+            }
+            Err(_) => {
+                set_ffi_error("output device list contained an invalid string");
+                ptr::null_mut()
+            }
+        },
+        Ok(Err(error)) => {
+            set_ffi_error(&error.to_string());
+            ptr::null_mut()
+        }
+        Err(_) => {
+            set_ffi_error("output device enumeration panicked");
+            ptr::null_mut()
+        }
+    }
 }
 
 fn build_capture_stream(
@@ -479,6 +618,8 @@ pub struct AuraAudioPlaybackHandle {
     _stream: Stream,
     total_frames: AtomicUsize,
     drain_frames: usize,
+    /// Clock rate used by the active output stream and graph.
+    output_sample_rate: u32,
     realtime_graph: Option<Arc<RealtimeGraph>>,
     position_frames: Arc<AtomicUsize>,
     paused: Arc<AtomicBool>,
@@ -867,6 +1008,7 @@ fn build_realtime_playback_stream(
 /// The returned handle uses the same transport controls as WAV playback.
 pub(crate) fn start_realtime_playback(
     mixer: Arc<RealtimeMixer>,
+    target: OutputTarget,
 ) -> Result<*mut AuraAudioPlaybackHandle, AudioError> {
     if mixer.total_frames == 0 {
         return Err(AudioError::InvalidArgument(
@@ -882,42 +1024,30 @@ pub(crate) fn start_realtime_playback(
         .map_err(|_| AudioError::SizeOverflow)?;
     drop(initial);
 
-    let host = cpal::default_host();
-    let device = host
-        .default_output_device()
-        .ok_or_else(|| AudioError::InvalidArgument(
-            "no default audio output device is available".into(),
-        ))?;
-    let supported = device
-        .supported_output_configs()
-        .map_err(|error| AudioError::InvalidArgument(format!(
-            "cannot query output configurations: {error}"
-        )))?
-        .filter(|range| range.channels() >= channels)
-        .filter_map(|range| range.try_with_sample_rate(sample_rate))
-        .next()
-        .ok_or_else(|| AudioError::InvalidArgument(format!(
-            "the default output device does not support {sample_rate} Hz playback"
-        )))?;
-
-    let output_channels = usize::from(supported.channels());
+    let output_sample_rate = target.supported.sample_rate();
+    if output_sample_rate != sample_rate {
+        return Err(AudioError::InvalidArgument(
+            "prepared mixer rate does not match the negotiated output rate".into(),
+        ));
+    }
+    let output_channels = usize::from(target.supported.channels());
     if output_channels == 0 {
         return Err(AudioError::InvalidArgument(
             "output device reports zero channels".into(),
         ));
     }
-    let format = supported.sample_format();
-    let config = supported.config();
+    let format = target.supported.sample_format();
+    let config = target.supported.config();
     let position_frames = Arc::new(AtomicUsize::new(0));
     let paused = Arc::new(AtomicBool::new(false));
     let loop_enabled = Arc::new(AtomicBool::new(false));
     let loop_start_frames = Arc::new(AtomicUsize::new(0));
     let loop_end_frames = Arc::new(AtomicUsize::new(0));
     let stream_error = Arc::new(AtomicU32::new(0));
-    let drain_frames = (sample_rate / 4) as usize;
+    let drain_frames = (output_sample_rate / 4) as usize;
 
     let stream = build_realtime_playback_stream(
-        &device,
+        &target.device,
         config,
         format,
         Arc::clone(&graph),
@@ -938,6 +1068,7 @@ pub(crate) fn start_realtime_playback(
         _stream: stream,
         total_frames: AtomicUsize::new(total_frames),
         drain_frames,
+        output_sample_rate,
         realtime_graph: Some(graph),
         position_frames,
         paused,
@@ -1045,6 +1176,7 @@ pub unsafe extern "C" fn aura_audio_playback_start_wav(
             _stream: stream,
             total_frames: AtomicUsize::new(total_frames),
             drain_frames: (sample_rate / 4) as usize,
+            output_sample_rate: sample_rate,
             realtime_graph: None,
             position_frames,
             paused,
@@ -1223,6 +1355,11 @@ pub(crate) unsafe fn replace_realtime_session(
             "live session replacement is only supported for multitrack playback".into(),
         )
     })?;
+    if mixer.sample_rate != playback.output_sample_rate {
+        return Err(AudioError::InvalidArgument(
+            "replacement graph must use the active output device sample rate".into(),
+        ));
+    }
     let total_frames = usize::try_from(mixer.total_frames)
         .map_err(|_| AudioError::SizeOverflow)?;
     graph.publish(mixer)?;
@@ -1262,6 +1399,13 @@ pub unsafe extern "C" fn aura_audio_playback_stop(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn output_rate_selection_clamps_to_the_nearest_supported_range() {
+        assert_eq!(preferred_rate_in_range(44_100, 96_000, 48_000), 48_000);
+        assert_eq!(preferred_rate_in_range(48_000, 96_000, 44_100), 48_000);
+        assert_eq!(preferred_rate_in_range(8_000, 32_000, 48_000), 32_000);
+    }
 
     #[test]
     fn playback_cursor_does_not_advance_while_paused() {
