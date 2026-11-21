@@ -371,6 +371,14 @@ class _StudioPageState extends State<StudioPage> {
   double _monitorGain = 1.0;
   int _monitorUnderrunFrames = 0;
   int _monitorInputDroppedFrames = 0;
+  int _monitorInputBufferFrames = 0;
+  int _monitorOutputBufferFrames = 0;
+  int _monitorInputCallbackLatencyNs = 0;
+  int _monitorOutputCallbackLatencyNs = 0;
+  int _monitorEstimatedLatencyNs = 0;
+  int _monitorMaximumEstimatedLatencyNs = 0;
+  int _monitorLatencyEstimateCount = 0;
+  int _monitorRingCapacityFrames = 0;
   bool _monitorStarting = false;
   String? _message;
   bool _loadingDevices = true;
@@ -457,6 +465,9 @@ class _StudioPageState extends State<StudioPage> {
       _monitorStarting = true;
       _monitorUnderrunFrames = 0;
       _monitorInputDroppedFrames = 0;
+      _monitorEstimatedLatencyNs = 0;
+      _monitorMaximumEstimatedLatencyNs = 0;
+      _monitorLatencyEstimateCount = 0;
       _message = null;
     });
     AudioMonitorSession? monitor;
@@ -475,6 +486,17 @@ class _StudioPageState extends State<StudioPage> {
         _monitor = monitor;
         _monitorUnderrunFrames = monitor!.underrunFrames;
         _monitorInputDroppedFrames = monitor.droppedInputFrames;
+        _monitorInputBufferFrames = monitor.inputBufferFrames;
+        _monitorOutputBufferFrames = monitor.outputBufferFrames;
+        _monitorInputCallbackLatencyNs =
+            monitor.inputCaptureToCallbackNanoseconds;
+        _monitorOutputCallbackLatencyNs =
+            monitor.outputCallbackToPlaybackNanoseconds;
+        _monitorEstimatedLatencyNs = monitor.estimatedLatencyNanoseconds;
+        _monitorMaximumEstimatedLatencyNs =
+            monitor.maximumEstimatedLatencyNanoseconds;
+        _monitorLatencyEstimateCount = monitor.latencyEstimateCount;
+        _monitorRingCapacityFrames = monitor.ringCapacityFrames;
         _message =
             'Live monitor: ${monitor.inputSampleRate} Hz input → ${monitor.outputSampleRate} Hz output. Use headphones to prevent feedback.';
       });
@@ -496,6 +518,14 @@ class _StudioPageState extends State<StudioPage> {
     final failed = monitor.hasError;
     final underruns = monitor.underrunFrames;
     final droppedInput = monitor.droppedInputFrames;
+    final inputBufferFrames = monitor.inputBufferFrames;
+    final outputBufferFrames = monitor.outputBufferFrames;
+    final inputCaptureLatency = monitor.inputCaptureToCallbackNanoseconds;
+    final outputPlaybackLatency = monitor.outputCallbackToPlaybackNanoseconds;
+    final estimatedLatency = monitor.estimatedLatencyNanoseconds;
+    final maximumEstimatedLatency = monitor.maximumEstimatedLatencyNanoseconds;
+    final estimateCount = monitor.latencyEstimateCount;
+    final ringCapacity = monitor.ringCapacityFrames;
     if (failed) {
       unawaited(_stopMonitor());
       if (mounted) setState(() => _message = 'The microphone monitor device reported an audio error.');
@@ -503,10 +533,26 @@ class _StudioPageState extends State<StudioPage> {
     }
     if (mounted &&
         (underruns != _monitorUnderrunFrames ||
-            droppedInput != _monitorInputDroppedFrames)) {
+            droppedInput != _monitorInputDroppedFrames ||
+            inputBufferFrames != _monitorInputBufferFrames ||
+            outputBufferFrames != _monitorOutputBufferFrames ||
+            inputCaptureLatency != _monitorInputCallbackLatencyNs ||
+            outputPlaybackLatency != _monitorOutputCallbackLatencyNs ||
+            estimatedLatency != _monitorEstimatedLatencyNs ||
+            maximumEstimatedLatency != _monitorMaximumEstimatedLatencyNs ||
+            estimateCount != _monitorLatencyEstimateCount ||
+            ringCapacity != _monitorRingCapacityFrames)) {
       setState(() {
         _monitorUnderrunFrames = underruns;
         _monitorInputDroppedFrames = droppedInput;
+        _monitorInputBufferFrames = inputBufferFrames;
+        _monitorOutputBufferFrames = outputBufferFrames;
+        _monitorInputCallbackLatencyNs = inputCaptureLatency;
+        _monitorOutputCallbackLatencyNs = outputPlaybackLatency;
+        _monitorEstimatedLatencyNs = estimatedLatency;
+        _monitorMaximumEstimatedLatencyNs = maximumEstimatedLatency;
+        _monitorLatencyEstimateCount = estimateCount;
+        _monitorRingCapacityFrames = ringCapacity;
       });
     }
   }
@@ -519,11 +565,20 @@ class _StudioPageState extends State<StudioPage> {
     final finalUnderruns = monitor?.underrunFrames ?? _monitorUnderrunFrames;
     final finalDroppedInput =
         monitor?.droppedInputFrames ?? _monitorInputDroppedFrames;
+    final finalEstimatedLatency =
+        monitor?.estimatedLatencyNanoseconds ?? _monitorEstimatedLatencyNs;
+    final finalMaximumLatency = monitor?.maximumEstimatedLatencyNanoseconds ??
+        _monitorMaximumEstimatedLatencyNs;
+    final finalLatencyCount =
+        monitor?.latencyEstimateCount ?? _monitorLatencyEstimateCount;
     if (monitor != null) await monitor.stop();
     if (mounted && monitor != null) {
       setState(() {
         _monitorUnderrunFrames = finalUnderruns;
         _monitorInputDroppedFrames = finalDroppedInput;
+        _monitorEstimatedLatencyNs = finalEstimatedLatency;
+        _monitorMaximumEstimatedLatencyNs = finalMaximumLatency;
+        _monitorLatencyEstimateCount = finalLatencyCount;
         _message = 'Live microphone monitoring stopped.';
       });
     }
@@ -1081,14 +1136,60 @@ class _StudioPageState extends State<StudioPage> {
                     ),
                     Text(
                       _monitor == null
-                          ? 'Target ring: 20 ms; actual latency also depends on the device driver and system buffers.'
-                          : 'Input ${_monitor!.inputSampleRate} Hz  ·  Output ${_monitor!.outputSampleRate} Hz  ·  Output starvation: $_monitorUnderrunFrames frames  ·  Input drops: $_monitorInputDroppedFrames',
+                          ? 'The 20 ms setting requests the device callback size and sizes the monitor ring. Host drivers may clamp or ignore the requested callback size.'
+                          : 'Requested callback: ${_monitor!.requestedBufferMilliseconds} ms  ·  SPSC ring: $_monitorRingCapacityFrames frames',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: _monitorUnderrunFrames == 0
-                                ? AuraTheme.muted
-                                : const Color(0xFFFFC27A),
+                            color: AuraTheme.muted,
+                            height: 1.4,
                           ),
                     ),
+                    if (_monitor != null) ...[
+                      const SizedBox(height: 6),
+                      Text(
+                        'Actual callback blocks: $_monitorInputBufferFrames input / $_monitorOutputBufferFrames output frames',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: AuraTheme.muted,
+                            ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        _monitorLatencyEstimateCount == 0
+                            ? 'Host latency estimate: waiting for valid CPAL timestamps…'
+                            : 'Capture → predicted playback: ${(_monitorEstimatedLatencyNs / 1000000).toStringAsFixed(2)} ms  ·  Maximum: ${(_monitorMaximumEstimatedLatencyNs / 1000000).toStringAsFixed(2)} ms',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: _monitorLatencyEstimateCount == 0
+                                  ? AuraTheme.muted
+                                  : AuraTheme.mint,
+                              fontFeatures: const [FontFeature.tabularFigures()],
+                            ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Input capture-to-callback: ${(_monitorInputCallbackLatencyNs / 1000000).toStringAsFixed(2)} ms  ·  Output callback-to-playback: ${(_monitorOutputCallbackLatencyNs / 1000000).toStringAsFixed(2)} ms',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: AuraTheme.muted,
+                              fontFeatures: const [FontFeature.tabularFigures()],
+                            ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Output ring starvation: $_monitorUnderrunFrames frames  ·  Input ring drops: $_monitorInputDroppedFrames frames',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: _monitorUnderrunFrames == 0 &&
+                                      _monitorInputDroppedFrames == 0
+                                  ? AuraTheme.muted
+                                  : const Color(0xFFFFC27A),
+                            ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Host-timestamp estimate only; calibrate with a physical loopback test for true round-trip latency.',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: const Color(0xFFFFC27A),
+                              height: 1.4,
+                            ),
+                      ),
+                    ],
                     const SizedBox(height: 12),
                     SizedBox(
                       width: double.infinity,
