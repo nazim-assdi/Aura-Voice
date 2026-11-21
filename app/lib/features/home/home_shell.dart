@@ -450,6 +450,8 @@ class _StudioPageState extends State<StudioPage> {
     if (_monitorStarting || _monitor != null || _capture != null || _starting) {
       return;
     }
+    await _stopPlayback();
+    if (!mounted) return;
     setState(() {
       _monitorStarting = true;
       _monitorUnderrunFrames = 0;
@@ -505,10 +507,11 @@ class _StudioPageState extends State<StudioPage> {
     _monitorTimer = null;
     final monitor = _monitor;
     _monitor = null;
+    final finalUnderruns = monitor?.underrunFrames ?? _monitorUnderrunFrames;
     if (monitor != null) await monitor.stop();
     if (mounted && monitor != null) {
       setState(() {
-        _monitorUnderrunFrames = monitor.underrunFrames;
+        _monitorUnderrunFrames = finalUnderruns;
         _message = 'Live microphone monitoring stopped.';
       });
     }
@@ -809,7 +812,7 @@ class _StudioPageState extends State<StudioPage> {
                   ),
                   IconButton(
                     tooltip: 'Refresh microphone list',
-                    onPressed: listening || _loadingDevices || _starting
+                    onPressed: listening || _monitor != null || _loadingDevices || _starting
                         ? null
                         : _refreshDevices,
                     icon: const Icon(Icons.refresh_rounded),
@@ -878,7 +881,7 @@ class _StudioPageState extends State<StudioPage> {
                                 ),
                               )
                               .toList(),
-                          onChanged: listening
+                          onChanged: listening || _monitor != null
                               ? null
                               : (value) => setState(() => _selectedDeviceId = value),
                         ),
