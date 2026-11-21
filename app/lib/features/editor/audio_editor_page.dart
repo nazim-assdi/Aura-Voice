@@ -1066,7 +1066,9 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
   Future<void> _startRealtimePlayback() async {
     if (_rendering) return;
     await _stopPlayback();
-    if (!mounted) return;
+    if (!mounted) {
+      return;
+    }
     if (!_hasAudibleClip) {
       setState(() => _message = 'No audible clips. Unmute a track or clip, or change solo mode before playback.');
       return;
@@ -1293,14 +1295,17 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
 
   String? get _playbackDiagnosticsLabel {
     final playback = _playback;
-    if (playback is! AudioPlaybackDiagnostics) return null;
+    if (playback == null || playback is! AudioPlaybackDiagnostics) {
+      return null;
+    }
+    final diagnostics = playback as AudioPlaybackDiagnostics;
     final maxMicros =
-        playback.maximumCallbackTimeNanoseconds / 1000.0;
-    final cpu = playback.estimatedCallbackCpuPercent;
-    return '${playback.outputSampleRate} Hz output · '
+        diagnostics.maximumCallbackTimeNanoseconds / 1000.0;
+    final cpu = diagnostics.estimatedCallbackCpuPercent;
+    return '${diagnostics.outputSampleRate} Hz output · '
         'callback CPU ${cpu.toStringAsFixed(1)}% · '
         'max ${maxMicros.toStringAsFixed(1)} µs · '
-        'deadline misses ${playback.callbackDeadlineMisses}';
+        'deadline misses ${diagnostics.callbackDeadlineMisses}';
   }
 
   String _formatTransportPosition(int frames) {
