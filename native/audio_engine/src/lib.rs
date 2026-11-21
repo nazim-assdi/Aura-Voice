@@ -1992,8 +1992,8 @@ mod tests {
     }
 
     #[test]
-    fn c_abi_reports_version_six_for_standalone_device_playback() {
-        assert_eq!(aura_engine_abi_version(), 6);
+    fn c_abi_reports_version_seven_for_observed_monitor_callback_sizes() {
+        assert_eq!(aura_engine_abi_version(), 7);
     }
 
     #[test]
