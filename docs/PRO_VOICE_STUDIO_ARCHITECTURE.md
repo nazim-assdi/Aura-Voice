@@ -155,16 +155,19 @@ The current implementation of native output uses a sample-frame transport and no
 - Codec/license audit, accessibility, privacy review and release notes.
 - Gate: repeatable builds and tested workflows on each supported platform.
 
-## Implementation status (November 19, 2026)
+## Implementation status (November 21, 2026)
 
 ### Implemented in source
 - Versioned Flutter session model with sample-frame clip positions, tracks, markers, per-clip fades, validation and JSON round-trip tests.
 - Professional Voice Studio dashboard with an honest native-library availability indicator.
 - Rust PCM WAV engine: PCM 8/16/24/32 and IEEE float32 WAV import; mono/stereo buffers; sample-frame clip placement; offline multitrack mix; track/clip/master gain; panning; mute/solo; linear fades; per-track high-pass and compressor processing; sample-peak/overload reporting; PCM 16/24/32 WAV export.
 - CPAL microphone input enumeration with persistent device ids and default-input identification.
-- CPAL WAV playback through the default output device, using a compatible device-supported sample-rate configuration, common device format conversion, atomic sample-frame cursor, pause/resume, seek, validated loop range, playback position, completion/error status, a 250 ms output-drain tail and explicit stop.
+- CPAL standalone WAV playback through the default output device, using a compatible device-supported sample-rate configuration, common device format conversion, atomic sample-frame cursor, pause/resume, seek, validated loop range, playback position, completion/error status, a 250 ms output-drain tail and explicit stop.
+- CPAL output-device discovery/selection for realtime multitrack playback, including supported-rate discovery and worker-side windowed-sinc asset resampling with clip/timeline frame conversion to the negotiated output rate.
+- Direct CPAL microphone-to-output monitoring with a preallocated SPSC bridge, input/output clock interpolation, bounded occupancy servo, monitor gain and separate input-drop/output-starvation counters. Studio exposes input and output device selectors and a headphones warning.
+- Realtime callback telemetry exposed to the Editor: callback count, processed frames, estimated callback CPU, maximum callback duration and software block-deadline misses. These metrics are not a driver underrun counter or calibrated end-to-end latency measurement.
 - CPAL mono/stereo microphone capture stream with preallocated lock-free SPSC ring, dropped-frame counter and stream-error status.
-- C ABI version 4 for input discovery/capture, standalone WAV audition, callback-driven realtime session playback, live session-graph replacement, track DSP configuration and shared sample-frame transport; Dart FFI exposes capture and playback handles.
+- C ABI version 5 for input/output discovery, capture, direct monitoring, standalone WAV audition, callback-driven realtime session playback, output-rate negotiation, live session-graph replacement, track DSP configuration and shared sample-frame transport; Dart FFI exposes capture, monitor and playback handles.
 - Flutter Studio UI for one-take local 24-bit PCM WAV recording, live Peak/RMS meters, a dropped-frame warning, and Play/Stop preview with progress.
 - Local Audio Library with RIFF metadata scan, sample-frame duration, recording search/sort, saved-take playback, true sample-derived waveform preview, rename and confirmed deletion guarded to the canonical recordings directory. Recordings referenced by saved projects are protected.
 - Local JSON session-project store with backup/restore on interrupted replacement, project listing/reopen and source-media reference checks.
@@ -176,10 +179,9 @@ The current implementation of native output uses a sample-frame transport and no
 ### Still not implemented
 - Take management, non-destructive media relinking, project asset import/copy strategy and recovery snapshots.
 - Device reconnect recovery, calibrated output/round-trip latency measurement and physical-device CPU/deadline/underrun benchmarks for dense sessions. Software callback metrics and monitor ring counters are available, but do not substitute for those hardware measurements.
-- Sample-rate conversion and additional microphone sample formats.
 - Android/iOS native audio library packaging and native app linking.
 - Waveform-cache persistence, portable media relinking, project asset copy/import strategy, crash-recovery snapshots, and edit operations that persist as a journal rather than only in-memory undo history. Current trim is inward-only because source-media end boundaries are not yet stored in the project schema.
 - Advanced realtime effects beyond the current high-pass/compressor lane, buses/sends, compressed MP3/AAC/FLAC decoders, persistent waveform cache and production audio restoration.
 - Production TTS, voice cloning, transcription, translation, dubbing and mastering workflows.
 
-All code and build configuration are committed to `main`. Native CI is running against the current block-scheduler, graph-handoff and dense-session regression tests; platform builds and physical-device validation are still required before treating the output path as release-verified. On a desktop build with the matching native library, Studio can record local 24-bit PCM WAV, manage recordings, build/edit sample-frame sessions and play through the native mixer with live graph replacement, sample-frame seek, pause/resume and clip/whole-mix loops. The callback uses preallocated blocks and an active-clip event schedule; the first live DSP lane provides per-track high-pass and compression. Dense-session real-device performance, underrun behaviour, resampling, output selection, input monitoring, advanced DSP and mobile native audio packaging remain outstanding.
+All code and build configuration are committed directly to the existing `main` branch. The native Audio Engine CI for commit `0d285cfd` completed successfully, including native checking, shared-library build and deterministic Rust tests. A separate Flutter/platform workflow for that code was queued at the time of this status update; check Actions for its current outcome. Real-device validation is still required before the output path is considered hardware-performance-verified. Source now includes output-device selection, worker-side rate conversion, direct microphone monitoring and software callback diagnostics. These diagnostics do not establish actual driver underruns or input-to-output latency. Follow [the real-device benchmark runbook](HARDWARE_AUDIO_BENCHMARK.md) to record Windows/macOS/Linux measurements. Advanced DSP and mobile native audio packaging remain outstanding.
