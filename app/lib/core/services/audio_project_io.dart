@@ -355,8 +355,7 @@ class FileAudioProjectStore implements AudioProjectStore {
           }
           checksumFiles = metadata['files'] as Map<String, dynamic>;
           final inventoryNames = checksumFiles.keys.toSet();
-          if (inventoryNames.length != referencesByRelativeName.length ||
-              !inventoryNames.containsAll(referencesByRelativeName.keys)) {
+          if (!inventoryNames.containsAll(referencesByRelativeName.keys)) {
             corrupt.addAll(resolvedByRelativeName.values);
           }
           hasChecksumManifest = true;
@@ -690,8 +689,7 @@ class FileAudioProjectStore implements AudioProjectStore {
       final packagedAssetNames = fileEntries.keys
           .where((name) => name.startsWith('$assetFolderName/'))
           .toSet();
-      if (packagedAssetNames.length != referencedAssets.length + 1 ||
-          !packagedAssetNames.containsAll(referencedAssets) ||
+      if (!packagedAssetNames.containsAll(referencedAssets) ||
           !packagedAssetNames.contains(assetManifestName)) {
         throw const AudioProjectStoreUnavailable(
           'The ZIP archive is missing one or more project assets or its integrity manifest.',
@@ -862,6 +860,64 @@ class FileAudioProjectStore implements AudioProjectStore {
     }
     var checked = 0;
     if (checksumFiles != null) {
+      final referencedNames = references
+          .map((reference) => reference.replaceAll('\\', '/').split('/').last)
+          .toSet();
+      final inventoryNames = checksumFiles.keys.toSet();
+      if (!inventoryNames.containsAll(referencedNames)) {
+        corrupt.addAll(references);
+      }
+      final assetDirectory = Directory(
+        '${manifestFile.parent.path}${Platform.pathSeparator}$assetFolder',
+      );
+      final actualNames = <String>{};
+      if (await assetDirectory.exists()) {
+        await for (final entity in assetDirectory.list(followLinks: false)) {
+          if (entity is File &&
+              entity.path !=
+                  '${assetDirectory.path}${Platform.pathSeparator}.aura-assets.json' &&
+              await FileSystemEntity.type(entity.path, followLinks: false) ==
+                  FileSystemEntityType.file) {
+            actualNames.add(entity.uri.pathSegments.last);
+          }
+        }
+      }
+      if (actualNames.length != inventoryNames.length ||
+          !actualNames.containsAll(inventoryNames)) {
+        corrupt.addAll(references);
+      }
+      for (final name in inventoryNames) {
+        if (!_isSafePortableAssetFileName(name)) {
+          corrupt.addAll(references);
+          continue;
+        }
+        final expected = checksumFiles[name];
+        if (expected is! Map<String, dynamic>) {
+          corrupt.addAll(references);
+          continue;
+        }
+        final file = File(
+          '${assetDirectory.path}${Platform.pathSeparator}$name',
+        );
+        if (!await file.exists()) {
+          corrupt.addAll(references);
+          continue;
+        }
+        final stat = await file.stat();
+        final expectedSize = expected['sizeBytes'];
+        final expectedHash = expected['sha256'];
+        if (expectedSize is! int ||
+            expectedHash is! String ||
+            stat.size != expectedSize) {
+          corrupt.addAll(references);
+          continue;
+        }
+        final digest = await sha256.bind(file.openRead()).first;
+        checked++;
+        if (digest.toString().toLowerCase() != expectedHash.toLowerCase()) {
+          corrupt.addAll(references);
+        }
+      }
       for (final reference in references) {
         final segments = reference.replaceAll('\\', '/').split('/');
         final expected = checksumFiles[segments.last];
@@ -1360,7 +1416,8 @@ class FileAudioProjectStore implements AudioProjectStore {
           .hasMatch(value);
 
   bool _isSafePortableAssetFileName(String value) =>
-      RegExp(r'^[a-f0-9]{8}_[A-Za-z0-9._-]+$').hasMatch(value);
+      RegExp(r'^(?:[a-f0-9]{8}_[A-Za-z0-9._-]+|[a-f0-9]{64}\\.wav)$')
+          .hasMatch(value);
 
   bool _isSafeProjectManifestName(String value) =>
       RegExp(r'^AuraProject_[A-Za-z0-9_-]+\.aura\.json$')
