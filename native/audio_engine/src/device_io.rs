@@ -1303,6 +1303,24 @@ pub unsafe extern "C" fn aura_audio_monitor_output_buffer_frames(
     }
 }
 
+/// Number of frames in the most recent input callback buffer.
+#[no_mangle]
+pub unsafe extern "C" fn aura_audio_monitor_input_callback_frames(
+    handle: *const AuraAudioMonitorHandle,
+) -> u32 {
+    if handle.is_null() { return 0; }
+    unsafe { &*handle }.diagnostics.input_callback_frames.load(Ordering::Relaxed)
+}
+
+/// Number of frames in the most recent output callback buffer.
+#[no_mangle]
+pub unsafe extern "C" fn aura_audio_monitor_output_callback_frames(
+    handle: *const AuraAudioMonitorHandle,
+) -> u32 {
+    if handle.is_null() { return 0; }
+    unsafe { &*handle }.diagnostics.output_callback_frames.load(Ordering::Relaxed)
+}
+
 /// Input hardware capture-to-callback delay from the CPAL input stream clock.
 #[no_mangle]
 pub unsafe extern "C" fn aura_audio_monitor_input_capture_to_callback_ns(
