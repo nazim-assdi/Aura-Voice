@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../../core/services/audio_engine_service.dart';
@@ -40,6 +41,8 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
   late final AudioProjectStore _projects;
   late final AudioWaveformService _waveforms;
   Map<String, AudioWaveformData> _waveformCache = {};
+  Set<String> _missingMediaPaths = {};
+  bool _relinkingMedia = false;
 
   String? _selectedTrackId;
   String? _selectedClipId;
@@ -131,6 +134,7 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
       _selectedClipId = clip.id;
       unawaited(_loadWaveform(recording.path));
     }
+    unawaited(_refreshMissingMedia());
   }
 
   @override
@@ -469,6 +473,165 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
       // storage error should be shown once, not retried forever in the UI.
       if (mounted && _editRevision > revision) {
         _scheduleAutosave();
+      }
+    }
+  }
+
+  Future<void> _refreshMissingMedia() async {
+    final referencedPaths = _session.tracks
+        .expand((track) => track.clips)
+        .map((clip) => clip.mediaId)
+        .toSet();
+    final missing = <String>{};
+    for (final path in referencedPaths) {
+      try {
+        if (!await _projects.mediaExists(path)) {
+          missing.add(path);
+        }
+      } catch (_) {
+        // Unsupported platforms do not expose local filesystem media checks.
+      }
+    }
+    if (!mounted) return;
+    if (_missingMediaPaths.length != missing.length ||
+        !_missingMediaPaths.containsAll(missing)) {
+      setState(() => _missingMediaPaths = missing);
+    }
+  }
+
+  Future<void> _relinkMissingMedia() async {
+    if (_relinkingMedia) return;
+    await _refreshMissingMedia();
+    if (!mounted || _missingMediaPaths.isEmpty) return;
+
+    final missingPath = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Relink missing media'),
+        content: SizedBox(
+          width: 480,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Choose the missing source WAV you want to locate.'),
+                const SizedBox(height: 10),
+                for (final path in _missingMediaPaths)
+                  ListTile(
+                    dense: true,
+                    leading: const Icon(Icons.audio_file_outlined),
+                    title: Text(
+                      path,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    onTap: () => Navigator.of(dialogContext).pop(path),
+                  ),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
+    if (missingPath == null || !mounted) return;
+
+    setState(() => _relinkingMedia = true);
+    try {
+      final selection = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: const ['wav'],
+        allowMultiple: false,
+      );
+      final replacementPath = selection?.files.single.path;
+      if (replacementPath == null ||
+          replacementPath.trim().isEmpty ||
+          !mounted) {
+        return;
+      }
+      final waveform = await _waveforms.analyze(
+        replacementPath,
+        peakCount: 512,
+      );
+      if (waveform.sampleRate != _session.sampleRate) {
+        throw AudioProjectStoreUnavailable(
+          'The selected WAV uses ${waveform.sampleRate} Hz; this project requires ${_session.sampleRate} Hz.',
+        );
+      }
+      if (waveform.channels < 1 || waveform.channels > 2) {
+        throw const AudioProjectStoreUnavailable(
+          'The selected WAV must be mono or stereo.',
+        );
+      }
+
+      final matchingClips = _session.tracks
+          .expand((track) => track.clips)
+          .where((clip) => clip.mediaId == missingPath)
+          .toList();
+      if (matchingClips.isEmpty) return;
+      if (matchingClips.any(
+        (clip) =>
+            clip.sourceStartFrame + clip.durationFrames > waveform.frameCount,
+      )) {
+        throw const AudioProjectStoreUnavailable(
+          'The selected WAV is shorter than the source range used by this project.',
+        );
+      }
+
+      final tracks = _session.tracks.map((track) {
+        return AudioTrack(
+          id: track.id,
+          name: track.name,
+          kind: track.kind,
+          gain: track.gain,
+          pan: track.pan,
+          muted: track.muted,
+          solo: track.solo,
+          armed: track.armed,
+          highPassHz: track.highPassHz,
+          compressorThreshold: track.compressorThreshold,
+          compressorRatio: track.compressorRatio,
+          clips: track.clips.map((clip) {
+            if (clip.mediaId != missingPath) return clip;
+            return AudioClip(
+              id: clip.id,
+              mediaId: replacementPath,
+              startFrame: clip.startFrame,
+              sourceStartFrame: clip.sourceStartFrame,
+              durationFrames: clip.durationFrames,
+              gain: clip.gain,
+              pan: clip.pan,
+              muted: clip.muted,
+              fadeInFrames: clip.fadeInFrames,
+              fadeOutFrames: clip.fadeOutFrames,
+            );
+          }).toList(),
+        );
+      }).toList();
+
+      _waveformCache.remove(missingPath);
+      _commitSession(_withTracks(tracks));
+      await _loadWaveform(replacementPath);
+      await _refreshMissingMedia();
+      if (mounted) {
+        setState(() {
+          _message =
+              'Relinked ${matchingClips.length} clip(s) to the selected WAV.';
+        });
+      }
+    } catch (error) {
+      if (mounted) {
+        setState(() => _message = 'Media relink failed: $error');
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _relinkingMedia = false);
       }
     }
   }
@@ -1110,13 +1273,13 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
       _message = null;
     });
     try {
-      final path = await _projects.save(snapshot);
+      final path = await _projects.savePortable(snapshot);
       saveSucceeded = true;
       if (mounted) {
         setState(() {
           _projectPath = path;
           _autosavedRevision = revision;
-          _message = 'Session saved locally.';
+          _message = 'Project saved with packaged media assets.';
         });
       }
     } catch (error) {
@@ -1474,6 +1637,30 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
             tooltip: 'Add track',
             onPressed: _addTrack,
             icon: const Icon(Icons.add_box_outlined),
+          ),
+          IconButton(
+            tooltip: _relinkingMedia
+                ? 'Relinking media'
+                : _missingMediaPaths.isEmpty
+                    ? 'All source media is available'
+                    : 'Relink ${_missingMediaPaths.length} missing media file(s)',
+            onPressed: _missingMediaPaths.isEmpty || _relinkingMedia
+                ? null
+                : _relinkMissingMedia,
+            icon: _relinkingMedia
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : Icon(
+                    _missingMediaPaths.isEmpty
+                        ? Icons.link_rounded
+                        : Icons.link_off_rounded,
+                    color: _missingMediaPaths.isEmpty
+                        ? null
+                        : Colors.orangeAccent,
+                  ),
           ),
           IconButton(
             tooltip: _autosaving ? 'Autosaving session' : 'Save session',
