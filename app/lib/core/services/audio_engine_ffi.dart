@@ -882,6 +882,10 @@ class FfiAudioMonitorSession implements AudioMonitorSession {
       _stopped ? 0 : _api.monitorUnderrunFrames(_handle);
 
   @override
+  int get droppedInputFrames =>
+      _stopped ? 0 : _api.monitorInputDroppedFrames(_handle);
+
+  @override
   bool get hasError => _stopped || _api.monitorStatus(_handle) != 0;
 
   @override
@@ -1000,6 +1004,11 @@ class _NativeApi {
             _MonitorUnderrunFramesNative,
             _MonitorUnderrunFramesDart>(
           'aura_audio_monitor_underrun_frames',
+        ),
+        _monitorInputDroppedFrames = library.lookupFunction<
+            _MonitorUnderrunFramesNative,
+            _MonitorUnderrunFramesDart>(
+          'aura_audio_monitor_input_dropped_frames',
         ),
         _monitorStatus =
             library.lookupFunction<_MonitorStatusNative, _MonitorStatusDart>(
@@ -1177,6 +1186,7 @@ class _NativeApi {
     double,
   ) _monitorStart;
   final int Function(Pointer<Void>) _monitorUnderrunFrames;
+  final int Function(Pointer<Void>) _monitorInputDroppedFrames;
   final int Function(Pointer<Void>) _monitorStatus;
   final int Function(Pointer<Void>) _monitorInputSampleRate;
   final int Function(Pointer<Void>) _monitorOutputSampleRate;
@@ -1292,6 +1302,8 @@ class _NativeApi {
 
   int monitorUnderrunFrames(Pointer<Void> handle) =>
       _monitorUnderrunFrames(handle);
+  int monitorInputDroppedFrames(Pointer<Void> handle) =>
+      _monitorInputDroppedFrames(handle);
   int monitorStatus(Pointer<Void> handle) => _monitorStatus(handle);
   int monitorInputSampleRate(Pointer<Void> handle) =>
       _monitorInputSampleRate(handle);
