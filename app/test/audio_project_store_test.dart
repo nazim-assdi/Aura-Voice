@@ -288,6 +288,106 @@ void main() {
       expect(await File(movedMediaPath).readAsBytes(), sourceBytes);
     });
 
+    test('verifies packaged media with SHA-256 and reports corrupted assets', () async {
+      final source = File(
+        '${temporaryDirectory.path}${Platform.pathSeparator}checksum-source.wav',
+      );
+      await source.writeAsBytes(List<int>.generate(512, (index) => index % 251));
+      final session = AudioSession(
+        id: 'checksum-project',
+        title: 'Checksum Project',
+        sampleRate: 48000,
+        channels: 1,
+        bitDepth: 24,
+        tracks: [
+          AudioTrack(
+            id: 'checksum-track',
+            name: 'Voice',
+            clips: [
+              AudioClip(
+                id: 'checksum-clip',
+                mediaId: source.path,
+                startFrame: 0,
+                sourceStartFrame: 0,
+                durationFrames: 128,
+              ),
+            ],
+          ),
+        ],
+      );
+
+      final manifestPath = await store.savePortable(session);
+      final valid = await store.verifyPortableProject(manifestPath);
+      expect(valid.isValid, isTrue);
+      expect(valid.hasChecksumManifest, isTrue);
+      expect(valid.checkedAssetCount, 1);
+
+      final loaded = await store.load(manifestPath);
+      final packagedPath = loaded.tracks.single.clips.single.mediaId;
+      await File(packagedPath).writeAsBytes(
+        List<int>.filled(512, 7),
+        flush: true,
+      );
+      final damaged = await store.verifyPortableProject(manifestPath);
+      expect(damaged.isValid, isFalse);
+      expect(damaged.corruptMediaPaths, hasLength(1));
+    });
+
+    test('exports and imports a verified portable ZIP project', () async {
+      final source = File(
+        '${temporaryDirectory.path}${Platform.pathSeparator}zip-source.wav',
+      );
+      final sourceBytes = List<int>.generate(2048, (index) => (index * 13) % 255);
+      await source.writeAsBytes(sourceBytes);
+      final session = AudioSession(
+        id: 'zip-round-trip',
+        title: 'ZIP Round Trip',
+        sampleRate: 48000,
+        channels: 2,
+        bitDepth: 24,
+        tracks: [
+          AudioTrack(
+            id: 'zip-track',
+            name: 'Voice',
+            clips: [
+              AudioClip(
+                id: 'zip-clip',
+                mediaId: source.path,
+                startFrame: 0,
+                sourceStartFrame: 0,
+                durationFrames: 512,
+              ),
+            ],
+          ),
+        ],
+      );
+
+      final manifestPath = await store.savePortable(session);
+      final zipPath =
+          '${temporaryDirectory.path}${Platform.pathSeparator}zip-round-trip.auravoice.zip';
+      final exported = await store.exportPortableArchive(manifestPath, zipPath);
+      expect(exported, zipPath);
+      expect(await File(zipPath).exists(), isTrue);
+
+      final importedDirectory = Directory(
+        '${temporaryDirectory.path}${Platform.pathSeparator}imported-projects',
+      );
+      final importer = FileAudioProjectStore(
+        directoryPath: importedDirectory.path,
+      );
+      final importedManifest = await importer.importPortableArchive(zipPath);
+      final report = await importer.verifyPortableProject(importedManifest);
+      final importedSession = await importer.load(importedManifest);
+      final importedMedia =
+          importedSession.tracks.single.clips.single.mediaId;
+
+      expect(report.isValid, isTrue);
+      expect(report.hasChecksumManifest, isTrue);
+      expect(report.checkedAssetCount, 1);
+      expect(importedSession.title, session.title);
+      expect(await File(importedMedia).readAsBytes(), sourceBytes);
+    });
+
     test('restores a backup when the main manifest is missing', () async {
       final path = await store.save(makeSession());
       final backup = File('$path.backup');
