@@ -1463,7 +1463,7 @@ unsafe fn checked_handle<'a>(
 /// Returns the current C ABI version. Increment on incompatible ABI changes.
 #[no_mangle]
 pub extern "C" fn aura_engine_abi_version() -> u32 {
-    6
+    7
 }
 
 /// Returns a static NUL-terminated engine version string.
