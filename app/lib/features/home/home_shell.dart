@@ -604,7 +604,9 @@ class _StudioPageState extends State<StudioPage> {
   }
 
   Future<void> _startRecording() async {
-    if (_starting || _capture != null) return;
+    if (_starting || _capture != null) {
+      return;
+    }
     await _stopMonitor();
     await _stopPlayback();
     if (!mounted) {
