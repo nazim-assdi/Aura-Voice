@@ -2129,7 +2129,7 @@ class _LibraryPageState extends State<LibraryPage> {
 
   Future<void> _importProjectArchive() async {
     if (_importingProject) return;
-    final selection = await FilePicker.platform.pickFiles(
+    final selection = await FilePicker.pickFiles(
       type: FileType.custom,
       allowedExtensions: const ['zip'],
       allowMultiple: false,
