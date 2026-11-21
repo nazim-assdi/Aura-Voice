@@ -417,8 +417,8 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
     try {
       final path = await _projects.save(snapshot);
       if (!mounted) {
-      return;
-    }
+        return;
+      }
       setState(() {
         _projectPath = path;
         _autosavedRevision = revision;
@@ -439,8 +439,8 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
     try {
       final data = await _waveforms.analyze(path, peakCount: 512);
       if (!mounted) {
-      return;
-    }
+        return;
+      }
       setState(() => _waveformCache = {..._waveformCache, path: data});
     } catch (error) {
       if (mounted) setState(() => _message = 'Waveform unavailable: $error');
@@ -1051,8 +1051,8 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
     try {
       final devices = await _engine.listOutputDevices();
       if (!mounted) {
-      return;
-    }
+        return;
+      }
       setState(() {
         _outputDevices
           ..clear()
