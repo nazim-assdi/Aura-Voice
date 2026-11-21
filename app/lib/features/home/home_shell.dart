@@ -460,7 +460,9 @@ class _StudioPageState extends State<StudioPage> {
       return;
     }
     await _stopPlayback();
-    if (!mounted) return;
+    if (!mounted) {
+      return;
+    }
     setState(() {
       _monitorStarting = true;
       _monitorUnderrunFrames = 0;
@@ -587,7 +589,9 @@ class _StudioPageState extends State<StudioPage> {
   Future<void> _setMonitorGain(double value) async {
     setState(() => _monitorGain = value);
     final monitor = _monitor;
-    if (monitor == null) return;
+    if (monitor == null) {
+      return;
+    }
     try {
       await monitor.setGain(value);
     } catch (error) {
@@ -785,7 +789,7 @@ class _StudioPageState extends State<StudioPage> {
         _playback = playback;
         _playbackPosition = 0;
         _message = playback is AudioPlaybackDiagnostics
-            ? 'Playing through ${playback.outputSampleRate} Hz output.'
+            ? 'Playing through ${(playback as AudioPlaybackDiagnostics).outputSampleRate} Hz output.'
             : 'Playing saved WAV through the selected output device.';
       });
       _playbackTimer = Timer.periodic(
@@ -1619,7 +1623,9 @@ class _LibraryPageState extends State<LibraryPage> {
         recording.path,
         peakCount: 320,
       );
-      if (!mounted) return;
+      if (!mounted) {
+        return;
+      }
       setState(() => _waveformLoadingPath = null);
       await showDialog<void>(
         context: context,
