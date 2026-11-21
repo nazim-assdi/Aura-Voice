@@ -70,21 +70,51 @@ class FileAudioProjectStore implements AudioProjectStore {
     final rootDirectory = Directory(_directoryPath);
     await rootDirectory.create(recursive: true);
     final root = await rootDirectory.resolveSymbolicLinks();
+    // A stable project asset store lets new saves add only new content. Old
+    // version manifests keep pointing at immutable content-addressed WAVs.
     final assetFolderName =
-        'AuraProject_${_safeId(session.id)}.assets-${DateTime.now().microsecondsSinceEpoch}';
-    final stagingDirectory = Directory(
-      '$root${Platform.pathSeparator}$assetFolderName.tmp',
-    );
-    final publishedDirectory = Directory(
+        'AuraProject_${_safeId(session.id)}.assets-0';
+    final assetDirectory = Directory(
       '$root${Platform.pathSeparator}$assetFolderName',
+    );
+    await assetDirectory.create(recursive: true);
+    final stagingDirectory = Directory(
+      '$root${Platform.pathSeparator}.asset-stage-'
+      '${_safeId(session.id)}-${DateTime.now().microsecondsSinceEpoch}',
     );
     await stagingDirectory.create(recursive: true);
 
-    final relativeByCanonicalPath = <String, String>{};
-    final mediaReferences = <String, String>{};
     final assetChecksums = <String, Map<String, Object>>{};
-    var manifestSaved = false;
+    final mediaReferences = <String, String>{};
+    final referencedByContent = <String, String>{};
+    final inventoryFile = File(
+      '${assetDirectory.path}${Platform.pathSeparator}.aura-assets.json',
+    );
+    var inventoryCommitted = false;
+
     try {
+      // Rebuild/verify the existing inventory from the immutable files. This
+      // also migrates older asset names without breaking existing versions.
+      await for (final entity in assetDirectory.list(followLinks: false)) {
+        if (entity is! File ||
+            entity.path == inventoryFile.path ||
+            await FileSystemEntity.type(entity.path, followLinks: false) !=
+                FileSystemEntityType.file) {
+          continue;
+        }
+        final name = entity.uri.pathSegments.last;
+        if (!_isSafePortableAssetFileName(name)) continue;
+        final stat = await entity.stat();
+        final digest = await sha256.bind(entity.openRead()).first;
+        assetChecksums[name] = {
+          'sizeBytes': stat.size,
+          'sha256': digest.toString(),
+        };
+        if (name == '${digest.toString()}.wav') {
+          referencedByContent[digest.toString()] = name;
+        }
+      }
+
       for (final track in session.tracks) {
         for (final clip in track.clips) {
           if (mediaReferences.containsKey(clip.mediaId)) continue;
@@ -95,43 +125,57 @@ class FileAudioProjectStore implements AudioProjectStore {
               'Cannot package missing media "${clip.mediaId}". Relink this WAV file and save the project again.',
             );
           }
-          final canonicalPath = await source.resolveSymbolicLinks();
-          final canonicalKey =
-              Platform.isWindows ? canonicalPath.toLowerCase() : canonicalPath;
-          var relativeName = relativeByCanonicalPath[canonicalKey];
-          if (relativeName == null) {
-            final sourceName = clip.mediaId.split(RegExp(r'[\\/]')).last;
-            var safeName =
-                sourceName.replaceAll(RegExp(r'[^A-Za-z0-9._-]'), '_');
-            if (safeName.isEmpty) safeName = 'audio.wav';
-            if (safeName.length > 100) {
-              safeName = safeName.substring(safeName.length - 100);
-            }
-            relativeName = '${_stableHash(canonicalPath)}_$safeName';
-            final sourceStat = await source.stat();
-            final copied = await source.copy(
-              '${stagingDirectory.path}${Platform.pathSeparator}$relativeName',
+          final sourceStat = await source.stat();
+          final sourceDigest = await sha256.bind(source.openRead()).first;
+          final digestText = sourceDigest.toString();
+          var fileName = referencedByContent[digestText];
+
+          if (fileName == null) {
+            fileName = '$digestText.wav';
+            final stagedFile = File(
+              '${stagingDirectory.path}${Platform.pathSeparator}$fileName',
             );
-            if (await copied.length() != sourceStat.size) {
+            final copied = await source.copy(stagedFile.path);
+            final copiedStat = await copied.stat();
+            final copiedDigest = await sha256.bind(copied.openRead()).first;
+            if (copiedStat.size != sourceStat.size ||
+                copiedDigest.toString() != digestText) {
               throw AudioProjectStoreUnavailable(
-                'The media copy did not complete successfully for "${clip.mediaId}".',
+                'The source WAV changed while it was being packaged: "${clip.mediaId}". Save again after recording or editing has finished.',
               );
             }
-            final digest = await sha256.bind(copied.openRead()).first;
-            assetChecksums[relativeName] = {
+            final publishedFile = File(
+              '${assetDirectory.path}${Platform.pathSeparator}$fileName',
+            );
+            if (await publishedFile.exists()) {
+              final publishedDigest =
+                  await sha256.bind(publishedFile.openRead()).first;
+              if (publishedDigest.toString() != digestText) {
+                throw AudioProjectStoreUnavailable(
+                  'A content-addressed media file is damaged: "$fileName".',
+                );
+              }
+              await copied.delete();
+            } else {
+              await copied.rename(publishedFile.path);
+            }
+            referencedByContent[digestText] = fileName;
+            assetChecksums[fileName] = {
               'sizeBytes': sourceStat.size,
-              'sha256': digest.toString(),
+              'sha256': digestText,
             };
-            relativeByCanonicalPath[canonicalKey] = relativeName;
           }
-          mediaReferences[clip.mediaId] = '$assetFolderName/$relativeName';
+
+          mediaReferences[clip.mediaId] =
+              '$assetFolderName/$fileName';
         }
       }
 
-      final assetManifest = File(
-        '${stagingDirectory.path}${Platform.pathSeparator}.aura-assets.json',
+      final inventoryTemporary = File(
+        '${inventoryFile.path}.${DateTime.now().microsecondsSinceEpoch}.tmp',
       );
-      await assetManifest.writeAsString(
+      final inventoryBackup = File('${inventoryFile.path}.backup');
+      await inventoryTemporary.writeAsString(
         jsonEncode({
           'schemaVersion': 1,
           'projectId': session.id,
@@ -140,6 +184,32 @@ class FileAudioProjectStore implements AudioProjectStore {
         }),
         flush: true,
       );
+      var movedInventory = false;
+      try {
+        if (await inventoryFile.exists()) {
+          if (await inventoryBackup.exists()) {
+            await inventoryBackup.delete();
+          }
+          await inventoryFile.rename(inventoryBackup.path);
+          movedInventory = true;
+        }
+        await inventoryTemporary.rename(inventoryFile.path);
+        inventoryCommitted = true;
+        if (movedInventory && await inventoryBackup.exists()) {
+          await inventoryBackup.delete();
+        }
+      } catch (_) {
+        if (movedInventory &&
+            !await inventoryFile.exists() &&
+            await inventoryBackup.exists()) {
+          await inventoryBackup.rename(inventoryFile.path);
+        }
+        rethrow;
+      } finally {
+        if (await inventoryTemporary.exists()) {
+          await inventoryTemporary.delete();
+        }
+      }
 
       final portableTracks = session.tracks.map((track) {
         return AudioTrack(
@@ -180,30 +250,20 @@ class FileAudioProjectStore implements AudioProjectStore {
         markers: session.markers,
       );
 
-      await stagingDirectory.rename(publishedDirectory.path);
-      final manifestPath = await save(portableSession);
-      manifestSaved = true;
-      try {
-        await _removeSupersededAssetFolders(
-          root,
-          'AuraProject_${_safeId(session.id)}.assets-',
-          assetFolderName,
-        );
-      } catch (_) {
-        // The manifest and its new assets are already committed. Old asset
-        // folders are harmless and can be cleaned up on a later save.
-      }
-      return manifestPath;
+      // Unreferenced content is intentionally retained: existing version
+      // manifests may still depend on it. A future explicit compaction pass
+      // can garbage-collect only after scanning every retained version.
+      return await save(portableSession);
     } catch (_) {
-      if (!manifestSaved) {
-        if (await stagingDirectory.exists()) {
-          await stagingDirectory.delete(recursive: true);
-        }
-        if (await publishedDirectory.exists()) {
-          await publishedDirectory.delete(recursive: true);
-        }
+      if (!inventoryCommitted && await stagingDirectory.exists()) {
+        // Newly copied files are immutable and harmless if a manifest write
+        // failed; remove only the temporary staging copies.
       }
       rethrow;
+    } finally {
+      if (await stagingDirectory.exists()) {
+        await stagingDirectory.delete(recursive: true);
+      }
     }
   }
 
