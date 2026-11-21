@@ -335,8 +335,8 @@ fn list_output_devices_json() -> Result<String, AudioError> {
         let mut max_channels = 0_u16;
         if let Ok(ranges) = device.supported_output_configs() {
             for range in ranges {
-                min_rate = min_rate.min(range.min_sample_rate().0);
-                max_rate = max_rate.max(range.max_sample_rate().0);
+                min_rate = min_rate.min(range.min_sample_rate());
+                max_rate = max_rate.max(range.max_sample_rate());
                 max_channels = max_channels.max(range.channels());
             }
         }
