@@ -77,6 +77,34 @@ void main() {
       expect(waveform.peaks.every((peak) => peak == 0), isTrue);
     });
 
+    test('persists waveform peaks between service instances', () async {
+      final path = await createTake(samples: Float32List(4096));
+      final cacheDirectory = Directory(
+        '${temporaryDirectory.path}${Platform.pathSeparator}waveform-cache',
+      );
+      final firstService = FileAudioWaveformService(
+        cacheDirectoryPath: cacheDirectory.path,
+      );
+      final first = await firstService.analyze(path, peakCount: 64);
+      expect(await cacheDirectory.exists(), isTrue);
+
+      final secondService = FileAudioWaveformService(
+        cacheDirectoryPath: cacheDirectory.path,
+      );
+      final second = await secondService.analyze(path, peakCount: 64);
+
+      expect(second.sampleRate, first.sampleRate);
+      expect(second.frameCount, first.frameCount);
+      expect(second.peaks, orderedEquals(first.peaks));
+      var cacheFiles = 0;
+      await for (final entity in cacheDirectory.list(followLinks: false)) {
+        if (entity is File && entity.path.endsWith('.json')) {
+          cacheFiles++;
+        }
+      }
+      expect(cacheFiles, 1);
+    });
+
     test('rejects invalid peak counts', () async {
       final path = await createTake(samples: Float32List(100));
 
