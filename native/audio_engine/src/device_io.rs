@@ -14,7 +14,7 @@ use std::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, AtomicU64, Ordering}
 use std::sync::Arc;
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use cpal::{DeviceId, SampleFormat, SampleRate, Stream, SupportedStreamConfig};
+use cpal::{DeviceId, SampleFormat, Stream, SupportedStreamConfig};
 
 use crate::{
     set_ffi_error, AudioError, RealtimeMixer, RealtimeRenderState,
@@ -291,11 +291,11 @@ pub(crate) fn select_output_target(
     let mut best: Option<(u32, SupportedStreamConfig)> = None;
     for range in ranges.filter(|range| range.channels() >= required_channels) {
         let rate = preferred_rate_in_range(
-            range.min_sample_rate().0,
-            range.max_sample_rate().0,
+            range.min_sample_rate(),
+            range.max_sample_rate(),
             preferred_sample_rate,
         );
-        let candidate = range.with_sample_rate(SampleRate(rate));
+        let candidate = range.with_sample_rate(rate);
         let distance = rate.abs_diff(preferred_sample_rate);
         if best.as_ref().map(|(best_distance, _)| distance < *best_distance).unwrap_or(true) {
             best = Some((distance, candidate));
@@ -674,9 +674,9 @@ pub struct AuraAudioMonitorHandle {
     _input_stream: Stream,
     _output_stream: Stream,
     ring: Arc<FloatRing>,
-    gain: AtomicU32,
-    underrun_frames: AtomicU64,
-    output_error: AtomicU32,
+    gain: Arc<AtomicU32>,
+    underrun_frames: Arc<AtomicU64>,
+    output_error: Arc<AtomicU32>,
     input_sample_rate: u32,
     output_sample_rate: u32,
 }
