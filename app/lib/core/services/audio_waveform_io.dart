@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -9,7 +10,10 @@ AudioWaveformService createAudioWaveformService() =>
 /// Reads WAV frames in bounded chunks and calculates real per-bucket peaks.
 /// The full recording is never loaded into memory.
 class FileAudioWaveformService implements AudioWaveformService {
-  const FileAudioWaveformService();
+  const FileAudioWaveformService({this.cacheDirectoryPath});
+
+  /// Optional cache location, mainly useful for tests and portable setups.
+  final String? cacheDirectoryPath;
 
   @override
   Future<AudioWaveformData> analyze(
@@ -28,6 +32,21 @@ class FileAudioWaveformService implements AudioWaveformService {
     if (!await file.exists()) {
       throw const AudioWaveformUnavailable('The WAV file no longer exists.');
     }
+    final sourceStat = await file.stat();
+    final canonicalPath = await file.resolveSymbolicLinks();
+    final cacheFile = File(
+      '${_cacheDirectoryPath()}'
+      '${Platform.pathSeparator}'
+      '${_cacheKey(canonicalPath, peakCount)}.json',
+    );
+    final cached = await _readCachedWaveform(
+      cacheFile,
+      sourcePath: canonicalPath,
+      fileSize: sourceStat.size,
+      modifiedMicros: sourceStat.modified.microsecondsSinceEpoch,
+      peakCount: peakCount,
+    );
+    if (cached != null) return cached;
     final random = await file.open(mode: FileMode.read);
     try {
       final fileLength = await random.length();
@@ -165,15 +184,146 @@ class FileAudioWaveformService implements AudioWaveformService {
         bytesRemaining -= chunk.length;
       }
 
-      return AudioWaveformData(
+      final result = AudioWaveformData(
         peaks: Float32List.fromList(peaks),
         sampleRate: sampleRate,
         channels: channels,
         bitsPerSample: bitsPerSample,
         frameCount: totalFrames,
       );
+      final finalStat = await file.stat();
+      if (finalStat.size == sourceStat.size &&
+          finalStat.modified.microsecondsSinceEpoch ==
+              sourceStat.modified.microsecondsSinceEpoch) {
+        await _writeCachedWaveform(
+          cacheFile,
+          result,
+          sourcePath: canonicalPath,
+          fileSize: sourceStat.size,
+          modifiedMicros: sourceStat.modified.microsecondsSinceEpoch,
+          peakCount: peakCount,
+        );
+      }
+      return result;
     } finally {
       await random.close();
+    }
+  }
+
+  String _cacheDirectoryPath() {
+    if (cacheDirectoryPath != null && cacheDirectoryPath!.trim().isNotEmpty) {
+      return cacheDirectoryPath!;
+    }
+    final environment = Platform.environment;
+    final home = environment['USERPROFILE'] ??
+        environment['HOME'] ??
+        Directory.current.path;
+    return '$home${Platform.pathSeparator}Documents'
+        '${Platform.pathSeparator}Aura Voice Studio'
+        '${Platform.pathSeparator}Cache'
+        '${Platform.pathSeparator}Waveforms';
+  }
+
+  String _cacheKey(String sourcePath, int peakCount) {
+    var hash = 0x811c9dc5;
+    for (final byte in utf8.encode('$sourcePath|$peakCount')) {
+      hash = ((hash ^ byte) * 0x01000193) & 0xffffffff;
+    }
+    return hash.toRadixString(16).padLeft(8, '0');
+  }
+
+  Future<AudioWaveformData?> _readCachedWaveform(
+    File cacheFile, {
+    required String sourcePath,
+    required int fileSize,
+    required int modifiedMicros,
+    required int peakCount,
+  }) async {
+    if (!await cacheFile.exists()) return null;
+    try {
+      final decoded = jsonDecode(await cacheFile.readAsString());
+      if (decoded is! Map<String, dynamic> ||
+          decoded['schemaVersion'] != 1 ||
+          decoded['sourcePath'] != sourcePath ||
+          decoded['fileSize'] != fileSize ||
+          decoded['modifiedMicros'] != modifiedMicros ||
+          decoded['peakCount'] != peakCount) {
+        return null;
+      }
+      final rawPeaks = decoded['peaks'];
+      if (rawPeaks is! List || rawPeaks.length != peakCount) return null;
+      final peaks = rawPeaks.map((value) {
+        if (value is! num || !value.isFinite) {
+          throw const FormatException('Invalid waveform cache peak.');
+        }
+        return value.toDouble();
+      }).toList();
+      final sampleRate = decoded['sampleRate'];
+      final channels = decoded['channels'];
+      final bitsPerSample = decoded['bitsPerSample'];
+      final frameCount = decoded['frameCount'];
+      if (sampleRate is! int ||
+          channels is! int ||
+          bitsPerSample is! int ||
+          frameCount is! int ||
+          sampleRate < 1 ||
+          channels < 1 ||
+          frameCount < 0) {
+        return null;
+      }
+      return AudioWaveformData(
+        peaks: peaks,
+        sampleRate: sampleRate,
+        channels: channels,
+        bitsPerSample: bitsPerSample,
+        frameCount: frameCount,
+      );
+    } catch (_) {
+      // A damaged cache must never block normal WAV analysis.
+      return null;
+    }
+  }
+
+  Future<void> _writeCachedWaveform(
+    File cacheFile,
+    AudioWaveformData waveform, {
+    required String sourcePath,
+    required int fileSize,
+    required int modifiedMicros,
+    required int peakCount,
+  }) async {
+    try {
+      await cacheFile.parent.create(recursive: true);
+      final temporary = File(
+        '${cacheFile.path}.${DateTime.now().microsecondsSinceEpoch}.tmp',
+      );
+      final payload = jsonEncode({
+        'schemaVersion': 1,
+        'sourcePath': sourcePath,
+        'fileSize': fileSize,
+        'modifiedMicros': modifiedMicros,
+        'peakCount': peakCount,
+        'sampleRate': waveform.sampleRate,
+        'channels': waveform.channels,
+        'bitsPerSample': waveform.bitsPerSample,
+        'frameCount': waveform.frameCount,
+        'peaks': waveform.peaks.toList(),
+      });
+      try {
+        final sink = await temporary.open(mode: FileMode.write);
+        try {
+          await sink.writeString(payload);
+          await sink.flush();
+        } finally {
+          await sink.close();
+        }
+        if (await cacheFile.exists()) await cacheFile.delete();
+        await temporary.rename(cacheFile.path);
+      } finally {
+        if (await temporary.exists()) await temporary.delete();
+      }
+    } catch (_) {
+      // Cache writes are best-effort; audio analysis remains authoritative.
     }
   }
 
