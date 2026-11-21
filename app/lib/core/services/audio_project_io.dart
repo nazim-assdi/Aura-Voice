@@ -442,15 +442,10 @@ class FileAudioProjectStore implements AudioProjectStore {
       '$root${Platform.pathSeparator}.import-${DateTime.now().microsecondsSinceEpoch}',
     );
     await stagingDirectory.create(recursive: true);
+    final input = InputFileStream(source.path);
 
     try {
-      final input = InputFileStream(source.path);
-      late final Archive archive;
-      try {
-        archive = ZipDecoder().decodeStream(input, verify: true);
-      } finally {
-        input.closeSync();
-      }
+      final archive = ZipDecoder().decodeStream(input, verify: true);
       if (archive.isEmpty || archive.length > maximumEntries) {
         throw const AudioProjectStoreUnavailable(
           'The ZIP archive has an invalid number of entries.',
@@ -677,6 +672,8 @@ class FileAudioProjectStore implements AudioProjectStore {
         await stagingDirectory.delete(recursive: true);
       }
       rethrow;
+    } finally {
+      input.closeSync();
     }
   }
 
