@@ -75,6 +75,7 @@ abstract interface class AudioMonitorSession {
   int get inputSampleRate;
   int get outputSampleRate;
   int get underrunFrames;
+  int get droppedInputFrames;
   bool get hasError;
 
   Future<void> setGain(double gain);
