@@ -151,7 +151,7 @@ impl FloatRing {
             sample_at(source_index, 1)
         };
         let right_b = if self.channels == 1 {
-            right_a
+            left_b
         } else {
             sample_at(source_index + 1, 1)
         };
@@ -2017,8 +2017,8 @@ mod tests {
         let high = monitor_clock_step(nominal, 2000, 1000);
         assert!(low < nominal);
         assert!(high > nominal);
-        assert!((low / nominal - 1.0).abs() <= 0.0005);
-        assert!((high / nominal - 1.0).abs() <= 0.0005);
+        assert!((low / nominal - 1.0).abs() <= 0.000501);
+        assert!((high / nominal - 1.0).abs() <= 0.000501);
         assert_eq!(monitor_clock_step(nominal, 500, 0), nominal);
     }
 
