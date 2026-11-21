@@ -39,6 +39,34 @@ class UnavailableAudioProjectStore implements AudioProjectStore {
   }
 
   @override
+  Future<String> saveRecoverySnapshot(AudioSession session) async {
+    throw const AudioProjectStoreUnavailable(
+      'Local project recovery is not available on this platform.',
+    );
+  }
+
+  @override
+  Future<AudioSession> loadRecoverySnapshot(String path) async {
+    throw const AudioProjectStoreUnavailable(
+      'Local project recovery is not available on this platform.',
+    );
+  }
+
+  @override
+  Future<List<AudioProjectSummary>> listRecoverySnapshots() async {
+    throw const AudioProjectStoreUnavailable(
+      'Local project recovery is not available on this platform.',
+    );
+  }
+
+  @override
+  Future<void> deleteRecoverySnapshot(String path) async {
+    throw const AudioProjectStoreUnavailable(
+      'Local project recovery is not available on this platform.',
+    );
+  }
+
+  @override
   Future<void> delete(String path) async {
     throw const AudioProjectStoreUnavailable(
       'Local project storage is not available on this platform.',

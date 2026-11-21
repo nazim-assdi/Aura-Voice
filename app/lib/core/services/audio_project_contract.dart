@@ -28,6 +28,15 @@ abstract interface class AudioProjectStore {
   /// Finds projects whose clips reference a local media path.
   Future<List<AudioProjectSummary>> findProjectsUsingMedia(String mediaPath);
 
+  /// Writes the latest unsaved state to the separate recovery area.
+  Future<String> saveRecoverySnapshot(AudioSession session);
+
+  Future<AudioSession> loadRecoverySnapshot(String path);
+
+  Future<List<AudioProjectSummary>> listRecoverySnapshots();
+
+  Future<void> deleteRecoverySnapshot(String path);
+
   Future<void> delete(String path);
 }
 

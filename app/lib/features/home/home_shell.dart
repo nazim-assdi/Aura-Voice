@@ -22,11 +22,32 @@ class HomeShell extends StatefulWidget {
 
 class _HomeShellState extends State<HomeShell> {
   int _index = 0;
+  late final AudioProjectStore _projects = createAudioProjectStore();
+
+  Future<void> _restoreRecoverySnapshot(AudioProjectSummary snapshot) async {
+    final session = await _projects.loadRecoverySnapshot(snapshot.path);
+    final path = await _projects.save(session);
+    if (!mounted) {
+      return;
+    }
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => AudioEditorPage(
+          initialSession: session,
+          initialProjectPath: path,
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     final pages = <Widget>[
-      DashboardPage(onOpenStudio: () => setState(() => _index = 1)),
+      DashboardPage(
+        projects: _projects,
+        onRestoreRecovery: _restoreRecoverySnapshot,
+        onOpenStudio: () => setState(() => _index = 1),
+      ),
       const StudioPage(),
       const LibraryPage(),
     ];
@@ -46,8 +67,16 @@ class _HomeShellState extends State<HomeShell> {
 }
 
 class DashboardPage extends StatelessWidget {
-  const DashboardPage({required this.onOpenStudio, super.key});
+  const DashboardPage({
+    required this.onOpenStudio,
+    required this.projects,
+    required this.onRestoreRecovery,
+    super.key,
+  });
+
   final VoidCallback onOpenStudio;
+  final AudioProjectStore projects;
+  final Future<void> Function(AudioProjectSummary) onRestoreRecovery;
 
   @override
   Widget build(BuildContext context) {
@@ -100,6 +129,11 @@ class DashboardPage extends StatelessWidget {
               const _ApiStatusPanel(),
               const SizedBox(height: 12),
               const _NativeEngineStatusPanel(),
+              const SizedBox(height: 12),
+              _RecoveryProjectsPanel(
+                projects: projects,
+                onRestore: onRestoreRecovery,
+              ),
               const SizedBox(height: 12),
               const Wrap(spacing: 10, runSpacing: 10, children: [
                 _FeaturePill(label: 'Dubbing & Localization'),
@@ -284,6 +318,210 @@ class _ApiStatusPanel extends StatelessWidget {
       ),
     ]),
   );
+}
+
+class _RecoveryProjectsPanel extends StatefulWidget {
+  const _RecoveryProjectsPanel({
+    required this.projects,
+    required this.onRestore,
+  });
+
+  final AudioProjectStore projects;
+  final Future<void> Function(AudioProjectSummary) onRestore;
+
+  @override
+  State<_RecoveryProjectsPanel> createState() =>
+      _RecoveryProjectsPanelState();
+}
+
+class _RecoveryProjectsPanelState extends State<_RecoveryProjectsPanel> {
+  late Future<List<AudioProjectSummary>> _snapshots;
+  String? _message;
+
+  @override
+  void initState() {
+    super.initState();
+    _snapshots = widget.projects.listRecoverySnapshots();
+  }
+
+  void _refresh() {
+    setState(() {
+      _message = null;
+      _snapshots = widget.projects.listRecoverySnapshots();
+    });
+  }
+
+  Future<void> _restore(AudioProjectSummary snapshot) async {
+    try {
+      await widget.onRestore(snapshot);
+      if (mounted) {
+        _refresh();
+      }
+    } catch (error) {
+      if (mounted) {
+        setState(() => _message = 'Recovery failed: $error');
+      }
+    }
+  }
+
+  Future<void> _discard(AudioProjectSummary snapshot) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Discard recovery snapshot?'),
+        content: Text(
+          'The unsaved recovery copy of “${snapshot.title}” will be deleted.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Keep'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Discard'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) {
+      return;
+    }
+    try {
+      await widget.projects.deleteRecoverySnapshot(snapshot.path);
+      if (mounted) {
+        _refresh();
+      }
+    } catch (error) {
+      if (mounted) {
+        setState(() => _message = 'Could not discard recovery copy: $error');
+      }
+    }
+  }
+
+  String _ageLabel(DateTime modifiedAt) {
+    final age = DateTime.now().difference(modifiedAt);
+    if (age.inMinutes < 1) {
+      return 'just now';
+    }
+    if (age.inHours < 1) {
+      return '${age.inMinutes} min ago';
+    }
+    if (age.inDays < 1) {
+      return '${age.inHours} hr ago';
+    }
+    return '${age.inDays} days ago';
+  }
+
+  @override
+  Widget build(BuildContext context) => FutureBuilder<List<AudioProjectSummary>>(
+        future: _snapshots,
+        builder: (context, snapshot) {
+          final items = snapshot.data ?? const <AudioProjectSummary>[];
+          if (snapshot.connectionState == ConnectionState.waiting &&
+              items.isEmpty) {
+            return const SizedBox.shrink();
+          }
+          if (snapshot.hasError && items.isEmpty && _message == null) {
+            return const SizedBox.shrink();
+          }
+          if (items.isEmpty && _message == null) {
+            return const SizedBox.shrink();
+          }
+          return Container(
+            padding: const EdgeInsets.all(17),
+            decoration: BoxDecoration(
+              color: AuraTheme.panel,
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(
+                color: AuraTheme.mint.withValues(alpha: 0.22),
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.restore_rounded,
+                      color: AuraTheme.mint,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'Crash recovery',
+                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                              fontWeight: FontWeight.w800,
+                            ),
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: 'Refresh recovery snapshots',
+                      onPressed: _refresh,
+                      icon: const Icon(Icons.refresh_rounded),
+                    ),
+                  ],
+                ),
+                Text(
+                  'Unsaved editor states are kept separately from your saved projects.',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: AuraTheme.muted,
+                        height: 1.4,
+                      ),
+                ),
+                for (final item in items)
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(
+                      Icons.audio_file_rounded,
+                      color: AuraTheme.mint,
+                    ),
+                    title: Text(
+                      item.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    subtitle: Text(
+                      '${item.trackCount} tracks · ${item.sampleRate} Hz · ${_ageLabel(item.modifiedAt)}',
+                    ),
+                    onTap: () {
+                      unawaited(_restore(item));
+                    },
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          tooltip: 'Discard recovery snapshot',
+                          onPressed: () {
+                            unawaited(_discard(item));
+                          },
+                          icon: const Icon(Icons.delete_outline_rounded),
+                        ),
+                        IconButton(
+                          tooltip: 'Restore session',
+                          onPressed: () {
+                            unawaited(_restore(item));
+                          },
+                          icon: const Icon(
+                            Icons.restore_rounded,
+                            color: AuraTheme.mint,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                if (_message != null)
+                  Text(
+                    _message!,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: const Color(0xFFFFC27A),
+                        ),
+                  ),
+              ],
+            ),
+          );
+        },
+      );
 }
 
 class _NativeEngineStatusPanel extends StatefulWidget {

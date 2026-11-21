@@ -451,14 +451,13 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
     final revision = _editRevision;
     final snapshot = _cloneSession(_session);
     try {
-      final path = await _projects.save(snapshot);
+      await _projects.saveRecoverySnapshot(snapshot);
       if (!mounted) {
         return;
       }
       setState(() {
-        _projectPath = path;
         _autosavedRevision = revision;
-        _message = 'Autosaved locally.';
+        _message = 'Recovery snapshot saved locally.';
       });
     } catch (error) {
       if (mounted) {

@@ -107,6 +107,51 @@ void main() {
       expect(await store.listProjects(), hasLength(1));
     });
 
+    test('stores and reloads the latest recovery snapshot for a session', () async {
+      final original = makeSession();
+      final firstPath = await store.saveRecoverySnapshot(original);
+      final updated = AudioSession(
+        id: original.id,
+        title: 'Recovered Voice Over',
+        sampleRate: original.sampleRate,
+        channels: original.channels,
+        bitDepth: original.bitDepth,
+        tracks: original.tracks,
+        markers: original.markers,
+      );
+
+      final secondPath = await store.saveRecoverySnapshot(updated);
+      final recoveries = await store.listRecoverySnapshots();
+      final loaded = await store.loadRecoverySnapshot(secondPath);
+
+      expect(secondPath, firstPath);
+      expect(recoveries, hasLength(1));
+      expect(recoveries.single.title, 'Recovered Voice Over');
+      expect(loaded.title, 'Recovered Voice Over');
+      expect(await store.listProjects(), isEmpty);
+    });
+
+    test('promotes a recovered session to a project and clears the recovery copy', () async {
+      final original = makeSession();
+      final recoveryPath = await store.saveRecoverySnapshot(original);
+
+      final recovered = await store.loadRecoverySnapshot(recoveryPath);
+      final projectPath = await store.save(recovered);
+
+      expect(await store.load(projectPath), original);
+      expect(await store.listRecoverySnapshots(), isEmpty);
+      expect(await store.listProjects(), hasLength(1));
+    });
+
+    test('does not load a regular project manifest as a recovery snapshot', () async {
+      final projectPath = await store.save(makeSession());
+
+      await expectLater(
+        store.loadRecoverySnapshot(projectPath),
+        throwsA(isA<AudioProjectStoreUnavailable>()),
+      );
+    });
+
     test('finds saved sessions that reference a source WAV', () async {
       await store.save(makeSession());
 

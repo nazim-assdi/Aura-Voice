@@ -181,7 +181,7 @@ The current implementation of native output uses a sample-frame transport and no
 - Take management, non-destructive media relinking, project asset import/copy strategy and recovery snapshots.
 - Device reconnect recovery, physical loopback calibration and physical-device CPU/deadline/driver-underrun benchmarks for dense sessions. Software callback metrics, actual/observed callback block sizes and CPAL host-timestamp monitor estimates are available, but do not substitute for calibrated electrical round-trip latency or driver underrun measurements.
 - Android/iOS native audio library packaging and native app linking.
-- Waveform-cache persistence, portable media relinking, project asset copy/import strategy, crash-recovery snapshots, and edit operations that persist as a journal rather than only in-memory undo history. Current trim is inward-only because source-media end boundaries are not yet stored in the project schema.
+- Separate atomic crash-recovery snapshots and Dashboard restore/discard controls are implemented. Waveform-cache persistence, portable media relinking, project asset copy/import strategy, and edit operations that persist as a journal rather than only in-memory undo history remain outstanding. Current trim is inward-only because source-media end boundaries are not yet stored in the project schema.
 - Advanced realtime effects beyond the current high-pass/compressor lane, buses/sends, compressed MP3/AAC/FLAC decoders, persistent waveform cache and production audio restoration.
 - Production TTS, voice cloning, transcription, translation, dubbing and mastering workflows.
 
