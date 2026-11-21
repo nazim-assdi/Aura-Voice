@@ -85,6 +85,44 @@ class FfiAudioEngineService implements AudioEngineService {
   }
 
   @override
+  Future<AudioMonitorSession> startMonitor({
+    String? inputDeviceId,
+    String? outputDeviceId,
+    int bufferMilliseconds = 30,
+    double gain = 1.0,
+  }) async {
+    final api = _api;
+    if (api == null) {
+      throw const AudioEngineUnavailable(
+        'Native Aura audio library is not available on this platform.',
+      );
+    }
+    if (bufferMilliseconds < 20 || bufferMilliseconds > 250) {
+      throw RangeError.range(bufferMilliseconds, 20, 250, 'bufferMilliseconds');
+    }
+    if (!gain.isFinite || gain < 0 || gain > 2) {
+      throw RangeError.range(gain, 0, 2, 'gain');
+    }
+    final inputId = inputDeviceId?.toNativeUtf8() ?? nullptr;
+    final outputId = outputDeviceId?.toNativeUtf8() ?? nullptr;
+    try {
+      final handle = api.monitorStart(
+        inputId,
+        outputId,
+        bufferMilliseconds,
+        gain,
+      );
+      if (handle == nullptr) {
+        throw AudioEngineUnavailable(api.lastError());
+      }
+      return FfiAudioMonitorSession._(api: api, handle: handle);
+    } finally {
+      if (inputId != nullptr) calloc.free(inputId);
+      if (outputId != nullptr) calloc.free(outputId);
+    }
+  }
+
+  @override
   Future<AudioCaptureSession> startCapture({
     String? deviceId,
     int bufferMilliseconds = 1000,
@@ -788,6 +826,54 @@ class FfiAudioPlaybackSession implements AudioPlaybackSession {
 
 }
 
+class FfiAudioMonitorSession implements AudioMonitorSession {
+  FfiAudioMonitorSession._({
+    required _NativeApi api,
+    required Pointer<Void> handle,
+  })  : _api = api,
+        _handle = handle;
+
+  final _NativeApi _api;
+  Pointer<Void> _handle;
+  bool _stopped = false;
+
+  @override
+  int get inputSampleRate =>
+      _stopped ? 0 : _api.monitorInputSampleRate(_handle);
+
+  @override
+  int get outputSampleRate =>
+      _stopped ? 0 : _api.monitorOutputSampleRate(_handle);
+
+  @override
+  int get underrunFrames =>
+      _stopped ? 0 : _api.monitorUnderrunFrames(_handle);
+
+  @override
+  bool get hasError => _stopped || _api.monitorStatus(_handle) != 0;
+
+  @override
+  Future<void> setGain(double gain) async {
+    if (_stopped) {
+      throw const AudioEngineUnavailable('The microphone monitor is stopped.');
+    }
+    if (!gain.isFinite || gain < 0 || gain > 2) {
+      throw RangeError.range(gain, 0, 2, 'gain');
+    }
+    final status = _api.monitorSetGain(_handle, gain);
+    if (status != 0) throw AudioEngineUnavailable(_api.lastError());
+  }
+
+  @override
+  Future<void> stop() async {
+    if (!_stopped) {
+      _api.monitorStop(_handle);
+      _handle = nullptr;
+      _stopped = true;
+    }
+  }
+}
+
 class FfiAudioCaptureSession implements AudioCaptureSession {
   FfiAudioCaptureSession._({
     required _NativeApi api,
@@ -873,6 +959,37 @@ class _NativeApi {
         _captureStart =
             library.lookupFunction<_CaptureStartNative, _CaptureStartDart>(
           'aura_audio_capture_start',
+        ),
+        _monitorStart =
+            library.lookupFunction<_MonitorStartNative, _MonitorStartDart>(
+          'aura_audio_monitor_start',
+        ),
+        _monitorUnderrunFrames = library.lookupFunction<
+            _MonitorUnderrunFramesNative,
+            _MonitorUnderrunFramesDart>(
+          'aura_audio_monitor_underrun_frames',
+        ),
+        _monitorStatus =
+            library.lookupFunction<_MonitorStatusNative, _MonitorStatusDart>(
+          'aura_audio_monitor_status',
+        ),
+        _monitorInputSampleRate = library.lookupFunction<
+            _MonitorSampleRateNative,
+            _MonitorSampleRateDart>(
+          'aura_audio_monitor_input_sample_rate',
+        ),
+        _monitorOutputSampleRate = library.lookupFunction<
+            _MonitorSampleRateNative,
+            _MonitorSampleRateDart>(
+          'aura_audio_monitor_output_sample_rate',
+        ),
+        _monitorSetGain =
+            library.lookupFunction<_MonitorSetGainNative, _MonitorSetGainDart>(
+          'aura_audio_monitor_set_gain',
+        ),
+        _monitorStop =
+            library.lookupFunction<_MonitorStopNative, _MonitorStopDart>(
+          'aura_audio_monitor_stop',
         ),
         _realtimePlaybackStart = library.lookupFunction<
             _RealtimePlaybackStartNative,
@@ -997,6 +1114,18 @@ class _NativeApi {
     Pointer<Uint16>,
   ) _captureStart;
   final Pointer<Void> Function(
+    Pointer<Utf8>,
+    Pointer<Utf8>,
+    int,
+    double,
+  ) _monitorStart;
+  final int Function(Pointer<Void>) _monitorUnderrunFrames;
+  final int Function(Pointer<Void>) _monitorStatus;
+  final int Function(Pointer<Void>) _monitorInputSampleRate;
+  final int Function(Pointer<Void>) _monitorOutputSampleRate;
+  final int Function(Pointer<Void>, double) _monitorSetGain;
+  final void Function(Pointer<Void>) _monitorStop;
+  final Pointer<Void> Function(
     Pointer<Void>,
     Pointer<Utf8>,
     Pointer<Uint32>,
@@ -1090,6 +1219,25 @@ class _NativeApi {
     Pointer<Uint16> channels,
   ) =>
       _captureStart(deviceId, bufferMilliseconds, sampleRate, channels);
+
+  Pointer<Void> monitorStart(
+    Pointer<Utf8> inputDeviceId,
+    Pointer<Utf8> outputDeviceId,
+    int bufferMilliseconds,
+    double gain,
+  ) =>
+      _monitorStart(inputDeviceId, outputDeviceId, bufferMilliseconds, gain);
+
+  int monitorUnderrunFrames(Pointer<Void> handle) =>
+      _monitorUnderrunFrames(handle);
+  int monitorStatus(Pointer<Void> handle) => _monitorStatus(handle);
+  int monitorInputSampleRate(Pointer<Void> handle) =>
+      _monitorInputSampleRate(handle);
+  int monitorOutputSampleRate(Pointer<Void> handle) =>
+      _monitorOutputSampleRate(handle);
+  int monitorSetGain(Pointer<Void> handle, double gain) =>
+      _monitorSetGain(handle, gain);
+  void monitorStop(Pointer<Void> handle) => _monitorStop(handle);
   Pointer<Void> playbackStartWav(
     Pointer<Uint8> bytes,
     int length,
@@ -1254,6 +1402,30 @@ typedef _ListInputDevicesDart = Pointer<Utf8> Function();
 
 typedef _FreeStringNative = Void Function(Pointer<Utf8>);
 typedef _FreeStringDart = void Function(Pointer<Utf8>);
+
+typedef _MonitorStartNative = Pointer<Void> Function(
+  Pointer<Utf8>,
+  Pointer<Utf8>,
+  Uint32,
+  Float,
+);
+typedef _MonitorStartDart = Pointer<Void> Function(
+  Pointer<Utf8>,
+  Pointer<Utf8>,
+  int,
+  double,
+);
+
+typedef _MonitorUnderrunFramesNative = Uint64 Function(Pointer<Void>);
+typedef _MonitorUnderrunFramesDart = int Function(Pointer<Void>);
+typedef _MonitorStatusNative = Uint32 Function(Pointer<Void>);
+typedef _MonitorStatusDart = int Function(Pointer<Void>);
+typedef _MonitorSampleRateNative = Uint32 Function(Pointer<Void>);
+typedef _MonitorSampleRateDart = int Function(Pointer<Void>);
+typedef _MonitorSetGainNative = Int32 Function(Pointer<Void>, Float);
+typedef _MonitorSetGainDart = int Function(Pointer<Void>, double);
+typedef _MonitorStopNative = Void Function(Pointer<Void>);
+typedef _MonitorStopDart = void Function(Pointer<Void>);
 
 typedef _CaptureStartNative = Pointer<Void> Function(
   Pointer<Utf8>,
