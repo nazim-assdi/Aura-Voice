@@ -370,6 +370,7 @@ class _StudioPageState extends State<StudioPage> {
   String? _selectedOutputDeviceId;
   double _monitorGain = 1.0;
   int _monitorUnderrunFrames = 0;
+  int _monitorInputDroppedFrames = 0;
   bool _monitorStarting = false;
   String? _message;
   bool _loadingDevices = true;
@@ -455,6 +456,7 @@ class _StudioPageState extends State<StudioPage> {
     setState(() {
       _monitorStarting = true;
       _monitorUnderrunFrames = 0;
+      _monitorInputDroppedFrames = 0;
       _message = null;
     });
     AudioMonitorSession? monitor;
@@ -472,6 +474,7 @@ class _StudioPageState extends State<StudioPage> {
       setState(() {
         _monitor = monitor;
         _monitorUnderrunFrames = monitor!.underrunFrames;
+        _monitorInputDroppedFrames = monitor.droppedInputFrames;
         _message =
             'Live monitor: ${monitor.inputSampleRate} Hz input → ${monitor.outputSampleRate} Hz output. Use headphones to prevent feedback.';
       });
@@ -492,13 +495,19 @@ class _StudioPageState extends State<StudioPage> {
     if (monitor == null) return;
     final failed = monitor.hasError;
     final underruns = monitor.underrunFrames;
+    final droppedInput = monitor.droppedInputFrames;
     if (failed) {
       unawaited(_stopMonitor());
       if (mounted) setState(() => _message = 'The microphone monitor device reported an audio error.');
       return;
     }
-    if (mounted && underruns != _monitorUnderrunFrames) {
-      setState(() => _monitorUnderrunFrames = underruns);
+    if (mounted &&
+        (underruns != _monitorUnderrunFrames ||
+            droppedInput != _monitorInputDroppedFrames)) {
+      setState(() {
+        _monitorUnderrunFrames = underruns;
+        _monitorInputDroppedFrames = droppedInput;
+      });
     }
   }
 
@@ -508,10 +517,13 @@ class _StudioPageState extends State<StudioPage> {
     final monitor = _monitor;
     _monitor = null;
     final finalUnderruns = monitor?.underrunFrames ?? _monitorUnderrunFrames;
+    final finalDroppedInput =
+        monitor?.droppedInputFrames ?? _monitorInputDroppedFrames;
     if (monitor != null) await monitor.stop();
     if (mounted && monitor != null) {
       setState(() {
         _monitorUnderrunFrames = finalUnderruns;
+        _monitorInputDroppedFrames = finalDroppedInput;
         _message = 'Live microphone monitoring stopped.';
       });
     }
@@ -1065,7 +1077,7 @@ class _StudioPageState extends State<StudioPage> {
                     Text(
                       _monitor == null
                           ? 'Target ring: 20 ms; actual latency also depends on the device driver and system buffers.'
-                          : 'Input ${_monitor!.inputSampleRate} Hz  ·  Output ${_monitor!.outputSampleRate} Hz  ·  Ring starvation: $_monitorUnderrunFrames frames',
+                          : 'Input ${_monitor!.inputSampleRate} Hz  ·  Output ${_monitor!.outputSampleRate} Hz  ·  Output starvation: $_monitorUnderrunFrames frames  ·  Input drops: $_monitorInputDroppedFrames',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                             color: _monitorUnderrunFrames == 0
                                 ? AuraTheme.muted
