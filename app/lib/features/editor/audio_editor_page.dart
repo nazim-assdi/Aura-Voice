@@ -140,22 +140,30 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
     _realtimeGraphTimer?.cancel();
     final playback = _playback;
     _playback = null;
-    if (playback != null) unawaited(playback.stop());
+    if (playback != null) {
+      unawaited(playback.stop());
+    }
     super.dispose();
   }
 
   AudioTrack? get _selectedTrack {
     for (final track in _session.tracks) {
-      if (track.id == _selectedTrackId) return track;
+      if (track.id == _selectedTrackId) {
+        return track;
+      }
     }
     return null;
   }
 
   AudioClip? get _selectedClip {
     final track = _selectedTrack;
-    if (track == null) return null;
+    if (track == null) {
+      return null;
+    }
     for (final clip in track.clips) {
-      if (clip.id == _selectedClipId) return clip;
+      if (clip.id == _selectedClipId) {
+        return clip;
+      }
     }
     return null;
   }
@@ -187,7 +195,9 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
     for (final track in _session.tracks) {
       for (final clip in track.clips) {
         final clipEnd = clip.startFrame + clip.durationFrames;
-        if (clipEnd > end) end = clipEnd;
+        if (clipEnd > end) {
+          end = clipEnd;
+        }
       }
     }
     return end;
@@ -205,7 +215,9 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
       math.max(240.0, _totalSeconds * 76.0 * _timelineZoom).toDouble();
 
   int _snapFrame(int frame) {
-    if (!_snapEnabled) return frame;
+    if (!_snapEnabled) {
+      return frame;
+    }
     final gridFrames = math.max(
       1,
       _session.sampleRate * _snapGridMilliseconds ~/ 1000,
@@ -221,7 +233,9 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
       AudioSession.fromJson(Map<String, dynamic>.from(session.toJson()));
 
   void _pushHistory(List<AudioSession> stack, AudioSession session) {
-    if (stack.length >= 100) stack.removeAt(0);
+    if (stack.length >= 100) {
+      stack.removeAt(0);
+    }
     stack.add(session);
   }
 
@@ -238,7 +252,9 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
     }
     _transactionSnapshot = null;
     _transactionChanged = false;
-    if (mounted) setState(() {});
+    if (mounted) {
+      setState(() {});
+    }
   }
 
   void _commitSession(AudioSession next) {
@@ -266,7 +282,9 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
       final clipExists = _session.tracks.any(
         (track) => track.clips.any((clip) => clip.id == _selectedClipId),
       );
-      if (!clipExists) _selectedClipId = null;
+      if (!clipExists) {
+        _selectedClipId = null;
+      }
       _editRevision++;
     });
     _scheduleAutosave();
@@ -275,7 +293,9 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
 
   void _undo() {
     _finishEditTransaction();
-    if (_undoStack.isEmpty) return;
+    if (_undoStack.isEmpty) {
+      return;
+    }
     _pushHistory(_redoStack, _cloneSession(_session));
     _restoreHistorySession(_undoStack.removeLast());
     setState(() => _message = 'Undo complete.');
@@ -283,14 +303,18 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
 
   void _redo() {
     _finishEditTransaction();
-    if (_redoStack.isEmpty) return;
+    if (_redoStack.isEmpty) {
+      return;
+    }
     _pushHistory(_undoStack, _cloneSession(_session));
     _restoreHistorySession(_redoStack.removeLast());
     setState(() => _message = 'Redo complete.');
   }
 
   void _scheduleRealtimeGraphUpdate() {
-    if (_playback == null || !mounted) return;
+    if (_playback == null || !mounted) {
+      return;
+    }
     _realtimeGraphDirty = true;
     _realtimeGraphTimer?.cancel();
     _realtimeGraphTimer = Timer(
@@ -308,9 +332,13 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
     final hasAudibleSolo =
         session.tracks.any((track) => track.solo && !track.muted);
     for (final track in session.tracks) {
-      if (track.muted || (hasAudibleSolo && !track.solo)) continue;
+      if (track.muted || (hasAudibleSolo && !track.solo)) {
+        continue;
+      }
       for (final clip in track.clips) {
-        if (clip.muted || result.containsKey(clip.mediaId)) continue;
+        if (clip.muted || result.containsKey(clip.mediaId)) {
+          continue;
+        }
         final bytes = await readAudioFile(clip.mediaId);
         if (bytes.length > maximumBytes - totalBytes) {
           throw const AudioEngineUnavailable(
@@ -341,7 +369,9 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
     final snapshot = _cloneSession(_session);
     try {
       final assets = await _readAudibleAssets(snapshot);
-      if (!mounted || _playback != playback) return;
+      if (!mounted || _playback != playback) {
+        return;
+      }
       if (revision != _editRevision) {
         _scheduleRealtimeGraphUpdate();
         return;
@@ -351,7 +381,9 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
         session: snapshot,
         assetWavs: assets,
       );
-      if (!mounted || _playback != playback) return;
+      if (!mounted || _playback != playback) {
+        return;
+      }
 
       if (_loopEnabled) {
         final selected = _selectedClip;
@@ -393,7 +425,9 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
       }
     } finally {
       _publishingRealtimeGraph = false;
-      if (mounted && _realtimeGraphDirty) _scheduleRealtimeGraphUpdate();
+      if (mounted && _realtimeGraphDirty) {
+        _scheduleRealtimeGraphUpdate();
+      }
     }
   }
 
@@ -406,7 +440,9 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
   }
 
   Future<void> _runAutosave() async {
-    if (!mounted || _editRevision <= _autosavedRevision) return;
+    if (!mounted || _editRevision <= _autosavedRevision) {
+      return;
+    }
     if (_saving || _autosaving) {
       _scheduleAutosave();
       return;
@@ -425,17 +461,23 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
         _message = 'Autosaved locally.';
       });
     } catch (error) {
-      if (mounted) setState(() => _message = 'Autosave failed: $error');
+      if (mounted) {
+        setState(() => _message = 'Autosave failed: $error');
+      }
     } finally {
       _autosaving = false;
       // Retry only when a newer edit arrived during this save. A persistent
       // storage error should be shown once, not retried forever in the UI.
-      if (mounted && _editRevision > revision) _scheduleAutosave();
+      if (mounted && _editRevision > revision) {
+        _scheduleAutosave();
+      }
     }
   }
 
   Future<void> _loadWaveform(String path) async {
-    if (_waveformCache.containsKey(path)) return;
+    if (_waveformCache.containsKey(path)) {
+      return;
+    }
     try {
       final data = await _waveforms.analyze(path, peakCount: 512);
       if (!mounted) {
@@ -443,7 +485,9 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
       }
       setState(() => _waveformCache = {..._waveformCache, path: data});
     } catch (error) {
-      if (mounted) setState(() => _message = 'Waveform unavailable: $error');
+      if (mounted) {
+        setState(() => _message = 'Waveform unavailable: $error');
+      }
     }
   }
 
@@ -484,7 +528,9 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
     try {
       available = await _library.listRecordings();
     } catch (error) {
-      if (mounted) setState(() => _message = error.toString());
+      if (mounted) {
+        setState(() => _message = error.toString());
+      }
       return;
     }
     final compatible = available
@@ -537,7 +583,9 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
         ],
       ),
     );
-    if (selected == null || !mounted) return;
+    if (selected == null || !mounted) {
+      return;
+    }
 
     AudioTrack? track;
     if (targetTrackId != null) {
@@ -554,12 +602,16 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
       _addTrack();
       track = _selectedTrack;
     }
-    if (track == null) return;
+    if (track == null) {
+      return;
+    }
 
     var endFrame = 0;
     for (final clip in track.clips) {
       final end = clip.startFrame + clip.durationFrames;
-      if (end > endFrame) endFrame = end;
+      if (end > endFrame) {
+        endFrame = end;
+      }
     }
     final clip = AudioClip(
       id: 'clip-${DateTime.now().microsecondsSinceEpoch}',
@@ -605,7 +657,9 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
 
   Future<void> _syncLoopToSelection() async {
     final playback = _playback;
-    if (playback == null || !_loopEnabled) return;
+    if (playback == null || !_loopEnabled) {
+      return;
+    }
     final selected = _selectedClip;
     final canLoopSelection =
         selected == null || _selectedClipIsAudible;
@@ -644,7 +698,9 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
         });
       }
     } catch (error) {
-      if (mounted) setState(() => _message = error.toString());
+      if (mounted) {
+        setState(() => _message = error.toString());
+      }
     }
   }
 
@@ -702,10 +758,14 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
     // Keep the initial pointer and clip as the drag anchor. This accumulates
     // sub-grid pointer motion so snapping cannot get stuck between events.
     final clip = _dragOriginalClip ?? _selectedClip;
-    if (clip == null || deltaX == 0) return;
+    if (clip == null || deltaX == 0) {
+      return;
+    }
     final deltaFrames =
         (deltaX / _pixelsPerSecond * _session.sampleRate).round();
-    if (deltaFrames == 0) return;
+    if (deltaFrames == 0) {
+      return;
+    }
 
     if (_dragMode == _ClipDragMode.move) {
       final nextFrame = _snapFrame(
@@ -717,7 +777,9 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
     } else if (_dragMode == _ClipDragMode.trimStart) {
       final nextStart = _snapFrame(clip.startFrame + deltaFrames);
       final trimFrames = math.max(0, nextStart - clip.startFrame).toInt();
-      if (trimFrames <= 0 || trimFrames >= clip.durationFrames) return;
+      if (trimFrames <= 0 || trimFrames >= clip.durationFrames) {
+        return;
+      }
       final trimmed = clip.trimStartByFrames(
         trimFrames,
         newId: clip.id,
@@ -733,7 +795,9 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
       final oldEnd = clip.startFrame + clip.durationFrames;
       final nextEnd = _snapFrame(oldEnd + deltaFrames);
       final nextDuration = nextEnd - clip.startFrame;
-      if (nextDuration <= 0 || nextDuration >= clip.durationFrames) return;
+      if (nextDuration <= 0 || nextDuration >= clip.durationFrames) {
+        return;
+      }
       final trimmed = clip.trimEndByFrames(
         clip.durationFrames - nextDuration,
         newId: clip.id,
@@ -765,7 +829,9 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
   }) {
     final track = _selectedTrack;
     final clip = _selectedClip;
-    if (track == null || clip == null) return;
+    if (track == null || clip == null) {
+      return;
+    }
     final updatedClip = AudioClip(
       id: clip.id,
       mediaId: clip.mediaId,
@@ -799,7 +865,9 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
 
   void _moveSelectedClip(int seconds) {
     final clip = _selectedClip;
-    if (clip == null) return;
+    if (clip == null) {
+      return;
+    }
     final delta = seconds * _session.sampleRate;
     final next = _snapFrame(
       math.max(0, clip.startFrame + delta).toInt(),
@@ -809,14 +877,18 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
 
   void _toggleSelectedClipMute() {
     final clip = _selectedClip;
-    if (clip == null) return;
+    if (clip == null) {
+      return;
+    }
     _updateSelectedClip(muted: !clip.muted);
   }
 
   void _splitSelectedClip() {
     final track = _selectedTrack;
     final clip = _selectedClip;
-    if (track == null || clip == null || clip.durationFrames < 2) return;
+    if (track == null || clip == null || clip.durationFrames < 2) {
+      return;
+    }
     final splitOffset = clip.durationFrames ~/ 2;
     try {
       final parts = clip.splitAtFrameOffset(
@@ -854,18 +926,24 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
   void _crossfadeSelectedWithNext() {
     final track = _selectedTrack;
     final clip = _selectedClip;
-    if (track == null || clip == null) return;
+    if (track == null || clip == null) {
+      return;
+    }
     final candidates = track.clips
         .where((item) => item.id != clip.id && item.startFrame >= clip.startFrame)
         .toList()
       ..sort((a, b) => a.startFrame.compareTo(b.startFrame));
-    if (candidates.isEmpty) return;
+    if (candidates.isEmpty) {
+      return;
+    }
     final next = candidates.first;
     final fadeFrames = math.min(
       _session.sampleRate ~/ 4,
       math.min(clip.durationFrames ~/ 2, next.durationFrames ~/ 2),
     ).toInt();
-    if (fadeFrames < 1) return;
+    if (fadeFrames < 1) {
+      return;
+    }
 
     final overlapStart = math.max(
       0,
@@ -930,7 +1008,9 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
   void _removeSelectedClip() {
     final track = _selectedTrack;
     final clip = _selectedClip;
-    if (track == null || clip == null) return;
+    if (track == null || clip == null) {
+      return;
+    }
     final updated = AudioTrack(
       id: track.id,
       name: track.name,
@@ -996,7 +1076,9 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
     double? compressorRatio,
   }) {
     final track = _selectedTrack;
-    if (track == null) return;
+    if (track == null) {
+      return;
+    }
     _replaceTrack(
       AudioTrack(
         id: track.id,
@@ -1017,7 +1099,9 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
   }
 
   Future<void> _saveProject() async {
-    if (_saving || _autosaving) return;
+    if (_saving || _autosaving) {
+      return;
+    }
     _autosaveTimer?.cancel();
     final revision = _editRevision;
     final snapshot = _cloneSession(_session);
@@ -1037,11 +1121,15 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
         });
       }
     } catch (error) {
-      if (mounted) setState(() => _message = error.toString());
+      if (mounted) {
+        setState(() => _message = error.toString());
+      }
     } finally {
       if (mounted) {
         setState(() => _saving = false);
-        if (saveSucceeded && _editRevision > revision) _scheduleAutosave();
+        if (saveSucceeded && _editRevision > revision) {
+          _scheduleAutosave();
+        }
       }
     }
   }
@@ -1065,9 +1153,13 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
         }
       });
     } catch (error) {
-      if (mounted) setState(() => _message = 'Output devices unavailable: $error');
+      if (mounted) {
+        setState(() => _message = 'Output devices unavailable: $error');
+      }
     } finally {
-      if (mounted) setState(() => _loadingOutputDevices = false);
+      if (mounted) {
+        setState(() => _loadingOutputDevices = false);
+      }
     }
   }
 
@@ -1095,9 +1187,13 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
       final hasAudibleSolo =
           _session.tracks.any((track) => track.solo && !track.muted);
       for (final track in _session.tracks) {
-        if (track.muted || (hasAudibleSolo && !track.solo)) continue;
+        if (track.muted || (hasAudibleSolo && !track.solo)) {
+          continue;
+        }
         for (final clip in track.clips) {
-          if (clip.muted) continue;
+          if (clip.muted) {
+            continue;
+          }
           if (!assets.containsKey(clip.mediaId)) {
             final bytes = await readAudioFile(clip.mediaId);
             if (bytes.length > maximumRealtimeInputBytes - totalAssetBytes) {
@@ -1158,15 +1254,21 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
         (_) => unawaited(_pollPlayback()),
       );
     } catch (error) {
-      if (mounted) setState(() => _message = error.toString());
+      if (mounted) {
+        setState(() => _message = error.toString());
+      }
     } finally {
-      if (mounted) setState(() => _rendering = false);
+      if (mounted) {
+        setState(() => _rendering = false);
+      }
     }
   }
 
   Future<void> _pollPlayback() async {
     final playback = _playback;
-    if (playback == null || _pollingPlayback) return;
+    if (playback == null || _pollingPlayback) {
+      return;
+    }
     _pollingPlayback = true;
     try {
       final position = playback.positionFrames;
@@ -1199,7 +1301,9 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
     _playbackTimer = null;
     final playback = _playback;
     _playback = null;
-    if (playback != null) await playback.stop();
+    if (playback != null) {
+      await playback.stop();
+    }
     if (mounted) {
       setState(() {
         _playbackPosition = 0;
@@ -1211,7 +1315,9 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
 
   Future<void> _toggleTransportPause() async {
     final playback = _playback;
-    if (playback == null) return;
+    if (playback == null) {
+      return;
+    }
     try {
       if (_transportPaused) {
         await playback.resume();
@@ -1225,7 +1331,9 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
         });
       }
     } catch (error) {
-      if (mounted) setState(() => _message = error.toString());
+      if (mounted) {
+        setState(() => _message = error.toString());
+      }
     }
   }
 
@@ -1272,7 +1380,9 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
         });
       }
     } catch (error) {
-      if (mounted) setState(() => _message = error.toString());
+      if (mounted) {
+        setState(() => _message = error.toString());
+      }
     }
   }
 
@@ -1283,7 +1393,9 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
 
   Future<void> _commitSeek(double frame) async {
     final playback = _playback;
-    if (playback == null) return;
+    if (playback == null) {
+      return;
+    }
     final target = frame.round().clamp(0, playback.totalFrames).toInt();
     try {
       await playback.seek(target);
@@ -2049,7 +2161,9 @@ class _SelectedClipPanel extends StatelessWidget {
       (frames * 1000 / sampleRate).round().toString();
 
   bool get _canSplit {
-    if (clip.durationFrames < 2) return false;
+    if (clip.durationFrames < 2) {
+      return false;
+    }
     final midpoint = clip.durationFrames ~/ 2;
     return clip.fadeInFrames <= midpoint &&
         clip.fadeOutFrames <= clip.durationFrames - midpoint;
