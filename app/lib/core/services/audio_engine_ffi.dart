@@ -52,6 +52,39 @@ class FfiAudioEngineService implements AudioEngineService {
   }
 
   @override
+  Future<List<AudioOutputDevice>> listOutputDevices() async {
+    final api = _api;
+    if (api == null) {
+      throw const AudioEngineUnavailable(
+        'Native Aura audio library is not available on this platform.',
+      );
+    }
+    final pointer = api.listOutputDevices();
+    if (pointer == nullptr) {
+      throw AudioEngineUnavailable(api.lastError());
+    }
+    try {
+      final decoded = jsonDecode(pointer.toDartString()) as List<dynamic>;
+      return decoded
+          .map((item) => Map<String, dynamic>.from(item as Map))
+          .map(
+            (item) => AudioOutputDevice(
+              id: item['id'] as String,
+              name: item['name'] as String,
+              isDefault: item['isDefault'] as bool? ?? false,
+              channels: item['channels'] as int? ?? 0,
+              sampleRate: item['sampleRate'] as int? ?? 0,
+              minSampleRate: item['minSampleRate'] as int? ?? 0,
+              maxSampleRate: item['maxSampleRate'] as int? ?? 0,
+            ),
+          )
+          .toList(growable: false);
+    } finally {
+      api.freeString(pointer);
+    }
+  }
+
+  @override
   Future<AudioCaptureSession> startCapture({
     String? deviceId,
     int bufferMilliseconds = 1000,
@@ -139,6 +172,7 @@ class FfiAudioEngineService implements AudioEngineService {
   Future<AudioPlaybackSession> startRealtimePlayback({
     required AudioSession session,
     required Map<String, Uint8List> assetWavs,
+    String? outputDeviceId,
   }) async {
     final api = _api;
     if (api == null) {
@@ -162,13 +196,18 @@ class FfiAudioEngineService implements AudioEngineService {
     }
     final sessionJson = session.toJson();
     final result = await Isolate.run(
-      () => _startRealtimePlaybackInWorker(sessionJson, workerAssets),
+      () => _startRealtimePlaybackInWorker(
+        sessionJson,
+        workerAssets,
+        outputDeviceId,
+      ),
     );
     return FfiAudioPlaybackSession._(
       api: api,
       handle: Pointer<Void>.fromAddress(result['handleAddress']!),
       sampleRate: result['sampleRate']!,
       totalFrames: result['totalFrames']!,
+      engineSampleRate: result['engineSampleRate']!,
     );
   }
 
@@ -346,6 +385,7 @@ AudioRenderResult _renderInWorker(
 Map<String, int> _startRealtimePlaybackInWorker(
   Map<String, Object> sessionJson,
   Map<String, Uint8List> assetWavs,
+  String? outputDeviceId,
 ) {
   final api = _NativeApi.open();
   final session = AudioSession.fromJson(
@@ -430,18 +470,28 @@ Map<String, int> _startRealtimePlaybackInWorker(
       }
     }
 
+    final nativeDeviceId = outputDeviceId?.toNativeUtf8() ?? nullptr;
+    final outputSampleRate = calloc<Uint32>();
     final totalFrames = calloc<Uint64>();
     try {
-      final playback = api.realtimePlaybackStart(handle, totalFrames);
+      final playback = api.realtimePlaybackStart(
+        handle,
+        nativeDeviceId,
+        outputSampleRate,
+        totalFrames,
+      );
       if (playback == nullptr) {
         throw AudioEngineUnavailable(api.lastError());
       }
       return {
         'handleAddress': playback.address,
         'sampleRate': session.sampleRate,
+        'engineSampleRate': outputSampleRate.value,
         'totalFrames': totalFrames.value,
       };
     } finally {
+      if (nativeDeviceId != nullptr) calloc.free(nativeDeviceId);
+      calloc.free(outputSampleRate);
       calloc.free(totalFrames);
     }
   } finally {
@@ -570,11 +620,29 @@ class FfiAudioPlaybackSession implements AudioPlaybackSession {
     required Pointer<Void> handle,
     required this.sampleRate,
     required int totalFrames,
+    int? engineSampleRate,
   })  : _api = api,
         _handle = handle,
-        _totalFrames = totalFrames;
+        _engineSampleRate = engineSampleRate ?? sampleRate,
+        _totalFrames = _convertFrameRate(
+          totalFrames,
+          engineSampleRate ?? sampleRate,
+          sampleRate,
+        );
 
   final _NativeApi _api;
+  final int _engineSampleRate;
+
+  int _toEngineFrames(int frame) =>
+      _convertFrameRate(frame, sampleRate, _engineSampleRate);
+
+  int _fromEngineFrames(int frame) =>
+      _convertFrameRate(frame, _engineSampleRate, sampleRate);
+
+  static int _convertFrameRate(int frame, int fromRate, int toRate) {
+    if (fromRate == toRate) return frame;
+    return (frame * toRate / fromRate).round();
+  }
   Pointer<Void> _handle;
   bool _stopped = false;
   bool _paused = false;
@@ -590,8 +658,9 @@ class FfiAudioPlaybackSession implements AudioPlaybackSession {
   int get totalFrames => _totalFrames;
 
   @override
-  int get positionFrames =>
-      _stopped ? totalFrames : _api.playbackPositionFrames(_handle);
+  int get positionFrames => _stopped
+      ? totalFrames
+      : _fromEngineFrames(_api.playbackPositionFrames(_handle));
 
   @override
   bool get isComplete =>
@@ -632,7 +701,7 @@ class FfiAudioPlaybackSession implements AudioPlaybackSession {
     if (frame < 0 || frame > totalFrames) {
       throw RangeError.range(frame, 0, totalFrames, 'frame');
     }
-    final status = _api.playbackSeek(_handle, frame);
+    final status = _api.playbackSeek(_handle, _toEngineFrames(frame));
     if (status != 0) throw AudioEngineUnavailable(_api.lastError());
   }
 
@@ -651,8 +720,8 @@ class FfiAudioPlaybackSession implements AudioPlaybackSession {
     }
     final status = _api.playbackSetLoop(
       _handle,
-      startFrame,
-      endFrame,
+      _toEngineFrames(startFrame),
+      _toEngineFrames(endFrame),
       enabled ? 1 : 0,
     );
     if (status != 0) throw AudioEngineUnavailable(_api.lastError());
@@ -695,7 +764,7 @@ class FfiAudioPlaybackSession implements AudioPlaybackSession {
             workerAssets,
           ),
         );
-        _totalFrames = nextTotalFrames;
+        _totalFrames = _fromEngineFrames(nextTotalFrames);
       } finally {
         completion.complete();
       }
@@ -911,14 +980,15 @@ class _NativeApi {
           'aura_engine_last_error',
         ) {
     final abi = _abiVersion();
-    if (abi != 4) {
+    if (abi != 5) {
       throw AudioEngineUnavailable(
-        'Native audio ABI mismatch: expected 4, found $abi.',
+        'Native audio ABI mismatch: expected 5, found $abi.',
       );
     }
   }
 
   final Pointer<Utf8> Function() _listInputDevices;
+  final Pointer<Utf8> Function() _listOutputDevices;
   final void Function(Pointer<Utf8>) _freeString;
   final Pointer<Void> Function(
     Pointer<Utf8>,
@@ -926,8 +996,12 @@ class _NativeApi {
     Pointer<Uint32>,
     Pointer<Uint16>,
   ) _captureStart;
-  final Pointer<Void> Function(Pointer<Void>, Pointer<Uint64>)
-      _realtimePlaybackStart;
+  final Pointer<Void> Function(
+    Pointer<Void>,
+    Pointer<Utf8>,
+    Pointer<Uint32>,
+    Pointer<Uint64>,
+  ) _realtimePlaybackStart;
   final Pointer<Void> Function(
     Pointer<Uint8>,
     int,
@@ -1000,11 +1074,14 @@ class _NativeApi {
 
   Pointer<Void> realtimePlaybackStart(
     Pointer<Void> engine,
+    Pointer<Utf8> outputDeviceId,
+    Pointer<Uint32> sampleRate,
     Pointer<Uint64> totalFrames,
   ) =>
-      _realtimePlaybackStart(engine, totalFrames);
+      _realtimePlaybackStart(engine, outputDeviceId, sampleRate, totalFrames);
 
   Pointer<Utf8> listInputDevices() => _listInputDevices();
+  Pointer<Utf8> listOutputDevices() => _listOutputDevices();
   void freeString(Pointer<Utf8> value) => _freeString(value);
   Pointer<Void> captureStart(
     Pointer<Utf8> deviceId,
@@ -1191,12 +1268,19 @@ typedef _CaptureStartDart = Pointer<Void> Function(
   Pointer<Uint16>,
 );
 
+typedef _ListOutputDevicesNative = Pointer<Utf8> Function();
+typedef _ListOutputDevicesDart = Pointer<Utf8> Function();
+
 typedef _RealtimePlaybackStartNative = Pointer<Void> Function(
   Pointer<Void>,
+  Pointer<Utf8>,
+  Pointer<Uint32>,
   Pointer<Uint64>,
 );
 typedef _RealtimePlaybackStartDart = Pointer<Void> Function(
   Pointer<Void>,
+  Pointer<Utf8>,
+  Pointer<Uint32>,
   Pointer<Uint64>,
 );
 
