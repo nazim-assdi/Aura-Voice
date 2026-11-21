@@ -129,7 +129,7 @@ class FileAudioProjectStore implements AudioProjectStore {
     }
     final root = await rootDirectory.resolveSymbolicLinks();
     final recoveryDirectory = Directory(
-      '${root}${Platform.pathSeparator}Recovery',
+      '$root${Platform.pathSeparator}Recovery',
     );
     if (!await recoveryDirectory.exists()) {
       return const [];
@@ -312,7 +312,7 @@ class FileAudioProjectStore implements AudioProjectStore {
     await rootDirectory.create(recursive: true);
     final root = await rootDirectory.resolveSymbolicLinks();
     final recoveryDirectory = Directory(
-      '${root}${Platform.pathSeparator}Recovery',
+      '$root${Platform.pathSeparator}Recovery',
     );
     await recoveryDirectory.create(recursive: true);
     final recoveryRoot = await recoveryDirectory.resolveSymbolicLinks();
@@ -335,7 +335,7 @@ class FileAudioProjectStore implements AudioProjectStore {
     await _assertManagedPath(path);
     final root = await Directory(_directoryPath).resolveSymbolicLinks();
     final recoveryDirectory = Directory(
-      '${root}${Platform.pathSeparator}Recovery',
+      '$root${Platform.pathSeparator}Recovery',
     );
     if (!await recoveryDirectory.exists()) {
       throw const AudioProjectStoreUnavailable(
@@ -365,7 +365,7 @@ class FileAudioProjectStore implements AudioProjectStore {
     }
     final root = await rootDirectory.resolveSymbolicLinks();
     final recoveryDirectory = Directory(
-      '${root}${Platform.pathSeparator}Recovery',
+      '$root${Platform.pathSeparator}Recovery',
     );
     if (!await recoveryDirectory.exists()) {
       return;
@@ -375,7 +375,7 @@ class FileAudioProjectStore implements AudioProjectStore {
       return;
     }
     final filename =
-        '${recoveryRoot}${Platform.pathSeparator}AuraRecovery_${_safeId(id)}.recovery.aura.json';
+        '$recoveryRoot${Platform.pathSeparator}AuraRecovery_${_safeId(id)}.recovery.aura.json';
     for (final path in [filename, '$filename.backup']) {
       if (await FileSystemEntity.type(path, followLinks: false) ==
           FileSystemEntityType.file) {
