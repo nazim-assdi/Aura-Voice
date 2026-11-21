@@ -1032,6 +1032,10 @@ class _NativeApi {
             library.lookupFunction<_ListInputDevicesNative, _ListInputDevicesDart>(
           'aura_audio_input_devices_json',
         ),
+        _listOutputDevices =
+            library.lookupFunction<_ListOutputDevicesNative, _ListOutputDevicesDart>(
+          'aura_audio_output_devices_json',
+        ),
         _freeString =
             library.lookupFunction<_FreeStringNative, _FreeStringDart>(
           'aura_audio_string_free',
