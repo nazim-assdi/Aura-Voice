@@ -409,7 +409,8 @@ class _StudioPageState extends State<StudioPage> {
     _monitorTimer?.cancel();
     unawaited(_stopMonitor());
     unawaited(_stopPlayback());
-    unawaited(_stopRecording());
+    // Finish any active file I/O, but never notify a widget being disposed.
+    unawaited(_stopRecording(updateUi: false));
     super.dispose();
   }
 
@@ -755,7 +756,7 @@ class _StudioPageState extends State<StudioPage> {
     }
   }
 
-  Future<void> _stopRecording() async {
+  Future<void> _stopRecording({bool updateUi = true}) async {
     if (_stopping) {
       return;
     }
@@ -818,7 +819,7 @@ class _StudioPageState extends State<StudioPage> {
       if (capture != null && !paused) {
         warning ??= 'Only the samples already written were saved because the input stream could not pause.';
       }
-      if (mounted) {
+      if (updateUi && mounted) {
         setState(() {
           _peak = 0;
           _rms = 0;
