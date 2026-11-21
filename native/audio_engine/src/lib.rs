@@ -1463,7 +1463,7 @@ unsafe fn checked_handle<'a>(
 /// Returns the current C ABI version. Increment on incompatible ABI changes.
 #[no_mangle]
 pub extern "C" fn aura_engine_abi_version() -> u32 {
-    4
+    5
 }
 
 /// Returns a static NUL-terminated engine version string.
@@ -1719,22 +1719,46 @@ pub unsafe extern "C" fn aura_engine_render_wav(
 #[no_mangle]
 pub unsafe extern "C" fn aura_engine_realtime_playback_start(
     handle: *mut AuraEngineHandle,
+    output_device_id: *const c_char,
+    out_sample_rate: *mut u32,
     out_total_frames: *mut u64,
 ) -> *mut device_io::AuraAudioPlaybackHandle {
     let result = catch_unwind(AssertUnwindSafe(|| {
-        if handle.is_null() || out_total_frames.is_null() {
+        if handle.is_null() || out_sample_rate.is_null() || out_total_frames.is_null() {
             return Err(AudioError::InvalidArgument(
-                "realtime playback handle and output pointer must not be null".into(),
+                "realtime playback handle and output pointers must not be null".into(),
             ));
         }
-        // SAFETY: Caller supplies a live engine handle and writable output slot.
+        // SAFETY: Caller supplies a live engine handle and writable output slots.
         let engine = unsafe { &mut *handle };
+        let requested_device = if output_device_id.is_null() {
+            None
+        } else {
+            let raw = unsafe { CStr::from_ptr(output_device_id) };
+            let value = raw.to_str().map_err(|_| {
+                AudioError::InvalidArgument("output device id must be valid UTF-8".into())
+            })?;
+            if value.trim().is_empty() { None } else { Some(value.to_owned()) }
+        };
+        let target = device_io::select_output_target(
+            requested_device.as_deref(),
+            engine.session.sample_rate,
+            engine.session.channels,
+        )?;
+        let output_sample_rate = target.sample_rate();
         let assets = std::mem::take(&mut engine.assets);
-        let mixer = build_realtime_mixer_owned(&engine.session, assets)?;
+        let mixer = build_realtime_mixer_for_output_rate(
+            &engine.session,
+            assets,
+            output_sample_rate,
+        )?;
         let total_frames = mixer.total_frames;
-        let playback = device_io::start_realtime_playback(mixer)?;
-        // SAFETY: The pointer was checked above and is writable by the ABI contract.
-        unsafe { *out_total_frames = total_frames; }
+        let playback = device_io::start_realtime_playback(mixer, target)?;
+        // SAFETY: The pointers were checked above and are writable by contract.
+        unsafe {
+            *out_sample_rate = output_sample_rate;
+            *out_total_frames = total_frames;
+        }
         Ok::<_, AudioError>(playback)
     }));
 
@@ -1771,8 +1795,15 @@ pub unsafe extern "C" fn aura_audio_playback_replace_session(
         }
         // SAFETY: Caller supplies live playback/session handles and a writable output slot.
         let engine = unsafe { &mut *session_handle };
+        let output_rate = unsafe {
+            device_io::playback_output_sample_rate(playback)?
+        };
         let assets = std::mem::take(&mut engine.assets);
-        let mixer = build_realtime_mixer_owned(&engine.session, assets)?;
+        let mixer = build_realtime_mixer_for_output_rate(
+            &engine.session,
+            assets,
+            output_rate,
+        )?;
         let total_frames = unsafe {
             device_io::replace_realtime_session(playback, mixer)?
         };
@@ -1959,8 +1990,28 @@ mod tests {
     }
 
     #[test]
-    fn c_abi_reports_version_four_for_realtime_multitrack_playback() {
-        assert_eq!(aura_engine_abi_version(), 4);
+    fn c_abi_reports_version_five_for_device_selection_and_sample_rate_conversion() {
+        assert_eq!(aura_engine_abi_version(), 5);
+    }
+
+    #[test]
+    fn realtime_graph_preparation_resamples_assets_and_timeline_to_output_clock() {
+        let asset = AudioBuffer::new(44_100, 1, vec![0.5; 4_410]).unwrap();
+        let mut assets = HashMap::new();
+        assets.insert("voice".to_owned(), asset);
+        let mut track = Track::new("lead");
+        track.clips.push(Clip::new("take", "voice", 441, 441, 2_205));
+        let mut session = MixSession::new(44_100, 1);
+        session.tracks.push(track);
+
+        let mixer = build_realtime_mixer_for_output_rate(&session, assets, 48_000).unwrap();
+        assert_eq!(mixer.sample_rate, 48_000);
+        assert_eq!(mixer.total_frames, 2_880);
+        let mut state = RealtimeRenderState::new();
+        let mut output = vec![0.0_f32; 2_880];
+        mixer.render_block(&mut state, 0, &mut output);
+        assert!(output[..480].iter().all(|sample| sample.abs() < 0.0001));
+        assert!(output[480..].iter().all(|sample| (*sample - 0.5).abs() < 0.0001));
     }
 
     #[test]
