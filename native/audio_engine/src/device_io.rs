@@ -22,9 +22,17 @@ use crate::{
     MAX_REALTIME_BLOCK_FRAMES, RealtimeGraph,
 };
 
+#[derive(Clone, Copy, Debug, Default)]
+struct MonitorFrameTiming {
+    input_callback_ns: u64,
+    input_capture_to_callback_ns: u64,
+}
+
 struct FloatRing {
     slots: Box<[UnsafeCell<f32>]>,
     mask: usize,
+    timing_slots: Box<[UnsafeCell<MonitorFrameTiming>]>,
+    timing_mask: usize,
     channels: usize,
     read_index: AtomicUsize,
     write_index: AtomicUsize,
@@ -54,9 +62,16 @@ impl FloatRing {
             .map(|_| UnsafeCell::new(0.0_f32))
             .collect::<Vec<_>>()
             .into_boxed_slice();
+        let timing_capacity = capacity / channels;
+        let timing_slots = (0..timing_capacity)
+            .map(|_| UnsafeCell::new(MonitorFrameTiming::default()))
+            .collect::<Vec<_>>()
+            .into_boxed_slice();
         Ok(Self {
             slots,
             mask: capacity - 1,
+            timing_slots,
+            timing_mask: timing_capacity - 1,
             channels,
             read_index: AtomicUsize::new(0),
             write_index: AtomicUsize::new(0),
@@ -66,6 +81,19 @@ impl FloatRing {
     }
 
     fn push_interleaved(&self, data: &[f32], input_channels: usize) {
+        self.push_interleaved_timed(
+            data,
+            input_channels,
+            MonitorFrameTiming::default(),
+        );
+    }
+
+    fn push_interleaved_timed(
+        &self,
+        data: &[f32],
+        input_channels: usize,
+        timing: MonitorFrameTiming,
+    ) {
         if input_channels == 0 || data.len() % input_channels != 0 {
             return;
         }
@@ -102,6 +130,10 @@ impl FloatRing {
                     }
                 }
             }
+            let timing_index = (write / self.channels) & self.timing_mask;
+            // SAFETY: The producer owns this frame's unpublished timestamp slot;
+            // the sample write is released together with this metadata below.
+            unsafe { *self.timing_slots[timing_index].get() = timing; }
             self.write_index
                 .store(write.wrapping_add(self.channels), Ordering::Release);
         }
@@ -124,7 +156,7 @@ impl FloatRing {
         &self,
         phase: &mut f64,
         source_frames_per_output: f64,
-    ) -> Option<(f32, f32)> {
+    ) -> Option<(f32, f32, MonitorFrameTiming)> {
         let read = self.read_index.load(Ordering::Relaxed);
         let write = self.write_index.load(Ordering::Acquire);
         let available_frames = write.wrapping_sub(read) / self.channels;
@@ -168,7 +200,11 @@ impl FloatRing {
             );
             *phase -= advance as f64;
         }
-        Some((left, right))
+        let timing_index = (read / self.channels + source_index) & self.timing_mask;
+        // SAFETY: Acquire observed the frame publication and the SPSC consumer
+        // owns the read side until its cursor is advanced.
+        let timing = unsafe { *self.timing_slots[timing_index].get() };
+        Some((left, right, timing))
     }
 
     fn read_frames(&self, output: &mut [f32], max_frames: usize) -> usize {
