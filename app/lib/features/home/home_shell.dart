@@ -421,7 +421,9 @@ class _StudioPageState extends State<StudioPage> {
     try {
       final devices = await _engine.listInputDevices();
       final outputs = await _engine.listOutputDevices();
-      if (!mounted) return;
+      if (!mounted) {
+      return;
+    }
       setState(() {
         _devices
           ..clear()
@@ -448,7 +450,9 @@ class _StudioPageState extends State<StudioPage> {
         }
       });
     } catch (error) {
-      if (!mounted) return;
+      if (!mounted) {
+      return;
+    }
       setState(() => _message = error.toString());
     } finally {
       if (mounted) setState(() => _loadingDevices = false);
@@ -603,7 +607,9 @@ class _StudioPageState extends State<StudioPage> {
     if (_starting || _capture != null) return;
     await _stopMonitor();
     await _stopPlayback();
-    if (!mounted) return;
+    if (!mounted) {
+      return;
+    }
     setState(() {
       _starting = true;
       _message = null;
@@ -1476,7 +1482,9 @@ class _LibraryPageState extends State<LibraryPage> {
     }
     try {
       final items = await _library.listRecordings();
-      if (!mounted) return;
+      if (!mounted) {
+      return;
+    }
       setState(() {
         _recordings
           ..clear()
@@ -1493,7 +1501,9 @@ class _LibraryPageState extends State<LibraryPage> {
     setState(() => _loadingOutputDevices = true);
     try {
       final devices = await _engine.listOutputDevices();
-      if (!mounted) return;
+      if (!mounted) {
+      return;
+    }
       setState(() {
         _outputDevices
           ..clear()
@@ -1548,7 +1558,9 @@ class _LibraryPageState extends State<LibraryPage> {
       return;
     }
     await _stopPlayback();
-    if (!mounted) return;
+    if (!mounted) {
+      return;
+    }
     setState(() {
       _loadingPath = recording.path;
       _message = null;
@@ -1717,7 +1729,9 @@ class _LibraryPageState extends State<LibraryPage> {
       return;
     }
     if (_playingPath == recording.path) await _stopPlayback();
-    if (!mounted) return;
+    if (!mounted) {
+      return;
+    }
     final controller = TextEditingController(text: recording.name);
     final name = await showDialog<String>(
       context: context,
@@ -1749,7 +1763,9 @@ class _LibraryPageState extends State<LibraryPage> {
     if (name == null || name.trim().isEmpty || !mounted) return;
     try {
       final updated = await _library.renameRecording(recording, name);
-      if (!mounted) return;
+      if (!mounted) {
+      return;
+    }
       final index = _recordings.indexWhere((item) => item.path == recording.path);
       setState(() {
         if (index >= 0) _recordings[index] = updated;
@@ -1762,7 +1778,9 @@ class _LibraryPageState extends State<LibraryPage> {
   Future<void> _openSavedProjects() async {
     try {
       final projects = await _projects.listProjects();
-      if (!mounted) return;
+      if (!mounted) {
+      return;
+    }
       if (projects.isEmpty) {
         setState(() => _message = 'No saved sessions yet. Open a recording in the editor and save a project.');
         return;
@@ -1808,7 +1826,9 @@ class _LibraryPageState extends State<LibraryPage> {
       );
       if (selected == null || !mounted) return;
       final session = await _projects.load(selected.path);
-      if (!mounted) return;
+      if (!mounted) {
+      return;
+    }
       if (session.channels < 1 || session.channels > 2) {
         setState(() {
           _message =
@@ -1884,7 +1904,9 @@ class _LibraryPageState extends State<LibraryPage> {
       }
       if (_playingPath == recording.path) await _stopPlayback();
       await _library.deleteRecording(recording);
-      if (!mounted) return;
+      if (!mounted) {
+      return;
+    }
       setState(() {
         _recordings.removeWhere((item) => item.path == recording.path);
         _message = 'Recording deleted from this device.';
