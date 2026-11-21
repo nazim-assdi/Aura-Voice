@@ -32,6 +32,27 @@ class AudioInputDevice {
   final int sampleRate;
 }
 
+/// A physical or virtual output exposed by the current operating system.
+class AudioOutputDevice {
+  const AudioOutputDevice({
+    required this.id,
+    required this.name,
+    required this.isDefault,
+    required this.channels,
+    required this.sampleRate,
+    required this.minSampleRate,
+    required this.maxSampleRate,
+  });
+
+  final String id;
+  final String name;
+  final bool isDefault;
+  final int channels;
+  final int sampleRate;
+  final int minSampleRate;
+  final int maxSampleRate;
+}
+
 /// Handle for a running microphone capture stream.
 ///
 /// Samples are interleaved float32 PCM in the device's native sample rate.
@@ -101,10 +122,14 @@ abstract interface class AudioEngineService {
   Future<AudioPlaybackSession> startRealtimePlayback({
     required AudioSession session,
     required Map<String, Uint8List> assetWavs,
+    String? outputDeviceId,
   });
 
   /// Returns the current OS microphone devices using stable platform ids.
   Future<List<AudioInputDevice>> listInputDevices();
+
+  /// Returns the current OS output devices and their supported rate range.
+  Future<List<AudioOutputDevice>> listOutputDevices();
 
   /// Starts a capture stream. A null deviceId selects the OS default input.
   Future<AudioCaptureSession> startCapture({
