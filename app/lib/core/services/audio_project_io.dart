@@ -993,7 +993,7 @@ class FileAudioProjectStore implements AudioProjectStore {
 
     final createdAt = DateTime.now().toUtc();
     final versionPath = File(
-      '${resolvedVersionsDirectory}${Platform.pathSeparator}'
+      '$resolvedVersionsDirectory${Platform.pathSeparator}'
       '${createdAt.microsecondsSinceEpoch}.json',
     );
     final temporary = File(
