@@ -1291,6 +1291,18 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
     }
   }
 
+  String? get _playbackDiagnosticsLabel {
+    final playback = _playback;
+    if (playback is! AudioPlaybackDiagnostics) return null;
+    final maxMicros =
+        playback.maximumCallbackTimeNanoseconds / 1000.0;
+    final cpu = playback.estimatedCallbackCpuPercent;
+    return '${playback.outputSampleRate} Hz output · '
+        'callback CPU ${cpu.toStringAsFixed(1)}% · '
+        'max ${maxMicros.toStringAsFixed(1)} µs · '
+        'deadline misses ${playback.callbackDeadlineMisses}';
+  }
+
   String _formatTransportPosition(int frames) {
     final totalMilliseconds = frames * 1000 ~/ _session.sampleRate;
     final minutes = (totalMilliseconds ~/ 60000).toString().padLeft(2, '0');
@@ -1721,6 +1733,20 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
                         ),
                       ],
                     ),
+                    if (_playbackDiagnosticsLabel case final label?)
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          child: Text(
+                            label,
+                            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                                  color: AuraTheme.muted,
+                                  fontFeatures: const [FontFeature.tabularFigures()],
+                                ),
+                          ),
+                        ),
+                      ),
                     Slider(
                       min: 0,
                       max: math.max(1, _transportTotalFrames).toDouble(),
