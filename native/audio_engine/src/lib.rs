@@ -96,6 +96,76 @@ impl AudioBuffer {
         self.samples
     }
 
+    /// Resamples decoded PCM to a target clock using a windowed-sinc low-pass
+    /// interpolator. This is intended for graph preparation on a worker thread,
+    /// never inside the real-time device callback.
+    pub fn resample_to(&self, target_rate: u32) -> Result<Self, AudioError> {
+        validate_audio_format(target_rate, self.channels)?;
+        if target_rate == self.sample_rate {
+            return Ok(self.clone());
+        }
+
+        const HALF_TAPS: isize = 16;
+        let channels = usize::from(self.channels);
+        let input_frames = self.samples.len() / channels;
+        let output_frames_u128 = (input_frames as u128)
+            .checked_mul(u128::from(target_rate))
+            .and_then(|value| value.checked_add(u128::from(self.sample_rate / 2)))
+            .ok_or(AudioError::SizeOverflow)?
+            / u128::from(self.sample_rate);
+        let output_frames = usize::try_from(output_frames_u128)
+            .map_err(|_| AudioError::SizeOverflow)?;
+        let output_samples = output_frames
+            .checked_mul(channels)
+            .ok_or(AudioError::SizeOverflow)?;
+        let mut output = vec![0.0_f32; output_samples];
+
+        let source_per_output = f64::from(self.sample_rate) / f64::from(target_rate);
+        let cutoff = (f64::from(target_rate) / f64::from(self.sample_rate)).min(1.0);
+        let pi = std::f64::consts::PI;
+
+        for output_frame in 0..output_frames {
+            let source_position = output_frame as f64 * source_per_output;
+            let center = source_position.floor() as isize;
+            for channel in 0..channels {
+                let mut weighted_sum = 0.0_f64;
+                let mut weight_sum = 0.0_f64;
+                for tap in -HALF_TAPS + 1..=HALF_TAPS {
+                    let source_index = center + tap;
+                    if source_index < 0 || source_index >= input_frames as isize {
+                        continue;
+                    }
+                    let distance = source_position - source_index as f64;
+                    let normalized = distance / HALF_TAPS as f64;
+                    if normalized.abs() >= 1.0 {
+                        continue;
+                    }
+
+                    let argument = distance * cutoff;
+                    let sinc = if argument.abs() < 1.0e-12 {
+                        1.0
+                    } else {
+                        (pi * argument).sin() / (pi * argument)
+                    };
+                    let window = 0.42
+                        + 0.5 * (pi * normalized).cos()
+                        + 0.08 * (2.0 * pi * normalized).cos();
+                    let weight = cutoff * sinc * window;
+                    let sample_index = source_index as usize * channels + channel;
+                    weighted_sum += f64::from(self.samples[sample_index]) * weight;
+                    weight_sum += weight;
+                }
+
+                if weight_sum.abs() > 1.0e-12 {
+                    output[output_frame * channels + channel] =
+                        (weighted_sum / weight_sum) as f32;
+                }
+            }
+        }
+
+        Self::new(target_rate, self.channels, output)
+    }
+
     pub fn frame_count(&self) -> u64 {
         (self.samples.len() / usize::from(self.channels)) as u64
     }
@@ -1770,6 +1840,30 @@ mod tests {
         assert_eq!(overloaded.clipped_samples, 2);
         let exported = AudioBuffer::from_wav(&overloaded.to_wav_pcm(24).unwrap()).unwrap();
         assert!(exported.samples().iter().all(|sample| *sample <= 1.0 && *sample >= -1.0));
+    }
+
+    #[test]
+    fn resamples_44100_to_48000_without_changing_audio_duration() {
+        let source = AudioBuffer::new(44_100, 1, vec![0.25; 4_410]).unwrap();
+        let converted = source.resample_to(48_000).unwrap();
+        assert_eq!(converted.sample_rate(), 48_000);
+        assert_eq!(converted.channels(), 1);
+        assert_eq!(converted.frame_count(), 4_800);
+        assert!(converted.samples().iter().all(|sample| (*sample - 0.25).abs() < 0.0001));
+    }
+
+    #[test]
+    fn resampling_down_to_16000_rejects_ultrasonic_alias_energy() {
+        let sample_rate = 48_000_u32;
+        let samples = (0..4_800)
+            .map(|frame| (2.0 * std::f32::consts::PI * 12_000.0 * frame as f32
+                / sample_rate as f32).sin())
+            .collect::<Vec<_>>();
+        let source = AudioBuffer::new(sample_rate, 1, samples).unwrap();
+        let converted = source.resample_to(16_000).unwrap();
+        let peak = converted.samples().iter()
+            .fold(0.0_f32, |value, sample| value.max(sample.abs()));
+        assert!(peak < 0.08, "downsampling alias peak was {peak}");
     }
 
     #[test]
