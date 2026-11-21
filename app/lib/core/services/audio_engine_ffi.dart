@@ -878,6 +878,42 @@ class FfiAudioMonitorSession implements AudioMonitorSession {
   bool _stopped = false;
 
   @override
+  int get requestedBufferMilliseconds =>
+      _stopped ? 0 : _api.monitorRequestedBufferMs(_handle);
+
+  @override
+  int get ringCapacityFrames =>
+      _stopped ? 0 : _api.monitorRingCapacityFrames(_handle);
+
+  @override
+  int get inputBufferFrames =>
+      _stopped ? 0 : _api.monitorInputBufferFrames(_handle);
+
+  @override
+  int get outputBufferFrames =>
+      _stopped ? 0 : _api.monitorOutputBufferFrames(_handle);
+
+  @override
+  int get inputCaptureToCallbackNanoseconds =>
+      _stopped ? 0 : _api.monitorInputCaptureLatency(_handle);
+
+  @override
+  int get outputCallbackToPlaybackNanoseconds =>
+      _stopped ? 0 : _api.monitorOutputPlaybackLatency(_handle);
+
+  @override
+  int get estimatedLatencyNanoseconds =>
+      _stopped ? 0 : _api.monitorEstimatedLatency(_handle);
+
+  @override
+  int get maximumEstimatedLatencyNanoseconds =>
+      _stopped ? 0 : _api.monitorMaximumEstimatedLatency(_handle);
+
+  @override
+  int get latencyEstimateCount =>
+      _stopped ? 0 : _api.monitorLatencyEstimateCount(_handle);
+
+  @override
   int get inputSampleRate =>
       _stopped ? 0 : _api.monitorInputSampleRate(_handle);
 
@@ -1017,6 +1053,51 @@ class _NativeApi {
             _MonitorUnderrunFramesNative,
             _MonitorUnderrunFramesDart>(
           'aura_audio_monitor_input_dropped_frames',
+        ),
+        _monitorRequestedBufferMs = library.lookupFunction<
+            _MonitorSampleRateNative,
+            _MonitorSampleRateDart>(
+          'aura_audio_monitor_requested_buffer_milliseconds',
+        ),
+        _monitorRingCapacityFrames = library.lookupFunction<
+            _MonitorSampleRateNative,
+            _MonitorSampleRateDart>(
+          'aura_audio_monitor_ring_capacity_frames',
+        ),
+        _monitorInputBufferFrames = library.lookupFunction<
+            _MonitorSampleRateNative,
+            _MonitorSampleRateDart>(
+          'aura_audio_monitor_input_buffer_frames',
+        ),
+        _monitorOutputBufferFrames = library.lookupFunction<
+            _MonitorSampleRateNative,
+            _MonitorSampleRateDart>(
+          'aura_audio_monitor_output_buffer_frames',
+        ),
+        _monitorInputCaptureLatency = library.lookupFunction<
+            _MonitorUnderrunFramesNative,
+            _MonitorUnderrunFramesDart>(
+          'aura_audio_monitor_input_capture_to_callback_ns',
+        ),
+        _monitorOutputPlaybackLatency = library.lookupFunction<
+            _MonitorUnderrunFramesNative,
+            _MonitorUnderrunFramesDart>(
+          'aura_audio_monitor_output_callback_to_playback_ns',
+        ),
+        _monitorEstimatedLatency = library.lookupFunction<
+            _MonitorUnderrunFramesNative,
+            _MonitorUnderrunFramesDart>(
+          'aura_audio_monitor_estimated_latency_ns',
+        ),
+        _monitorMaximumEstimatedLatency = library.lookupFunction<
+            _MonitorUnderrunFramesNative,
+            _MonitorUnderrunFramesDart>(
+          'aura_audio_monitor_maximum_estimated_latency_ns',
+        ),
+        _monitorLatencyEstimateCount = library.lookupFunction<
+            _MonitorUnderrunFramesNative,
+            _MonitorUnderrunFramesDart>(
+          'aura_audio_monitor_latency_estimate_count',
         ),
         _monitorStatus =
             library.lookupFunction<_MonitorStatusNative, _MonitorStatusDart>(
@@ -1195,6 +1276,15 @@ class _NativeApi {
   ) _monitorStart;
   final int Function(Pointer<Void>) _monitorUnderrunFrames;
   final int Function(Pointer<Void>) _monitorInputDroppedFrames;
+  final int Function(Pointer<Void>) _monitorRequestedBufferMs;
+  final int Function(Pointer<Void>) _monitorRingCapacityFrames;
+  final int Function(Pointer<Void>) _monitorInputBufferFrames;
+  final int Function(Pointer<Void>) _monitorOutputBufferFrames;
+  final int Function(Pointer<Void>) _monitorInputCaptureLatency;
+  final int Function(Pointer<Void>) _monitorOutputPlaybackLatency;
+  final int Function(Pointer<Void>) _monitorEstimatedLatency;
+  final int Function(Pointer<Void>) _monitorMaximumEstimatedLatency;
+  final int Function(Pointer<Void>) _monitorLatencyEstimateCount;
   final int Function(Pointer<Void>) _monitorStatus;
   final int Function(Pointer<Void>) _monitorInputSampleRate;
   final int Function(Pointer<Void>) _monitorOutputSampleRate;
@@ -1314,6 +1404,24 @@ class _NativeApi {
       _monitorUnderrunFrames(handle);
   int monitorInputDroppedFrames(Pointer<Void> handle) =>
       _monitorInputDroppedFrames(handle);
+  int monitorRequestedBufferMs(Pointer<Void> handle) =>
+      _monitorRequestedBufferMs(handle);
+  int monitorRingCapacityFrames(Pointer<Void> handle) =>
+      _monitorRingCapacityFrames(handle);
+  int monitorInputBufferFrames(Pointer<Void> handle) =>
+      _monitorInputBufferFrames(handle);
+  int monitorOutputBufferFrames(Pointer<Void> handle) =>
+      _monitorOutputBufferFrames(handle);
+  int monitorInputCaptureLatency(Pointer<Void> handle) =>
+      _monitorInputCaptureLatency(handle);
+  int monitorOutputPlaybackLatency(Pointer<Void> handle) =>
+      _monitorOutputPlaybackLatency(handle);
+  int monitorEstimatedLatency(Pointer<Void> handle) =>
+      _monitorEstimatedLatency(handle);
+  int monitorMaximumEstimatedLatency(Pointer<Void> handle) =>
+      _monitorMaximumEstimatedLatency(handle);
+  int monitorLatencyEstimateCount(Pointer<Void> handle) =>
+      _monitorLatencyEstimateCount(handle);
   int monitorStatus(Pointer<Void> handle) => _monitorStatus(handle);
   int monitorInputSampleRate(Pointer<Void> handle) =>
       _monitorInputSampleRate(handle);
