@@ -53,6 +53,42 @@ class UnavailableAudioProjectStore implements AudioProjectStore {
   }
 
   @override
+  Future<String> createProjectVersion(String projectPath, {String? label}) async {
+    throw const AudioProjectStoreUnavailable(
+      'Project version history is not available on this platform.',
+    );
+  }
+
+  @override
+  Future<List<AudioProjectVersionSummary>> listProjectVersions(
+    String projectPath,
+  ) async {
+    throw const AudioProjectStoreUnavailable(
+      'Project version history is not available on this platform.',
+    );
+  }
+
+  @override
+  Future<String> restoreProjectVersion(
+    String projectPath,
+    String versionPath,
+  ) async {
+    throw const AudioProjectStoreUnavailable(
+      'Project version restore is not available on this platform.',
+    );
+  }
+
+  @override
+  Future<void> deleteProjectVersion(
+    String projectPath,
+    String versionPath,
+  ) async {
+    throw const AudioProjectStoreUnavailable(
+      'Project version deletion is not available on this platform.',
+    );
+  }
+
+  @override
   Future<AudioSession> load(String path) async {
     throw const AudioProjectStoreUnavailable(
       'Local project storage is not available on this platform.',
