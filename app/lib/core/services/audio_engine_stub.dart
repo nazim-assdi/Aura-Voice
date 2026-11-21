@@ -40,6 +40,7 @@ class UnavailableAudioEngineService implements AudioEngineService {
   @override
   Future<AudioPlaybackSession> startPlayback({
     required Uint8List wavBytes,
+    String? outputDeviceId,
   }) async {
     throw const AudioEngineUnavailable(
       'Audio output playback is not available on this platform.',
