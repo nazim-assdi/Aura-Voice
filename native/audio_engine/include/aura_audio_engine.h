@@ -106,8 +106,12 @@ uint32_t aura_audio_monitor_input_sample_rate(const AuraAudioMonitorHandle *hand
 uint32_t aura_audio_monitor_output_sample_rate(const AuraAudioMonitorHandle *handle);
 uint32_t aura_audio_monitor_requested_buffer_milliseconds(const AuraAudioMonitorHandle *handle);
 uint32_t aura_audio_monitor_ring_capacity_frames(const AuraAudioMonitorHandle *handle);
+/* buffer_frames are CPAL estimates; callback_frames are the latest
+ * observed callback payload sizes and can vary from one invocation to another. */
 uint32_t aura_audio_monitor_input_buffer_frames(const AuraAudioMonitorHandle *handle);
 uint32_t aura_audio_monitor_output_buffer_frames(const AuraAudioMonitorHandle *handle);
+uint32_t aura_audio_monitor_input_callback_frames(const AuraAudioMonitorHandle *handle);
+uint32_t aura_audio_monitor_output_callback_frames(const AuraAudioMonitorHandle *handle);
 uint64_t aura_audio_monitor_input_capture_to_callback_ns(const AuraAudioMonitorHandle *handle);
 uint64_t aura_audio_monitor_output_callback_to_playback_ns(const AuraAudioMonitorHandle *handle);
 uint64_t aura_audio_monitor_estimated_latency_ns(const AuraAudioMonitorHandle *handle);
