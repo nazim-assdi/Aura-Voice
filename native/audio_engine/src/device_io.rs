@@ -1210,6 +1210,99 @@ pub unsafe extern "C" fn aura_audio_monitor_output_sample_rate(
     unsafe { &*handle }.output_sample_rate
 }
 
+/// Requested monitor ring/callback target in milliseconds. This is a request,
+/// not a latency measurement.
+#[no_mangle]
+pub unsafe extern "C" fn aura_audio_monitor_requested_buffer_milliseconds(
+    handle: *const AuraAudioMonitorHandle,
+) -> u32 {
+    if handle.is_null() { return 0; }
+    unsafe { &*handle }.requested_buffer_milliseconds
+}
+
+/// Preallocated monitor ring capacity, in frames, after power-of-two sizing.
+#[no_mangle]
+pub unsafe extern "C" fn aura_audio_monitor_ring_capacity_frames(
+    handle: *const AuraAudioMonitorHandle,
+) -> u32 {
+    if handle.is_null() { return 0; }
+    unsafe { &*handle }.ring.capacity_frames().min(u32::MAX as usize) as u32
+}
+
+/// Best available input callback buffer size in frames. Falls back to the most
+/// recently observed callback block if the host cannot report its stream size.
+#[no_mangle]
+pub unsafe extern "C" fn aura_audio_monitor_input_buffer_frames(
+    handle: *const AuraAudioMonitorHandle,
+) -> u32 {
+    if handle.is_null() { return 0; }
+    let diagnostics = &unsafe { &*handle }.diagnostics;
+    let reported = diagnostics.input_device_buffer_frames.load(Ordering::Relaxed);
+    if reported > 0 { reported } else {
+        diagnostics.input_callback_frames.load(Ordering::Relaxed)
+    }
+}
+
+/// Best available output callback buffer size in frames.
+#[no_mangle]
+pub unsafe extern "C" fn aura_audio_monitor_output_buffer_frames(
+    handle: *const AuraAudioMonitorHandle,
+) -> u32 {
+    if handle.is_null() { return 0; }
+    let diagnostics = &unsafe { &*handle }.diagnostics;
+    let reported = diagnostics.output_device_buffer_frames.load(Ordering::Relaxed);
+    if reported > 0 { reported } else {
+        diagnostics.output_callback_frames.load(Ordering::Relaxed)
+    }
+}
+
+/// Input hardware capture-to-callback delay from the CPAL input stream clock.
+#[no_mangle]
+pub unsafe extern "C" fn aura_audio_monitor_input_capture_to_callback_ns(
+    handle: *const AuraAudioMonitorHandle,
+) -> u64 {
+    if handle.is_null() { return 0; }
+    unsafe { &*handle }.diagnostics.input_capture_to_callback_ns.load(Ordering::Relaxed)
+}
+
+/// Output callback-to-predicted-playback delay from the CPAL output stream clock.
+#[no_mangle]
+pub unsafe extern "C" fn aura_audio_monitor_output_callback_to_playback_ns(
+    handle: *const AuraAudioMonitorHandle,
+) -> u64 {
+    if handle.is_null() { return 0; }
+    unsafe { &*handle }.diagnostics.output_callback_to_playback_ns.load(Ordering::Relaxed)
+}
+
+/// Latest estimated capture-to-predicted-DAC time, including app handoff.
+/// Input/output clock deltas are calculated within their own stream clocks;
+/// this estimate is still not a calibrated electrical loopback measurement.
+#[no_mangle]
+pub unsafe extern "C" fn aura_audio_monitor_estimated_latency_ns(
+    handle: *const AuraAudioMonitorHandle,
+) -> u64 {
+    if handle.is_null() { return 0; }
+    unsafe { &*handle }.diagnostics.estimated_capture_to_playback_ns.load(Ordering::Relaxed)
+}
+
+/// Maximum host-timestamp latency estimate observed since the monitor started.
+#[no_mangle]
+pub unsafe extern "C" fn aura_audio_monitor_maximum_estimated_latency_ns(
+    handle: *const AuraAudioMonitorHandle,
+) -> u64 {
+    if handle.is_null() { return 0; }
+    unsafe { &*handle }.diagnostics.maximum_estimated_latency_ns.load(Ordering::Relaxed)
+}
+
+/// Number of valid per-frame host-timestamp latency estimates recorded.
+#[no_mangle]
+pub unsafe extern "C" fn aura_audio_monitor_latency_estimate_count(
+    handle: *const AuraAudioMonitorHandle,
+) -> u64 {
+    if handle.is_null() { return 0; }
+    unsafe { &*handle }.diagnostics.latency_estimate_count.load(Ordering::Relaxed)
+}
+
 /// Changes monitor gain atomically without restarting either device stream.
 #[no_mangle]
 pub unsafe extern "C" fn aura_audio_monitor_set_gain(
