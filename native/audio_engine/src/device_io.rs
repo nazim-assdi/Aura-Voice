@@ -15,7 +15,7 @@ use std::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, AtomicU64, Ordering}
 use std::sync::Arc;
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use cpal::{DeviceId, SampleFormat, Stream, SupportedStreamConfig};
+use cpal::{BufferSize, DeviceId, SampleFormat, Stream, StreamConfig, SupportedBufferSize, SupportedStreamConfig};
 
 use crate::{
     set_ffi_error, AudioError, RealtimeMixer, RealtimeRenderState,
@@ -272,6 +272,17 @@ impl OutputTarget {
 
 fn preferred_rate_in_range(minimum: u32, maximum: u32, preferred: u32) -> u32 {
     preferred.clamp(minimum, maximum)
+}
+
+fn requested_stream_config(
+    supported: &SupportedStreamConfig,
+    requested_frames: u32,
+) -> StreamConfig {
+    let mut config = supported.config();
+    if let SupportedBufferSize::Range { min, max } = supported.buffer_size() {
+        config.buffer_size = BufferSize::Fixed(requested_frames.clamp(*min, *max));
+    }
+    config
 }
 
 pub(crate) fn select_output_target(
@@ -1566,7 +1577,9 @@ pub(crate) fn start_realtime_playback(
 pub unsafe extern "C" fn aura_audio_playback_start_wav(
     wav_data: *const u8,
     wav_len: usize,
-    out_sample_rate: *mut u32,
+    output_device_id: *const c_char,
+    out_source_sample_rate: *mut u32,
+    out_engine_sample_rate: *mut u32,
     out_total_frames: *mut u64,
 ) -> *mut AuraAudioPlaybackHandle {
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -1575,49 +1588,54 @@ pub unsafe extern "C" fn aura_audio_playback_start_wav(
                 "WAV buffer must be non-null and between 44 bytes and 1 GiB".into(),
             ));
         }
-        if out_sample_rate.is_null() || out_total_frames.is_null() {
+        if out_source_sample_rate.is_null()
+            || out_engine_sample_rate.is_null()
+            || out_total_frames.is_null()
+        {
             return Err(AudioError::InvalidArgument(
-                "playback output pointers must not be null".into(),
+                "playback sample-rate and frame output pointers must not be null".into(),
             ));
         }
+        let requested_device = if output_device_id.is_null() {
+            None
+        } else {
+            let raw = unsafe { CStr::from_ptr(output_device_id) };
+            let value = raw.to_str().map_err(|_| {
+                AudioError::InvalidArgument("output device id must be valid UTF-8".into())
+            })?;
+            if value.trim().is_empty() { None } else { Some(value.to_owned()) }
+        };
+
         // SAFETY: Caller guarantees wav_data points to wav_len readable bytes.
         let bytes = unsafe { std::slice::from_raw_parts(wav_data, wav_len) };
-        let audio = crate::AudioBuffer::from_wav(bytes)?;
-        let source_channels = usize::from(audio.channels());
-        let sample_rate = audio.sample_rate();
-        if !(1..=2).contains(&source_channels) || audio.frame_count() == 0 {
+        let source_audio = crate::AudioBuffer::from_wav(bytes)?;
+        let source_channels = usize::from(source_audio.channels());
+        let source_sample_rate = source_audio.sample_rate();
+        if !(1..=2).contains(&source_channels) || source_audio.frame_count() == 0 {
             return Err(AudioError::InvalidArgument(
                 "playback expects a non-empty mono or stereo WAV".into(),
             ));
         }
 
-        let host = cpal::default_host();
-        let device = host
-            .default_output_device()
-            .ok_or_else(|| AudioError::InvalidArgument(
-                "no default audio output device is available".into(),
-            ))?;
-
-        let supported = device
-            .supported_output_configs()
-            .map_err(|error| AudioError::InvalidArgument(format!(
-                "cannot query output configurations: {error}"
-            )))?
-            .filter(|range| range.channels() >= source_channels as u16)
-            .filter_map(|range| range.try_with_sample_rate(sample_rate))
-            .next()
-            .ok_or_else(|| AudioError::InvalidArgument(format!(
-                "the default output device does not support {sample_rate} Hz playback"
-            )))?;
-
-        let output_channels = usize::from(supported.channels());
+        let target = select_output_target(
+            requested_device.as_deref(),
+            source_sample_rate,
+            source_channels as u16,
+        )?;
+        let engine_sample_rate = target.sample_rate();
+        // Resample before opening the stream, never on the output callback.
+        let audio = source_audio.resample_to(engine_sample_rate)?;
+        let output_channels = usize::from(target.supported.channels());
         if output_channels == 0 {
             return Err(AudioError::InvalidArgument(
                 "output device reports zero channels".into(),
             ));
         }
-        let format = supported.sample_format();
-        let config = supported.config();
+        let format = target.supported.sample_format();
+        let config = requested_stream_config(
+            &target.supported,
+            (engine_sample_rate / 100).max(1),
+        );
         let samples = Arc::new(audio.into_samples());
         let total_frames = samples.len() / source_channels;
         let position_frames = Arc::new(AtomicUsize::new(0));
@@ -1627,7 +1645,7 @@ pub unsafe extern "C" fn aura_audio_playback_start_wav(
         let loop_end_frames = Arc::new(AtomicUsize::new(0));
         let stream_error = Arc::new(AtomicU32::new(0));
         let stream = build_playback_stream(
-            &device,
+            &target.device,
             config,
             format,
             samples,
@@ -1646,16 +1664,17 @@ pub unsafe extern "C" fn aura_audio_playback_start_wav(
                 "cannot start audio playback: {error}"
             )))?;
 
-        // SAFETY: Output pointers are validated and writable per the C ABI contract.
+        // SAFETY: Pointers were checked above and are writable by the C ABI contract.
         unsafe {
-            *out_sample_rate = sample_rate;
+            *out_source_sample_rate = source_sample_rate;
+            *out_engine_sample_rate = engine_sample_rate;
             *out_total_frames = total_frames as u64;
         }
         Ok::<_, AudioError>(Box::into_raw(Box::new(AuraAudioPlaybackHandle {
             _stream: stream,
             total_frames: AtomicUsize::new(total_frames),
-            drain_frames: (sample_rate / 4) as usize,
-            output_sample_rate: sample_rate,
+            drain_frames: (engine_sample_rate / 4) as usize,
+            output_sample_rate: engine_sample_rate,
             realtime_graph: None,
             position_frames,
             paused,
