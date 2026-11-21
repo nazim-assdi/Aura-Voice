@@ -1176,7 +1176,7 @@ class _StudioPageState extends State<StudioPage> {
                     if (_monitor != null) ...[
                       const SizedBox(height: 6),
                       Text(
-                        'CPAL reported buffer estimate: $_monitorInputBufferFrames input / $_monitorOutputBufferFrames output frames',
+                        'CPAL reported buffer estimate: ${_monitorInputBufferFrames > 0 ? _monitorInputBufferFrames : "n/a"} input / ${_monitorOutputBufferFrames > 0 ? _monitorOutputBufferFrames : "n/a"} output frames',
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
                               color: AuraTheme.muted,
                             ),
