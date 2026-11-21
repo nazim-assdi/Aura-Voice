@@ -769,7 +769,7 @@ class _StudioPageState extends State<StudioPage> {
 
   Future<void> _playSavedTake() async {
     final path = _savedPath;
-    if (path == null || _capture != null || _starting) return;
+    if (path == null || _capture != null || _monitor != null || _starting) return;
     await _stopPlayback();
     try {
       final bytes = await readAudioFile(path);
@@ -1105,7 +1105,9 @@ class _StudioPageState extends State<StudioPage> {
                               ),
                             );
                           }).toList(),
-                          onChanged: _monitor != null || _monitorStarting
+                          onChanged: _monitor != null ||
+                                  _monitorStarting ||
+                                  _playback != null
                               ? null
                               : (value) => setState(() => _selectedOutputDeviceId = value),
                         ),
@@ -1221,7 +1223,7 @@ class _StudioPageState extends State<StudioPage> {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      'Use headphones. Speakers can create acoustic feedback. The counter above detects ring starvation, not complete hardware latency.',
+                      'Use headphones. Speakers can create acoustic feedback. The displayed CPAL timestamp is an estimate, not calibrated electrical round-trip latency; use a physical loopback test for a true measurement.',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                             color: const Color(0xFFFFC27A),
                             height: 1.4,
@@ -1309,7 +1311,9 @@ class _StudioPageState extends State<StudioPage> {
                             ),
                           ),
                           OutlinedButton.icon(
-                            onPressed: listening || _starting ? null : _playSavedTake,
+                            onPressed: listening || _starting || _monitor != null
+                                ? null
+                                : _playSavedTake,
                             icon: const Icon(Icons.play_arrow_rounded),
                             label: const Text('Play'),
                           ),
