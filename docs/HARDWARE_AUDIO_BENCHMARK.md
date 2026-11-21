@@ -20,8 +20,8 @@ Use both a built-in audio device and a USB interface where possible. Record the 
 
 ## Mixer playback procedure
 
-1. Build a release desktop app and native library from the same commit. Record the commit SHA, OS build, CPU model, RAM, native library version and Aura audio ABI version (currently v5).
-2. Select a physical output device in the Multitrack Editor. Use a session at 44.1 kHz and repeat at 48 kHz. Also test a project rate that differs from the device's negotiated rate to exercise the worker-side windowed-sinc conversion.
+1. Build a release desktop app and native library from the same commit. Record the commit SHA, OS build, CPU model, RAM, native library version and Aura audio ABI version (currently v6).
+2. Select a physical output device in the Multitrack Editor and in the Voice Studio/Audio Library standalone WAV preview. Use a session and a WAV source at 44.1 kHz and repeat at 48 kHz. Also test source/project rates that differ from the device's negotiated rate to exercise worker-side windowed-sinc conversion.
 3. Create repeatable sessions with 1, 8, 16 and 32 active tracks. Include overlapping clips, short clips, fades, panning and the track high-pass/compressor lane. Keep the audio source files and session manifests identical between machines.
 4. Run each session for at least five minutes after a short warm-up. Repeat each case three times. Do not change the device sample rate or sample format while a stream is running.
 5. During playback, record the Editor diagnostics: output sample rate, callback count, processed frames, estimated callback CPU percentage, maximum callback duration in microseconds and callback deadline misses.
@@ -33,13 +33,13 @@ The callback deadline metric compares a callback's measured execution duration w
 ## Live microphone monitoring procedure
 
 1. Connect a physical microphone and headphones. Do not begin with speakers: acoustic feedback can become dangerous and may damage hearing or equipment.
-2. Select the input and output devices in Voice Studio and start Live microphone monitor. Record the negotiated input/output sample rates and the requested ring target (the UI defaults to 20 ms).
+2. Select the input and output devices in Voice Studio and start Live microphone monitor. Record the negotiated input/output sample rates, the requested callback-buffer target (the UI defaults to 20 ms), SPSC ring capacity, queried input/output stream buffer sizes and observed callback block sizes.
 3. Speak or play a known test signal for five minutes. Repeat with the same-clock device pair and with devices that negotiate different sample rates.
-4. Record output ring-starvation frames and input ring dropped frames. These report application SPSC buffer starvation/overflow; they are not hardware driver underrun measurements.
+4. Record the host-timestamp capture-to-predicted-playback estimate (current and maximum), input capture-to-callback time, output callback-to-playback time, output ring-starvation frames and input ring dropped frames. The timestamp estimate sums durations measured within each stream's own clock plus the app handoff measured from one shared monotonic clock; it is not a physical loopback calibration. Ring starvation/input drops report SPSC starvation/overflow, not hardware driver underruns.
 5. Repeat after disconnecting/reconnecting a device and after changing the OS default device. Note whether the stream stops cleanly or requires a manual restart.
-6. Measure actual input-to-output round-trip latency using a physical loopback path (for example, line out to line in through suitable equipment) or a validated platform/device latency measurement tool. Record the method and uncertainty. Do not infer end-to-end latency from the 20 ms SPSC ring target.
+6. Measure electrical input-to-output round-trip latency using a physical loopback path (for example, line out to line in through suitable equipment) or a validated platform/device latency measurement tool. Record the method and uncertainty. Compare it with the CPAL host-timestamp estimate and document the difference. Do not infer end-to-end latency from the 20 ms callback request or the ring capacity.
 
-The monitor path uses linear interpolation to bridge the input and output sample clocks, with a bounded occupancy servo. The mixer asset resampler is a separate worker-side windowed-sinc conversion. Do not treat the microphone monitor's ring target as guaranteed round-trip latency: OS scheduling, driver period, device safety buffers and converters add latency.
+The monitor path uses linear interpolation to bridge the input and output sample clocks, with a bounded occupancy servo. The requested 20 ms value now requests both ring capacity and CPAL callback buffer size where supported; the host may clamp/ignore the request, so record queried stream buffer sizes and observed callback sizes. The UI's CPAL host-timestamp estimate includes input capture-to-callback, application handoff and output callback-to-predicted-playback components. It remains an API estimate; OS scheduling, driver period, device safety buffers, converters and clock behavior mean a physical loopback test is still required. The mixer/standalone WAV asset resampler is a separate worker-side windowed-sinc conversion.
 
 ## Results to save
 
