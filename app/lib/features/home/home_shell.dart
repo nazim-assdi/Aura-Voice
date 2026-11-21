@@ -373,6 +373,8 @@ class _StudioPageState extends State<StudioPage> {
   int _monitorInputDroppedFrames = 0;
   int _monitorInputBufferFrames = 0;
   int _monitorOutputBufferFrames = 0;
+  int _monitorObservedInputCallbackFrames = 0;
+  int _monitorObservedOutputCallbackFrames = 0;
   int _monitorInputCallbackLatencyNs = 0;
   int _monitorOutputCallbackLatencyNs = 0;
   int _monitorEstimatedLatencyNs = 0;
@@ -494,6 +496,10 @@ class _StudioPageState extends State<StudioPage> {
         _monitorInputDroppedFrames = monitor.droppedInputFrames;
         _monitorInputBufferFrames = monitor.inputBufferFrames;
         _monitorOutputBufferFrames = monitor.outputBufferFrames;
+        _monitorObservedInputCallbackFrames =
+            monitor.observedInputCallbackFrames;
+        _monitorObservedOutputCallbackFrames =
+            monitor.observedOutputCallbackFrames;
         _monitorInputCallbackLatencyNs =
             monitor.inputCaptureToCallbackNanoseconds;
         _monitorOutputCallbackLatencyNs =
@@ -526,6 +532,8 @@ class _StudioPageState extends State<StudioPage> {
     final droppedInput = monitor.droppedInputFrames;
     final inputBufferFrames = monitor.inputBufferFrames;
     final outputBufferFrames = monitor.outputBufferFrames;
+    final observedInputCallbackFrames = monitor.observedInputCallbackFrames;
+    final observedOutputCallbackFrames = monitor.observedOutputCallbackFrames;
     final inputCaptureLatency = monitor.inputCaptureToCallbackNanoseconds;
     final outputPlaybackLatency = monitor.outputCallbackToPlaybackNanoseconds;
     final estimatedLatency = monitor.estimatedLatencyNanoseconds;
@@ -542,6 +550,8 @@ class _StudioPageState extends State<StudioPage> {
             droppedInput != _monitorInputDroppedFrames ||
             inputBufferFrames != _monitorInputBufferFrames ||
             outputBufferFrames != _monitorOutputBufferFrames ||
+            observedInputCallbackFrames != _monitorObservedInputCallbackFrames ||
+            observedOutputCallbackFrames != _monitorObservedOutputCallbackFrames ||
             inputCaptureLatency != _monitorInputCallbackLatencyNs ||
             outputPlaybackLatency != _monitorOutputCallbackLatencyNs ||
             estimatedLatency != _monitorEstimatedLatencyNs ||
@@ -553,6 +563,8 @@ class _StudioPageState extends State<StudioPage> {
         _monitorInputDroppedFrames = droppedInput;
         _monitorInputBufferFrames = inputBufferFrames;
         _monitorOutputBufferFrames = outputBufferFrames;
+        _monitorObservedInputCallbackFrames = observedInputCallbackFrames;
+        _monitorObservedOutputCallbackFrames = observedOutputCallbackFrames;
         _monitorInputCallbackLatencyNs = inputCaptureLatency;
         _monitorOutputCallbackLatencyNs = outputPlaybackLatency;
         _monitorEstimatedLatencyNs = estimatedLatency;
@@ -1164,7 +1176,14 @@ class _StudioPageState extends State<StudioPage> {
                     if (_monitor != null) ...[
                       const SizedBox(height: 6),
                       Text(
-                        'Actual callback blocks: $_monitorInputBufferFrames input / $_monitorOutputBufferFrames output frames',
+                        'CPAL reported buffer estimate: $_monitorInputBufferFrames input / $_monitorOutputBufferFrames output frames',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: AuraTheme.muted,
+                            ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Last observed callback block: $_monitorObservedInputCallbackFrames input / $_monitorObservedOutputCallbackFrames output frames',
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
                               color: AuraTheme.muted,
                             ),
