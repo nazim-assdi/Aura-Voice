@@ -81,6 +81,19 @@ abstract interface class AudioMonitorSession {
   Future<void> stop();
 }
 
+/// Runtime callback measurements collected by the native output stream.
+/// Deadline misses compare callback execution time with that block's nominal
+/// audio duration; they are not a substitute for driver/hardware underrun data.
+abstract interface class AudioPlaybackDiagnostics {
+  int get outputSampleRate;
+  int get callbackCount;
+  int get processedFrames;
+  int get totalCallbackTimeNanoseconds;
+  int get maximumCallbackTimeNanoseconds;
+  int get callbackDeadlineMisses;
+  double get estimatedCallbackCpuPercent;
+}
+
 /// Handle for an operating-system audio playback stream.
 abstract interface class AudioPlaybackSession {
   int get sampleRate;
