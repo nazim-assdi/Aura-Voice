@@ -250,10 +250,16 @@ class FileAudioWaveformService implements AudioWaveformService {
           decoded['peakCount'] != peakCount) {
         return null;
       }
+      final frameCount = decoded['frameCount'];
+      if (frameCount is! int || frameCount <= 0) return null;
+      final expectedPeakCount =
+          frameCount < peakCount ? frameCount : peakCount;
       final rawPeaks = decoded['peaks'];
-      if (rawPeaks is! List || rawPeaks.length != peakCount) return null;
+      if (rawPeaks is! List || rawPeaks.length != expectedPeakCount) {
+        return null;
+      }
       final peaks = rawPeaks.map((value) {
-        if (value is! num || !value.isFinite) {
+        if (value is! num || !value.isFinite || value < 0 || value > 1) {
           throw const FormatException('Invalid waveform cache peak.');
         }
         return value.toDouble();
@@ -261,14 +267,11 @@ class FileAudioWaveformService implements AudioWaveformService {
       final sampleRate = decoded['sampleRate'];
       final channels = decoded['channels'];
       final bitsPerSample = decoded['bitsPerSample'];
-      final frameCount = decoded['frameCount'];
       if (sampleRate is! int ||
           channels is! int ||
           bitsPerSample is! int ||
-          frameCount is! int ||
           sampleRate < 1 ||
-          channels < 1 ||
-          frameCount < 0) {
+          channels < 1) {
         return null;
       }
       return AudioWaveformData(
