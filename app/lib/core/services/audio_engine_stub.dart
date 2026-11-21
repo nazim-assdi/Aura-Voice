@@ -58,6 +58,18 @@ class UnavailableAudioEngineService implements AudioEngineService {
   }
 
   @override
+  Future<AudioMonitorSession> startMonitor({
+    String? inputDeviceId,
+    String? outputDeviceId,
+    int bufferMilliseconds = 30,
+    double gain = 1.0,
+  }) async {
+    throw const AudioEngineUnavailable(
+      'Live microphone monitoring is not available on this platform.',
+    );
+  }
+
+  @override
   Future<AudioCaptureSession> startCapture({
     String? deviceId,
     int bufferMilliseconds = 1000,
