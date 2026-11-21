@@ -557,7 +557,7 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
 
     setState(() => _relinkingMedia = true);
     try {
-      final selection = await FilePicker.platform.pickFiles(
+      final selection = await FilePicker.pickFiles(
         type: FileType.custom,
         allowedExtensions: const ['wav'],
         allowMultiple: false,
@@ -1275,7 +1275,7 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
 
   Future<void> _exportProjectArchive() async {
     if (_exportingArchive || _saving || _autosaving) return;
-    final outputPath = await FilePicker.platform.saveFile(
+    final outputPath = await FilePicker.saveFile(
       dialogTitle: 'Export Aura Voice project',
       fileName:
           '${_session.title.replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '_')}.auravoice.zip',
