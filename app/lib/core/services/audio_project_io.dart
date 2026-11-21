@@ -601,7 +601,7 @@ class FileAudioProjectStore implements AudioProjectStore {
     String projectDirectory,
   ) async {
     if (_isAbsoluteMediaPath(mediaPath)) return mediaPath;
-    final segments = mediaPath.replaceAll('\\\\', '/').split('/');
+    final segments = mediaPath.replaceAll('\\', '/').split('/');
     if (segments.isEmpty ||
         segments.any((segment) =>
             segment.isEmpty || segment == '.' || segment == '..')) {
@@ -609,7 +609,7 @@ class FileAudioProjectStore implements AudioProjectStore {
         'The project contains an unsafe relative media path.',
       );
     }
-    final root = Directory(projectDirectory).absolute.path;
+    final root = await Directory(projectDirectory).resolveSymbolicLinks();
     var candidate = root;
     for (final segment in segments) {
       candidate = '$candidate${Platform.pathSeparator}$segment';
