@@ -1059,11 +1059,11 @@ pub unsafe extern "C" fn aura_audio_monitor_start(
         let requested_device_frames =
             ((input_sample_rate as u64 * buffer_ms as u64) / 1000)
                 .clamp(1, u64::from(u32::MAX)) as u32;
-        let mut capture_config = requested_stream_config(
+        let capture_config = requested_stream_config(
             &input_config,
             requested_device_frames,
         );
-        let input_stream = build_capture_stream(
+        let input_stream = match build_capture_stream(
             &input_device,
             &capture_config,
             input_config.sample_format(),
@@ -1071,7 +1071,23 @@ pub unsafe extern "C" fn aura_audio_monitor_start(
             input_channels,
             Some(Arc::clone(&monitor_clock)),
             Some(Arc::clone(&diagnostics)),
-        )?;
+        ) {
+            Ok(stream) => stream,
+            Err(request_error) if capture_config.buffer_size != BufferSize::Default => {
+                build_capture_stream(
+                    &input_device,
+                    &input_config.config(),
+                    input_config.sample_format(),
+                    Arc::clone(&ring),
+                    input_channels,
+                    Some(Arc::clone(&monitor_clock)),
+                    Some(Arc::clone(&diagnostics)),
+                ).map_err(|fallback_error| AudioError::InvalidArgument(format!(
+                    "requested low-latency microphone buffer was rejected ({request_error}); the OS-default buffer also failed ({fallback_error})"
+                )))?
+            }
+            Err(error) => return Err(error),
+        };
 
         let target = select_output_target(
             requested_output.as_deref(),
@@ -1091,7 +1107,7 @@ pub unsafe extern "C" fn aura_audio_monitor_start(
         let gain = Arc::new(AtomicU32::new(initial_gain.to_bits()));
         let underrun_frames = Arc::new(AtomicU64::new(0));
         let output_error = Arc::new(AtomicU32::new(0));
-        let output_stream = build_monitor_output_stream(
+        let output_stream = match build_monitor_output_stream(
             &target.device,
             output_config,
             output_format,
@@ -1104,7 +1120,28 @@ pub unsafe extern "C" fn aura_audio_monitor_start(
             Arc::clone(&output_error),
             Arc::clone(&monitor_clock),
             Arc::clone(&diagnostics),
-        )?;
+        ) {
+            Ok(stream) => stream,
+            Err(request_error) if output_config.buffer_size != BufferSize::Default => {
+                build_monitor_output_stream(
+                    &target.device,
+                    target.supported.config(),
+                    output_format,
+                    Arc::clone(&ring),
+                    input_sample_rate,
+                    output_sample_rate,
+                    output_channels,
+                    Arc::clone(&gain),
+                    Arc::clone(&underrun_frames),
+                    Arc::clone(&output_error),
+                    Arc::clone(&monitor_clock),
+                    Arc::clone(&diagnostics),
+                ).map_err(|fallback_error| AudioError::InvalidArgument(format!(
+                    "requested low-latency monitor output buffer was rejected ({request_error}); the OS-default buffer also failed ({fallback_error})"
+                )))?
+            }
+            Err(error) => return Err(error),
+        };
 
         diagnostics.input_device_buffer_frames.store(
             input_stream.buffer_size().unwrap_or(0),
