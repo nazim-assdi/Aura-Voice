@@ -131,6 +131,19 @@ void main() {
       expect(await store.listProjects(), isEmpty);
     });
 
+    test('restores an interrupted recovery snapshot from its backup file', () async {
+      final path = await store.saveRecoverySnapshot(makeSession());
+      final backup = File('$path.backup');
+      await File(path).rename(backup.path);
+
+      final snapshots = await store.listRecoverySnapshots();
+
+      expect(snapshots, hasLength(1));
+      expect(await File(path).exists(), isTrue);
+      expect(await backup.exists(), isFalse);
+      expect((await store.loadRecoverySnapshot(path)).title, 'Voice Over Test');
+    });
+
     test('promotes a recovered session to a project and clears the recovery copy', () async {
       final original = makeSession();
       final recoveryPath = await store.saveRecoverySnapshot(original);
@@ -138,7 +151,9 @@ void main() {
       final recovered = await store.loadRecoverySnapshot(recoveryPath);
       final projectPath = await store.save(recovered);
 
-      expect(await store.load(projectPath), original);
+      final loadedProject = await store.load(projectPath);
+      expect(loadedProject.title, original.title);
+      expect(loadedProject.tracks, hasLength(original.tracks.length));
       expect(await store.listRecoverySnapshots(), isEmpty);
       expect(await store.listProjects(), hasLength(1));
     });

@@ -65,6 +65,7 @@ class FileAudioProjectStore implements AudioProjectStore {
   @override
   Future<String> saveRecoverySnapshot(AudioSession session) async {
     final directory = await _ensureRecoveryDirectory();
+    await _recoverRecoveryBackups(directory);
     final filename =
         'AuraRecovery_${_safeId(session.id)}.recovery.aura.json';
     final file = File(
@@ -139,6 +140,7 @@ class FileAudioProjectStore implements AudioProjectStore {
         'The recovery folder must remain inside the Aura Voice Projects folder.',
       );
     }
+    await _recoverRecoveryBackups(Directory(recoveryRoot));
 
     final summaries = <AudioProjectSummary>[];
     await for (final entity
@@ -176,6 +178,11 @@ class FileAudioProjectStore implements AudioProjectStore {
   Future<void> deleteRecoverySnapshot(String path) async {
     await _assertManagedRecoveryPath(path);
     await File(path).delete();
+    final backup = File('$path.backup');
+    if (await FileSystemEntity.type(backup.path, followLinks: false) ==
+        FileSystemEntityType.file) {
+      await backup.delete();
+    }
   }
 
   @override
@@ -276,6 +283,30 @@ class FileAudioProjectStore implements AudioProjectStore {
     if (await file.exists()) await file.delete();
   }
 
+  Future<void> _recoverRecoveryBackups(Directory directory) async {
+    await for (final entity in directory.list(followLinks: false)) {
+      if (entity is! File ||
+          !entity.path.toLowerCase().endsWith('.recovery.aura.json.backup')) {
+        continue;
+      }
+      final backup = entity;
+      final targetPath = backup.path.substring(
+        0,
+        backup.path.length - '.backup'.length,
+      );
+      final target = File(targetPath);
+      try {
+        if (await target.exists()) {
+          await backup.delete();
+        } else {
+          await backup.rename(target.path);
+        }
+      } on FileSystemException {
+        // Keep a locked recovery backup for the next application launch.
+      }
+    }
+  }
+
   Future<Directory> _ensureRecoveryDirectory() async {
     final rootDirectory = Directory(_directoryPath);
     await rootDirectory.create(recursive: true);
@@ -343,12 +374,13 @@ class FileAudioProjectStore implements AudioProjectStore {
     if (!_isPathWithin(recoveryRoot, root)) {
       return;
     }
-    final file = File(
-      '${recoveryRoot}${Platform.pathSeparator}AuraRecovery_${_safeId(id)}.recovery.aura.json',
-    );
-    if (await FileSystemEntity.type(file.path, followLinks: false) ==
-        FileSystemEntityType.file) {
-      await file.delete();
+    final filename =
+        '${recoveryRoot}${Platform.pathSeparator}AuraRecovery_${_safeId(id)}.recovery.aura.json';
+    for (final path in [filename, '$filename.backup']) {
+      if (await FileSystemEntity.type(path, followLinks: false) ==
+          FileSystemEntityType.file) {
+        await File(path).delete();
+      }
     }
   }
 
