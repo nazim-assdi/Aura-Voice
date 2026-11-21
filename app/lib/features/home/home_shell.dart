@@ -357,13 +357,20 @@ class StudioPage extends StatefulWidget {
 class _StudioPageState extends State<StudioPage> {
   late final AudioEngineService _engine;
   final List<AudioInputDevice> _devices = [];
+  final List<AudioOutputDevice> _outputs = [];
   AudioCaptureSession? _capture;
+  AudioMonitorSession? _monitor;
   AudioRecordingWriter? _writer;
   AudioPlaybackSession? _playback;
   Timer? _meterTimer;
   Timer? _playbackTimer;
+  Timer? _monitorTimer;
   String? _savedPath;
   String? _selectedDeviceId;
+  String? _selectedOutputDeviceId;
+  double _monitorGain = 1.0;
+  int _monitorUnderrunFrames = 0;
+  bool _monitorStarting = false;
   String? _message;
   bool _loadingDevices = true;
   bool _starting = false;
@@ -388,6 +395,8 @@ class _StudioPageState extends State<StudioPage> {
   void dispose() {
     _meterTimer?.cancel();
     _playbackTimer?.cancel();
+    _monitorTimer?.cancel();
+    unawaited(_stopMonitor());
     unawaited(_stopPlayback());
     unawaited(_stopRecording());
     super.dispose();
@@ -402,19 +411,31 @@ class _StudioPageState extends State<StudioPage> {
     }
     try {
       final devices = await _engine.listInputDevices();
+      final outputs = await _engine.listOutputDevices();
       if (!mounted) return;
       setState(() {
         _devices
           ..clear()
           ..addAll(devices);
+        _outputs
+          ..clear()
+          ..addAll(outputs);
         if (!_devices.any((device) => device.id == _selectedDeviceId)) {
           final defaults = _devices.where((device) => device.isDefault);
           _selectedDeviceId = defaults.isNotEmpty
               ? defaults.first.id
               : (_devices.isEmpty ? null : _devices.first.id);
         }
+        if (!_outputs.any((device) => device.id == _selectedOutputDeviceId)) {
+          final defaults = _outputs.where((device) => device.isDefault);
+          _selectedOutputDeviceId = defaults.isNotEmpty
+              ? defaults.first.id
+              : (_outputs.isEmpty ? null : _outputs.first.id);
+        }
         if (_devices.isEmpty) {
           _message = 'No microphone input was found. Connect a microphone and refresh.';
+        } else if (_outputs.isEmpty) {
+          _message = 'No audio output device was found. Connect headphones or speakers and refresh.';
         }
       });
     } catch (error) {
@@ -425,8 +446,88 @@ class _StudioPageState extends State<StudioPage> {
     }
   }
 
+  Future<void> _startMonitor() async {
+    if (_monitorStarting || _monitor != null || _capture != null || _starting) {
+      return;
+    }
+    setState(() {
+      _monitorStarting = true;
+      _monitorUnderrunFrames = 0;
+      _message = null;
+    });
+    AudioMonitorSession? monitor;
+    try {
+      monitor = await _engine.startMonitor(
+        inputDeviceId: _selectedDeviceId,
+        outputDeviceId: _selectedOutputDeviceId,
+        bufferMilliseconds: 20,
+        gain: _monitorGain,
+      );
+      if (!mounted) {
+        await monitor.stop();
+        return;
+      }
+      setState(() {
+        _monitor = monitor;
+        _monitorUnderrunFrames = monitor!.underrunFrames;
+        _message =
+            'Live monitor: ${monitor.inputSampleRate} Hz input → ${monitor.outputSampleRate} Hz output. Use headphones to prevent feedback.';
+      });
+      _monitorTimer = Timer.periodic(
+        const Duration(milliseconds: 250),
+        (_) => _pollMonitor(),
+      );
+    } catch (error) {
+      if (monitor != null) await monitor.stop();
+      if (mounted) setState(() => _message = 'Live monitor could not start: $error');
+    } finally {
+      if (mounted) setState(() => _monitorStarting = false);
+    }
+  }
+
+  void _pollMonitor() {
+    final monitor = _monitor;
+    if (monitor == null) return;
+    final failed = monitor.hasError;
+    final underruns = monitor.underrunFrames;
+    if (failed) {
+      unawaited(_stopMonitor());
+      if (mounted) setState(() => _message = 'The microphone monitor device reported an audio error.');
+      return;
+    }
+    if (mounted && underruns != _monitorUnderrunFrames) {
+      setState(() => _monitorUnderrunFrames = underruns);
+    }
+  }
+
+  Future<void> _stopMonitor() async {
+    _monitorTimer?.cancel();
+    _monitorTimer = null;
+    final monitor = _monitor;
+    _monitor = null;
+    if (monitor != null) await monitor.stop();
+    if (mounted && monitor != null) {
+      setState(() {
+        _monitorUnderrunFrames = monitor.underrunFrames;
+        _message = 'Live microphone monitoring stopped.';
+      });
+    }
+  }
+
+  Future<void> _setMonitorGain(double value) async {
+    setState(() => _monitorGain = value);
+    final monitor = _monitor;
+    if (monitor == null) return;
+    try {
+      await monitor.setGain(value);
+    } catch (error) {
+      if (mounted) setState(() => _message = error.toString());
+    }
+  }
+
   Future<void> _startRecording() async {
     if (_starting || _capture != null) return;
+    await _stopMonitor();
     await _stopPlayback();
     if (!mounted) return;
     setState(() {
@@ -855,6 +956,156 @@ class _StudioPageState extends State<StudioPage> {
                             ),
                       ),
                     ],
+                  ],
+                ),
+              ),
+              const SizedBox(height: 14),
+              Container(
+                padding: const EdgeInsets.all(18),
+                decoration: BoxDecoration(
+                  color: AuraTheme.panel,
+                  borderRadius: BorderRadius.circular(22),
+                  border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.headphones_rounded, color: AuraTheme.mint),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            'Live microphone monitor',
+                            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                ),
+                          ),
+                        ),
+                        _StatusChip(label: _monitor != null ? 'MONITORING' : 'OFF'),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Direct input-to-output audio path with a short native ring buffer and automatic input/output clock conversion.',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: AuraTheme.muted,
+                            height: 1.45,
+                          ),
+                    ),
+                    const SizedBox(height: 14),
+                    Text(
+                      'Output device',
+                      style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                            color: AuraTheme.muted,
+                          ),
+                    ),
+                    const SizedBox(height: 8),
+                    InputDecorator(
+                      decoration: InputDecoration(
+                        filled: true,
+                        fillColor: AuraTheme.panelLight,
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 13, vertical: 3),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(13),
+                          borderSide: BorderSide.none,
+                        ),
+                      ),
+                      child: DropdownButtonHideUnderline(
+                        child: DropdownButton<String>(
+                          isExpanded: true,
+                          value: _outputs.any((device) => device.id == _selectedOutputDeviceId)
+                              ? _selectedOutputDeviceId
+                              : null,
+                          hint: Text(_outputs.isEmpty ? 'No output devices found' : 'Select an output'),
+                          items: _outputs.map((device) {
+                            final rateLabel = device.minSampleRate > 0
+                                ? '${device.minSampleRate}–${device.maxSampleRate} Hz'
+                                : 'Rate available on request';
+                            return DropdownMenuItem(
+                              value: device.id,
+                              child: Text(
+                                '${device.name}${device.isDefault ? '  ·  Default' : ''}  ·  $rateLabel',
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            );
+                          }).toList(),
+                          onChanged: _monitor != null || _monitorStarting
+                              ? null
+                              : (value) => setState(() => _selectedOutputDeviceId = value),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            'Monitor gain',
+                            style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                                  color: AuraTheme.muted,
+                                ),
+                          ),
+                        ),
+                        Text(
+                          '${(_monitorGain * 100).round()}%',
+                          style: Theme.of(context).textTheme.labelMedium,
+                        ),
+                      ],
+                    ),
+                    Slider(
+                      value: _monitorGain,
+                      min: 0,
+                      max: 2,
+                      onChanged: _monitor != null ? (value) => _setMonitorGain(value) : null,
+                    ),
+                    Text(
+                      _monitor == null
+                          ? 'Target ring: 20 ms; actual latency also depends on the device driver and system buffers.'
+                          : 'Input ${_monitor!.inputSampleRate} Hz  ·  Output ${_monitor!.outputSampleRate} Hz  ·  Ring starvation: $_monitorUnderrunFrames frames',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: _monitorUnderrunFrames == 0
+                                ? AuraTheme.muted
+                                : const Color(0xFFFFC27A),
+                          ),
+                    ),
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      width: double.infinity,
+                      child: _monitor != null
+                          ? OutlinedButton.icon(
+                              onPressed: _stopMonitor,
+                              icon: const Icon(Icons.stop_rounded),
+                              label: const Text('Stop live monitor'),
+                            )
+                          : FilledButton.icon(
+                              onPressed: _monitorStarting || _capture != null || _starting ||
+                                      _devices.isEmpty || _outputs.isEmpty
+                                  ? null
+                                  : _startMonitor,
+                              icon: _monitorStarting
+                                  ? const SizedBox(
+                                      width: 16,
+                                      height: 16,
+                                      child: CircularProgressIndicator(strokeWidth: 2),
+                                    )
+                                  : const Icon(Icons.headphones_rounded),
+                              label: Text(_monitorStarting ? 'Starting…' : 'Start live monitor'),
+                              style: FilledButton.styleFrom(
+                                backgroundColor: AuraTheme.mint,
+                                foregroundColor: const Color(0xFF07151A),
+                                padding: const EdgeInsets.symmetric(vertical: 14),
+                              ),
+                            ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Use headphones. Speakers can create acoustic feedback. The counter above detects ring starvation, not complete hardware latency.',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: const Color(0xFFFFC27A),
+                            height: 1.4,
+                          ),
+                    ),
                   ],
                 ),
               ),
