@@ -32,6 +32,27 @@ class UnavailableAudioProjectStore implements AudioProjectStore {
   }
 
   @override
+  Future<AudioProjectIntegrityReport> verifyPortableProject(String path) async {
+    throw const AudioProjectStoreUnavailable(
+      'Portable project verification is not available on this platform.',
+    );
+  }
+
+  @override
+  Future<String> exportPortableArchive(String projectPath, String zipPath) async {
+    throw const AudioProjectStoreUnavailable(
+      'ZIP project export is not available on this platform.',
+    );
+  }
+
+  @override
+  Future<String> importPortableArchive(String zipPath) async {
+    throw const AudioProjectStoreUnavailable(
+      'ZIP project import is not available on this platform.',
+    );
+  }
+
+  @override
   Future<AudioSession> load(String path) async {
     throw const AudioProjectStoreUnavailable(
       'Local project storage is not available on this platform.',
