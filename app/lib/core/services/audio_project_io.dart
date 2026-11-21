@@ -601,7 +601,7 @@ class FileAudioProjectStore implements AudioProjectStore {
     String projectDirectory,
   ) async {
     if (_isAbsoluteMediaPath(mediaPath)) return mediaPath;
-    final segments = mediaPath.replaceAll(r'\\', '/').split('/');
+    final segments = mediaPath.replaceAll('\\\\', '/').split('/');
     if (segments.isEmpty ||
         segments.any((segment) =>
             segment.isEmpty || segment == '.' || segment == '..')) {
