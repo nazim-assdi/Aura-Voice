@@ -1127,7 +1127,6 @@ fn build_playback_stream(
                 .build_output_stream::<$sample, _, _>(
                     config,
                     move |data: &mut [$sample], _| {
-                        let callback_started = Instant::now();
                         let channels = output_channels;
                         if channels == 0 {
                             callback_error.store(1, Ordering::Release);
@@ -1306,6 +1305,7 @@ fn build_realtime_playback_stream(
                 .build_output_stream::<$sample, _, _>(
                     config,
                     move |data: &mut [$sample], _| {
+                        let callback_started = Instant::now();
                         let channels = output_channels;
                         if channels == 0 {
                             callback_error.store(1, Ordering::Release);
