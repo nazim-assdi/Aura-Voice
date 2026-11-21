@@ -1236,9 +1236,14 @@ pub unsafe extern "C" fn aura_audio_monitor_input_buffer_frames(
     handle: *const AuraAudioMonitorHandle,
 ) -> u32 {
     if handle.is_null() { return 0; }
-    let diagnostics = &unsafe { &*handle }.diagnostics;
-    let reported = diagnostics.input_device_buffer_frames.load(Ordering::Relaxed);
-    if reported > 0 { reported } else {
+    let monitor = unsafe { &*handle };
+    let diagnostics = &monitor.diagnostics;
+    let reported = monitor._input_stream.buffer_size().ok().unwrap_or_else(|| {
+        diagnostics.input_device_buffer_frames.load(Ordering::Relaxed)
+    });
+    if reported > 0 {
+        reported
+    } else {
         diagnostics.input_callback_frames.load(Ordering::Relaxed)
     }
 }
@@ -1249,9 +1254,14 @@ pub unsafe extern "C" fn aura_audio_monitor_output_buffer_frames(
     handle: *const AuraAudioMonitorHandle,
 ) -> u32 {
     if handle.is_null() { return 0; }
-    let diagnostics = &unsafe { &*handle }.diagnostics;
-    let reported = diagnostics.output_device_buffer_frames.load(Ordering::Relaxed);
-    if reported > 0 { reported } else {
+    let monitor = unsafe { &*handle };
+    let diagnostics = &monitor.diagnostics;
+    let reported = monitor._output_stream.buffer_size().ok().unwrap_or_else(|| {
+        diagnostics.output_device_buffer_frames.load(Ordering::Relaxed)
+    });
+    if reported > 0 {
+        reported
+    } else {
         diagnostics.output_callback_frames.load(Ordering::Relaxed)
     }
 }
