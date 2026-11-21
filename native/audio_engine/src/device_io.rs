@@ -449,6 +449,8 @@ fn build_capture_stream(
     format: SampleFormat,
     ring: Arc<FloatRing>,
     input_channels: usize,
+    monitor_clock: Option<Arc<MonitorClock>>,
+    monitor_diagnostics: Option<Arc<MonitorDiagnostics>>,
 ) -> Result<Stream, AudioError> {
     let error_ring = Arc::clone(&ring);
     let on_error = move |_error: cpal::Error| {
@@ -459,13 +461,45 @@ fn build_capture_stream(
     macro_rules! build_stream {
         ($sample:ty, $convert:expr) => {{
             let callback_ring = Arc::clone(&ring);
+            let callback_clock = monitor_clock.clone();
+            let callback_diagnostics = monitor_diagnostics.clone();
             device
                 .build_input_stream::<$sample, _, _>(
                     config.clone(),
-                    move |data: &[$sample], _| {
-                        // The conversion and copy path is bounded and allocation-free.
+                    move |data: &[$sample], info| {
+                        let timing = if let Some(clock) = callback_clock.as_ref() {
+                            let timestamp = info.timestamp();
+                            let capture_to_callback_ns = timestamp
+                                .callback
+                                .checked_duration_since(timestamp.capture)
+                                .map(|duration| duration.as_nanos().min(u64::MAX as u128) as u64)
+                                .unwrap_or(0);
+                            let input_callback_ns = clock
+                                .origin
+                                .elapsed()
+                                .as_nanos()
+                                .min(u64::MAX as u128) as u64;
+                            if let Some(diagnostics) = callback_diagnostics.as_ref() {
+                                diagnostics.input_capture_to_callback_ns.store(
+                                    capture_to_callback_ns,
+                                    Ordering::Relaxed,
+                                );
+                            }
+                            MonitorFrameTiming {
+                                input_callback_ns,
+                                input_capture_to_callback_ns: capture_to_callback_ns,
+                            }
+                        } else {
+                            MonitorFrameTiming::default()
+                        };
                         let mut frame = 0_usize;
                         let channels = input_channels;
+                        if let Some(diagnostics) = callback_diagnostics.as_ref() {
+                            diagnostics.input_callback_frames.store(
+                                (data.len() / channels.max(1)) as u32,
+                                Ordering::Relaxed,
+                            );
+                        }
                         while frame + channels <= data.len() {
                             let start = frame;
                             if callback_ring.channels == 1 {
@@ -475,13 +509,13 @@ fn build_capture_stream(
                                 }
                                 let mono = sum / channels as f32;
                                 let temporary = [mono];
-                                callback_ring.push_interleaved(&temporary, 1);
+                                callback_ring.push_interleaved_timed(&temporary, 1, timing);
                             } else {
                                 let temporary = [
                                     ($convert)(data[start]),
                                     ($convert)(data[start + 1]),
                                 ];
-                                callback_ring.push_interleaved(&temporary, 2);
+                                callback_ring.push_interleaved_timed(&temporary, 2, timing);
                             }
                             frame += channels;
                         }
@@ -725,6 +759,39 @@ pub unsafe extern "C" fn aura_audio_capture_stop(handle: *mut AuraAudioCaptureHa
 }
 
 
+#[derive(Clone)]
+struct MonitorClock {
+    origin: Instant,
+}
+
+struct MonitorDiagnostics {
+    input_device_buffer_frames: AtomicU32,
+    output_device_buffer_frames: AtomicU32,
+    input_callback_frames: AtomicU32,
+    output_callback_frames: AtomicU32,
+    input_capture_to_callback_ns: AtomicU64,
+    output_callback_to_playback_ns: AtomicU64,
+    estimated_capture_to_playback_ns: AtomicU64,
+    maximum_estimated_latency_ns: AtomicU64,
+    latency_estimate_count: AtomicU64,
+}
+
+impl MonitorDiagnostics {
+    fn new() -> Self {
+        Self {
+            input_device_buffer_frames: AtomicU32::new(0),
+            output_device_buffer_frames: AtomicU32::new(0),
+            input_callback_frames: AtomicU32::new(0),
+            output_callback_frames: AtomicU32::new(0),
+            input_capture_to_callback_ns: AtomicU64::new(0),
+            output_callback_to_playback_ns: AtomicU64::new(0),
+            estimated_capture_to_playback_ns: AtomicU64::new(0),
+            maximum_estimated_latency_ns: AtomicU64::new(0),
+            latency_estimate_count: AtomicU64::new(0),
+        }
+    }
+}
+
 /// Direct microphone-to-output monitor. Two independent device callbacks
 /// communicate through a preallocated SPSC ring; the output side converts the
 /// input clock to the negotiated output clock without blocking.
@@ -737,6 +804,8 @@ pub struct AuraAudioMonitorHandle {
     output_error: Arc<AtomicU32>,
     input_sample_rate: u32,
     output_sample_rate: u32,
+    requested_buffer_milliseconds: u32,
+    diagnostics: Arc<MonitorDiagnostics>,
 }
 
 fn monitor_clock_step(
