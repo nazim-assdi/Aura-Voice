@@ -1072,7 +1072,9 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
   }
 
   Future<void> _startRealtimePlayback() async {
-    if (_rendering) return;
+    if (_rendering) {
+      return;
+    }
     await _stopPlayback();
     if (!mounted) {
       return;
