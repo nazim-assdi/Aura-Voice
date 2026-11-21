@@ -12,11 +12,14 @@ To move a project to another computer, copy both:
 - the `AuraProject_<project-id>.aura.json` manifest; and
 - the matching `AuraProject_<project-id>.assets-<version>` folder.
 
-Keep the assets folder beside the manifest. Opening the manifest resolves its
-relative media paths from that folder, so the original computer's absolute
-source paths are not required. Older manifests with absolute paths remain
-supported. Saving again creates a new asset folder, commits the updated
-manifest, and then removes superseded asset folders for that project.
+On the target computer, copy both items directly into Aura Voice's
+`Documents/Aura Voice Studio/Projects` folder, keeping the assets folder beside
+the manifest. The saved-project browser lists manifests in that folder.
+Opening the manifest resolves its relative media paths from the sibling assets
+folder, so the original computer's absolute source paths are not required.
+Older manifests with absolute paths remain supported. Saving again creates a
+new asset folder, commits the updated manifest, and then removes superseded
+asset folders for that project.
 
 If an asset is unavailable, use the broken-link toolbar action to select the
 missing source WAV. Relinking validates the WAV, project sample rate, channel
