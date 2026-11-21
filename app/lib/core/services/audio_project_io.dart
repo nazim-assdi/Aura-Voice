@@ -847,8 +847,7 @@ class FileAudioProjectStore implements AudioProjectStore {
               .map((reference) => reference.replaceAll('\\', '/').split('/').last)
               .toSet();
           final inventoryNames = checksumFiles.keys.toSet();
-          if (inventoryNames.length != referencedNames.length ||
-              !inventoryNames.containsAll(referencedNames)) {
+          if (!inventoryNames.containsAll(referencedNames)) {
             throw const FormatException(
               'The asset inventory does not match the project media references.',
             );
@@ -1416,7 +1415,7 @@ class FileAudioProjectStore implements AudioProjectStore {
           .hasMatch(value);
 
   bool _isSafePortableAssetFileName(String value) =>
-      RegExp(r'^(?:[a-f0-9]{8}_[A-Za-z0-9._-]+|[a-f0-9]{64}\\.wav)$')
+      RegExp(r'^(?:[a-f0-9]{8}_[A-Za-z0-9._-]+|[a-f0-9]{64}\.wav)$')
           .hasMatch(value);
 
   bool _isSafeProjectManifestName(String value) =>
