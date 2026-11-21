@@ -10,6 +10,7 @@ use std::fmt::Write as _;
 use std::os::raw::c_char;
 use std::ptr;
 use std::str::FromStr;
+use std::time::Instant;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, AtomicU64, Ordering};
 use std::sync::Arc;
 
@@ -1001,6 +1002,42 @@ pub unsafe extern "C" fn aura_audio_monitor_stop(
     }
 }
 
+/// Lock-free callback counters used for local real-device performance reports.
+#[derive(Clone)]
+struct RealtimeCallbackMetrics {
+    callbacks: Arc<AtomicU64>,
+    processed_frames: Arc<AtomicU64>,
+    total_callback_ns: Arc<AtomicU64>,
+    max_callback_ns: Arc<AtomicU64>,
+    deadline_misses: Arc<AtomicU64>,
+}
+
+impl RealtimeCallbackMetrics {
+    fn new() -> Self {
+        Self {
+            callbacks: Arc::new(AtomicU64::new(0)),
+            processed_frames: Arc::new(AtomicU64::new(0)),
+            total_callback_ns: Arc::new(AtomicU64::new(0)),
+            max_callback_ns: Arc::new(AtomicU64::new(0)),
+            deadline_misses: Arc::new(AtomicU64::new(0)),
+        }
+    }
+
+    fn record(&self, started: Instant, frames: usize, sample_rate: u32) {
+        let elapsed = started.elapsed().as_nanos().min(u64::MAX as u128) as u64;
+        let frame_count = frames as u64;
+        let deadline_ns = (u128::from(frame_count) * 1_000_000_000_u128
+            / u128::from(sample_rate.max(1))) as u64;
+        self.callbacks.fetch_add(1, Ordering::Relaxed);
+        self.processed_frames.fetch_add(frame_count, Ordering::Relaxed);
+        self.total_callback_ns.fetch_add(elapsed, Ordering::Relaxed);
+        self.max_callback_ns.fetch_max(elapsed, Ordering::Relaxed);
+        if elapsed > deadline_ns {
+            self.deadline_misses.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+}
+
 /// Opaque OS output stream for standalone WAV or realtime session playback.
 pub struct AuraAudioPlaybackHandle {
     _stream: Stream,
@@ -1015,6 +1052,7 @@ pub struct AuraAudioPlaybackHandle {
     loop_start_frames: Arc<AtomicUsize>,
     loop_end_frames: Arc<AtomicUsize>,
     stream_error: Arc<AtomicU32>,
+    callback_metrics: RealtimeCallbackMetrics,
 }
 
 /// Atomically claims the next source frame. The callback uses compare-exchange
@@ -1089,6 +1127,7 @@ fn build_playback_stream(
                 .build_output_stream::<$sample, _, _>(
                     config,
                     move |data: &mut [$sample], _| {
+                        let callback_started = Instant::now();
                         let channels = output_channels;
                         if channels == 0 {
                             callback_error.store(1, Ordering::Release);
@@ -1242,6 +1281,8 @@ fn build_realtime_playback_stream(
     loop_start_frames: Arc<AtomicUsize>,
     loop_end_frames: Arc<AtomicUsize>,
     stream_error: Arc<AtomicU32>,
+    sample_rate: u32,
+    callback_metrics: RealtimeCallbackMetrics,
 ) -> Result<Stream, AudioError> {
     let error_state = Arc::clone(&stream_error);
     let on_error = move |_error: cpal::Error| {
@@ -1257,6 +1298,7 @@ fn build_realtime_playback_stream(
             let callback_loop_start = Arc::clone(&loop_start_frames);
             let callback_loop_end = Arc::clone(&loop_end_frames);
             let callback_error = Arc::clone(&stream_error);
+            let callback_metrics = callback_metrics.clone();
             let mut render_state = RealtimeRenderState::new();
             let mut block_buffer = [0.0_f32; MAX_REALTIME_BLOCK_FRAMES * 2];
 
@@ -1349,6 +1391,7 @@ fn build_realtime_playback_stream(
                         for sample in data.iter_mut().skip(output_frames * channels) {
                             *sample = ($convert)(0.0);
                         }
+                        callback_metrics.record(callback_started, output_frames, sample_rate);
                     },
                     on_error,
                     None,
@@ -1432,6 +1475,7 @@ pub(crate) fn start_realtime_playback(
     let loop_start_frames = Arc::new(AtomicUsize::new(0));
     let loop_end_frames = Arc::new(AtomicUsize::new(0));
     let stream_error = Arc::new(AtomicU32::new(0));
+    let callback_metrics = RealtimeCallbackMetrics::new();
     let drain_frames = (output_sample_rate / 4) as usize;
 
     let stream = build_realtime_playback_stream(
@@ -1447,8 +1491,10 @@ pub(crate) fn start_realtime_playback(
         Arc::clone(&loop_start_frames),
         Arc::clone(&loop_end_frames),
         Arc::clone(&stream_error),
+        output_sample_rate,
+        callback_metrics.clone(),
     )?;
-    stream.play().map_err(|error| AudioError::InvalidArgument(format!(
+    stream.play().map_err(|error| AudioError::InvalidArgument(format(
         "cannot start realtime multitrack playback: {error}"
     )))?;
 
@@ -1464,6 +1510,7 @@ pub(crate) fn start_realtime_playback(
         loop_start_frames,
         loop_end_frames,
         stream_error,
+        callback_metrics,
     });
     Ok(Box::into_raw(handle))
 }
@@ -1572,6 +1619,7 @@ pub unsafe extern "C" fn aura_audio_playback_start_wav(
             loop_start_frames,
             loop_end_frames,
             stream_error,
+            callback_metrics: RealtimeCallbackMetrics::new(),
         })))
     }));
 
@@ -1589,6 +1637,42 @@ pub unsafe extern "C" fn aura_audio_playback_start_wav(
             ptr::null_mut()
         }
     }
+}
+
+/// Realtime callback count since the stream was opened.
+#[no_mangle]
+pub unsafe extern "C" fn aura_audio_playback_callback_count(handle: *const AuraAudioPlaybackHandle) -> u64 {
+    if handle.is_null() { return 0; }
+    unsafe { &*handle }.callback_metrics.callbacks.load(Ordering::Relaxed)
+}
+
+/// Output frames processed by the realtime callback.
+#[no_mangle]
+pub unsafe extern "C" fn aura_audio_playback_processed_frames(handle: *const AuraAudioPlaybackHandle) -> u64 {
+    if handle.is_null() { return 0; }
+    unsafe { &*handle }.callback_metrics.processed_frames.load(Ordering::Relaxed)
+}
+
+/// Sum of measured callback execution time in nanoseconds.
+#[no_mangle]
+pub unsafe extern "C" fn aura_audio_playback_total_callback_ns(handle: *const AuraAudioPlaybackHandle) -> u64 {
+    if handle.is_null() { return 0; }
+    unsafe { &*handle }.callback_metrics.total_callback_ns.load(Ordering::Relaxed)
+}
+
+/// Longest observed realtime callback execution time in nanoseconds.
+#[no_mangle]
+pub unsafe extern "C" fn aura_audio_playback_max_callback_ns(handle: *const AuraAudioPlaybackHandle) -> u64 {
+    if handle.is_null() { return 0; }
+    unsafe { &*handle }.callback_metrics.max_callback_ns.load(Ordering::Relaxed)
+}
+
+/// Callback runs that exceeded their own output-block time budget.
+/// This is a software deadline indicator, not a driver underrun counter.
+#[no_mangle]
+pub unsafe extern "C" fn aura_audio_playback_deadline_misses(handle: *const AuraAudioPlaybackHandle) -> u64 {
+    if handle.is_null() { return 0; }
+    unsafe { &*handle }.callback_metrics.deadline_misses.load(Ordering::Relaxed)
 }
 
 /// Returns the playback head in sample frames.
