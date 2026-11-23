@@ -58,11 +58,23 @@ void main() {
     await tester.ensureVisible(editorCard);
     await tester.tap(editorCard);
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 100));
-
-    await tester.tap(find.byTooltip('New project'));
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 250)),
+    );
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
+
+    final newProjectButton = find.byTooltip('New project');
+    expect(newProjectButton, findsOneWidget);
+    expect(
+      tester.widget<IconButton>(newProjectButton).onPressed,
+      isNotNull,
+    );
+    await tester.tap(newProjectButton);
+    await tester.pump();
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 350)),
+    );
+    await tester.pumpAndSettle();
 
     expect(find.text('Untitled Session'), findsOneWidget);
     expect(find.text('TRACKS / TIMELINE'), findsOneWidget);
