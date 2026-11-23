@@ -2736,6 +2736,7 @@ class _LibraryPageState extends State<LibraryPage> {
                           : const Icon(Icons.audio_file_outlined),
                     ),
                     IconButton(
+                      key: const ValueKey('library-new-project'),
                       tooltip: _creatingProject ? 'Creating project' : 'New project',
                       onPressed: _loading || _creatingProject || _importingProject
                           ? null

@@ -63,11 +63,8 @@ void main() {
     );
     await tester.pump();
 
-    final newProjectTooltip = find.byTooltip('New project');
-    expect(newProjectTooltip, findsOneWidget);
-    final newProjectButton = find.descendant(
-      of: newProjectTooltip,
-      matching: find.byType(IconButton),
+    final newProjectButton = find.byKey(
+      const ValueKey('library-new-project'),
     );
     expect(newProjectButton, findsOneWidget);
     expect(
