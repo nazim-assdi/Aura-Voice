@@ -17,6 +17,13 @@ class UnavailableAudioLibraryService implements AudioLibraryService {
   }
 
   @override
+  Future<AudioLibraryRecording> importRecording(String sourcePath) async {
+    throw const AudioLibraryUnavailable(
+      'Importing local WAV files is not available on this platform.',
+    );
+  }
+
+  @override
   Future<AudioLibraryRecording> renameRecording(
     AudioLibraryRecording recording,
     String newName,

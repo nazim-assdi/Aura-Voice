@@ -29,6 +29,9 @@ abstract interface class AudioLibraryService {
 
   Future<List<AudioLibraryRecording>> listRecordings();
 
+  /// Copies and validates an external WAV into the managed Recordings folder.
+  Future<AudioLibraryRecording> importRecording(String sourcePath);
+
   Future<AudioLibraryRecording> renameRecording(
     AudioLibraryRecording recording,
     String newName,

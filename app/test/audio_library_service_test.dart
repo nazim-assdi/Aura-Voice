@@ -69,6 +69,73 @@ void main() {
       expect(recordings.last.duration, const Duration(milliseconds: 50));
     });
 
+    test('imports a valid external WAV into the managed library', () async {
+      final externalDirectory = await Directory.systemTemp.createTemp(
+        'aura-external-wav-',
+      );
+      try {
+        final externalWriter = FileAudioRecordingWriter(
+          directoryPath: externalDirectory.path,
+        );
+        await externalWriter.start(sampleRate: 44100, channels: 2);
+        await externalWriter.append(Float32List(4410)..fillRange(0, 4410, 0.2));
+        final sourcePath = await externalWriter.finish();
+        final sourceBytes = await File(sourcePath).readAsBytes();
+
+        final imported = await library.importRecording(sourcePath);
+
+        expect(imported.name, startsWith('AuraVoice_'));
+        expect(imported.path, isNot(sourcePath));
+        expect(imported.path, startsWith(temporaryDirectory.path));
+        expect(imported.sampleRate, 44100);
+        expect(imported.channels, 2);
+        expect(imported.bitsPerSample, 24);
+        expect(await File(imported.path).readAsBytes(), sourceBytes);
+        expect(await library.listRecordings(), hasLength(1));
+      } finally {
+        await externalDirectory.delete(recursive: true);
+      }
+    });
+
+    test('imports duplicate WAV names without overwriting an existing take', () async {
+      final externalDirectory = await Directory.systemTemp.createTemp(
+        'aura-duplicate-wav-',
+      );
+      try {
+        final writer = FileAudioRecordingWriter(
+          directoryPath: externalDirectory.path,
+        );
+        await writer.start(sampleRate: 48000, channels: 1);
+        await writer.append(Float32List(480)..fillRange(0, 480, 0.1));
+        final sourcePath = await writer.finish();
+        final first = await library.importRecording(sourcePath);
+        final second = await library.importRecording(sourcePath);
+
+        expect(first.name, second.name);
+        expect(first.path, isNot(second.path));
+        expect((await library.listRecordings()), hasLength(2));
+      } finally {
+        await externalDirectory.delete(recursive: true);
+      }
+    });
+
+    test('rejects invalid external files and does not leave partial copies', () async {
+      final invalid = File(
+        '${temporaryDirectory.parent.path}${Platform.pathSeparator}'
+        'invalid-import-${temporaryDirectory.path.split(Platform.pathSeparator).last}.wav',
+      );
+      await invalid.writeAsBytes([1, 2, 3, 4, 5]);
+      try {
+        await expectLater(
+          library.importRecording(invalid.path),
+          throwsA(isA<AudioLibraryUnavailable>()),
+        );
+        expect(await library.listRecordings(), isEmpty);
+      } finally {
+        await invalid.delete();
+      }
+    });
+
     test('renames a take and preserves its WAV metadata', () async {
       final originalPath = await createTake();
       final original = (await library.listRecordings()).single;

@@ -1989,6 +1989,7 @@ class _LibraryPageState extends State<LibraryPage> {
   String? _message;
   bool _loading = true;
   bool _importingProject = false;
+  bool _importingRecording = false;
   bool _pollingPlayback = false;
   String _sortBy = 'recent';
 
@@ -2402,6 +2403,51 @@ class _LibraryPageState extends State<LibraryPage> {
     }
   }
 
+  Future<void> _importRecording() async {
+    if (_importingRecording || _loading) {
+      return;
+    }
+    try {
+      final selection = await FilePicker.pickFile(
+        type: FileType.custom,
+        allowedExtensions: const ['wav'],
+      );
+      if (selection == null || !mounted) {
+        return;
+      }
+      final path = selection.path;
+      if (path == null || path.trim().isEmpty) {
+        setState(() {
+          _message =
+              'This platform did not provide a local file path. Import WAV from the Android or desktop app build.';
+        });
+        return;
+      }
+      setState(() {
+        _importingRecording = true;
+        _message = 'Copying and validating WAV audio…';
+      });
+      final imported = await _library.importRecording(path);
+      if (!mounted) {
+        return;
+      }
+      await _refresh();
+      if (mounted) {
+        setState(() {
+          _message = 'Imported "${imported.name}" into the local audio library.';
+        });
+      }
+    } catch (error) {
+      if (mounted) {
+        setState(() => _message = 'WAV import failed: $error');
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _importingRecording = false);
+      }
+    }
+  }
+
   Future<void> _importProjectArchive() async {
     if (_importingProject) return;
     final selection = await FilePicker.pickFile(
@@ -2674,6 +2720,19 @@ class _LibraryPageState extends State<LibraryPage> {
                           ),
                         ],
                       ),
+                    ),
+                    IconButton(
+                      tooltip: _importingRecording ? 'Importing WAV' : 'Import WAV audio',
+                      onPressed: _loading || _importingRecording || _creatingProject
+                          ? null
+                          : _importRecording,
+                      icon: _importingRecording
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.audio_file_outlined),
                     ),
                     IconButton(
                       tooltip: _creatingProject ? 'Creating project' : 'New project',

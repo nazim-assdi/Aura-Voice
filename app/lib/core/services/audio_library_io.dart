@@ -41,6 +41,56 @@ class FileAudioLibraryService implements AudioLibraryService {
   }
 
   @override
+  Future<AudioLibraryRecording> importRecording(String sourcePath) async {
+    final source = File(sourcePath);
+    if (await FileSystemEntity.type(source.path, followLinks: false) !=
+        FileSystemEntityType.file) {
+      throw const AudioLibraryUnavailable(
+        'Choose an existing regular WAV file, not a folder or symbolic link.',
+      );
+    }
+    final sourceMetadata = await _readMetadata(source);
+    if (sourceMetadata == null) {
+      throw const AudioLibraryUnavailable(
+        'The selected file is not a readable RIFF/WAVE audio file.',
+      );
+    }
+    if (sourceMetadata.channels < 1 || sourceMetadata.channels > 2) {
+      throw AudioLibraryUnavailable(
+        'The editor currently supports mono or stereo WAV files. This file has ${sourceMetadata.channels} channels.',
+      );
+    }
+    if (sourceMetadata.sizeBytes > 256 * 1024 * 1024) {
+      throw const AudioLibraryUnavailable(
+        'WAV import is limited to 256 MiB per file in this build.',
+      );
+    }
+
+    final name = _normalizeName(sourceMetadata.name);
+    if (name.isEmpty) {
+      throw const AudioLibraryUnavailable(
+        'The selected WAV file has no usable filename.',
+      );
+    }
+    final destination = await _uniqueDestination(name, '.wav');
+    try {
+      final copied = await source.copy(destination.path);
+      final imported = await _readMetadata(copied);
+      if (imported == null) {
+        throw const AudioLibraryUnavailable(
+          'The copied WAV file failed verification.',
+        );
+      }
+      return imported;
+    } catch (_) {
+      if (await destination.exists()) {
+        await destination.delete();
+      }
+      rethrow;
+    }
+  }
+
+  @override
   Future<AudioLibraryRecording> renameRecording(
     AudioLibraryRecording recording,
     String newName,
