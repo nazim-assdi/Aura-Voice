@@ -235,6 +235,7 @@ jobs:
           $release = "app/build/windows/x64/runner/Release"
           Copy-Item native/audio_engine/target/release/aura_audio_engine.dll "$release\aura_audio_engine.dll"
           Copy-Item dist/backend/aura-ai-server.exe "$release\aura-ai-server.exe"
+          Copy-Item Start-Aura-AI.bat "$release\Start-Aura-AI.bat" -Force
       - name: Download Microsoft Visual C++ runtime
         shell: pwsh
         run: |
@@ -263,7 +264,9 @@ jobs:
           $arguments = '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /DIR="' + $installRoot + '"'
           $install = Start-Process -FilePath $setup -ArgumentList $arguments -Wait -PassThru
           if ($install.ExitCode -ne 0) { throw "Silent installation failed with exit code $($install.ExitCode)." }
-          foreach ($required in @("aura_voice_ai.exe", "aura_audio_engine.dll", "aura-ai-server.exe", "_prerequisites\vc_redist.x64.exe")) {
+          $vcRuntime = Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64" -ErrorAction SilentlyContinue
+          if ($null -eq $vcRuntime -or $vcRuntime.Installed -ne 1) { throw "Microsoft Visual C++ x64 runtime was not installed." }
+          foreach ($required in @("aura_voice_ai.exe", "aura_audio_engine.dll", "aura-ai-server.exe", "_prerequisites\vc_redist.x64.exe", "Start-Aura-AI.bat")) {
             if (-not (Test-Path (Join-Path $installRoot $required))) { throw "Installer did not install $required." }
           }
           $server = Start-Process -FilePath (Join-Path $installRoot "aura-ai-server.exe") -PassThru -WindowStyle Hidden

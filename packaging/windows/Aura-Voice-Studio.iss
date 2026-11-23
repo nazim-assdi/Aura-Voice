@@ -32,7 +32,6 @@ Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription:
 
 [Files]
 Source: "..\..\app\build\windows\x64\runner\Release\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "..\..\dist\backend\aura-ai-server.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\..\dist\prerequisites\vc_redist.x64.exe"; DestDir: "{app}\_prerequisites"; Flags: ignoreversion
 
 [Icons]
