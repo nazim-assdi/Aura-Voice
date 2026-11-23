@@ -49,6 +49,7 @@ class _HomeShellState extends State<HomeShell> {
         projects: _projects,
         onRestoreRecovery: _restoreRecoverySnapshot,
         onOpenStudio: () => setState(() => _index = 1),
+        onOpenAiVoice: () => setState(() => _index = 3),
       ),
       const StudioPage(),
       const LibraryPage(),
@@ -194,12 +195,14 @@ class _HomeShellState extends State<HomeShell> {
 class DashboardPage extends StatelessWidget {
   const DashboardPage({
     required this.onOpenStudio,
+    required this.onOpenAiVoice,
     required this.projects,
     required this.onRestoreRecovery,
     super.key,
   });
 
   final VoidCallback onOpenStudio;
+  final VoidCallback onOpenAiVoice;
   final AudioProjectStore projects;
   final Future<void> Function(AudioProjectSummary) onRestoreRecovery;
 
@@ -243,11 +246,29 @@ class DashboardPage extends StatelessWidget {
                   ),
                   _FeatureData(Icons.tune_rounded, 'Multitrack Editor', 'Arrange voice tracks', AuraTheme.violet),
                   _FeatureData(Icons.multitrack_audio_rounded, 'Voice Processing', 'EQ, dynamics, cleanup', Color(0xFFFFC27A)),
-                  _FeatureData(Icons.translate_rounded, 'AI Voice Studio', 'Text to speech', Color(0xFF80B8FF)),
+                  _FeatureData(
+                    Icons.translate_rounded,
+                    'AI Voice Studio',
+                    'Neural speech · MP3 export',
+                    Color(0xFF80B8FF),
+                    status: 'OPEN STUDIO',
+                  ),
                 ];
                 return Wrap(
                   spacing: 12, runSpacing: 12,
-                  children: features.map((f) => SizedBox(width: width, child: _FeatureCard(data: f))).toList(),
+                  children: features
+                      .map(
+                        (feature) => SizedBox(
+                          width: width,
+                          child: _FeatureCard(
+                            data: feature,
+                            onTap: feature.title == 'AI Voice Studio'
+                                ? onOpenAiVoice
+                                : null,
+                          ),
+                        ),
+                      )
+                      .toList(),
                 );
               }),
               const SizedBox(height: 24),
@@ -266,7 +287,7 @@ class DashboardPage extends StatelessWidget {
               ]),
               const SizedBox(height: 18),
               Text(
-                'Native microphone capture, live input meters and local 24-bit WAV recording are now in the Studio. Multitrack editing, playback, live monitoring and AI speech remain in development; CI verification is still pending.',
+                'Record and edit audio locally. AI Voice Studio connects to the online neural speech service for multilingual voice generation, MP3 preview and export.',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(color: AuraTheme.muted, height: 1.5),
               ),
             ]),
@@ -362,31 +383,73 @@ class _FeatureData {
 }
 
 class _FeatureCard extends StatelessWidget {
-  const _FeatureCard({required this.data});
+  const _FeatureCard({required this.data, this.onTap});
   final _FeatureData data;
+  final VoidCallback? onTap;
 
   @override
-  Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.all(15),
-    decoration: BoxDecoration(
-      color: AuraTheme.panel, borderRadius: BorderRadius.circular(19),
-      border: Border.all(color: Colors.white.withValues(alpha: 0.055))),
-    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Container(
-        height: 38, width: 38,
-        decoration: BoxDecoration(color: data.accent.withValues(alpha: 0.12),
-          borderRadius: BorderRadius.circular(12)),
-        child: Icon(data.icon, color: data.accent, size: 21)),
-      const SizedBox(height: 18),
-      Text(data.title, style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
-      const SizedBox(height: 4),
-      Text(data.subtitle, style: Theme.of(context).textTheme.bodySmall?.copyWith(color: AuraTheme.muted)),
-      const SizedBox(height: 12),
-      Text(data.status, style: Theme.of(context).textTheme.labelSmall?.copyWith(
-        color: data.status == 'PARTIAL' ? AuraTheme.mint : AuraTheme.muted,
-        letterSpacing: 1.2)),
-    ]),
-  );
+  Widget build(BuildContext context) => InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(19),
+        child: Container(
+          padding: const EdgeInsets.all(15),
+          decoration: BoxDecoration(
+            color: AuraTheme.panel,
+            borderRadius: BorderRadius.circular(19),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.055)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                height: 38,
+                width: 38,
+                decoration: BoxDecoration(
+                  color: data.accent.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(data.icon, color: data.accent, size: 21),
+              ),
+              const SizedBox(height: 18),
+              Text(
+                data.title,
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                data.subtitle,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: AuraTheme.muted,
+                    ),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      data.status,
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                            color: onTap != null || data.status == 'PARTIAL'
+                                ? AuraTheme.mint
+                                : AuraTheme.muted,
+                            letterSpacing: 1.2,
+                          ),
+                    ),
+                  ),
+                  if (onTap != null)
+                    const Icon(
+                      Icons.arrow_forward_rounded,
+                      size: 16,
+                      color: AuraTheme.mint,
+                    ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      );
 }
 
 class _FeaturePill extends StatelessWidget {
