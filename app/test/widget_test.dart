@@ -78,6 +78,14 @@ void main() {
     );
     await tester.pump(const Duration(milliseconds: 450));
 
+    final screenTexts = tester
+        .widgetList<Text>(find.byType(Text))
+        .map((widget) => widget.data ?? widget.textSpan?.toPlainText() ?? '')
+        .toList();
+    // Captured in CI logs when the async project creation route does not open.
+    // ignore: avoid_print
+    print('NEW_PROJECT_SCREEN: $screenTexts');
+
     expect(find.text('Untitled Session'), findsOneWidget);
     expect(find.text('TRACKS / TIMELINE'), findsOneWidget);
     expect(find.text('Voice 1'), findsOneWidget);
