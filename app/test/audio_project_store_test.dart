@@ -225,6 +225,33 @@ void main() {
       await outside.delete();
     });
 
+    test('saves a blank new-project draft as a portable session', () async {
+      final session = AudioSession(
+        id: 'blank-project',
+        title: 'Untitled Session',
+        sampleRate: 48000,
+        channels: 2,
+        bitDepth: 24,
+        tracks: [
+          AudioTrack(id: 'voice-1', name: 'Voice 1'),
+        ],
+      );
+
+      final path = await store.savePortable(session);
+      final restored = await store.load(path);
+      final integrity = await store.verifyPortableProject(path);
+
+      expect(await File(path).exists(), isTrue);
+      expect(restored.title, 'Untitled Session');
+      expect(restored.sampleRate, 48000);
+      expect(restored.tracks, hasLength(1));
+      expect(restored.tracks.single.clips, isEmpty);
+      expect(integrity.checkedAssetCount, 0);
+      expect(integrity.missingMediaPaths, isEmpty);
+      expect(integrity.corruptMediaPaths, isEmpty);
+      expect(integrity.hasChecksumManifest, isTrue);
+    });
+
     test('packages source media and resolves it from a moved project folder', () async {
       final source = File(
         '${temporaryDirectory.path}${Platform.pathSeparator}portable-source.wav',
