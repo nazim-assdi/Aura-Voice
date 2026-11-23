@@ -97,6 +97,12 @@ cargo test --all-targets
 
 Native unit tests cover offline/realtime DSP parity, event-based block rendering, seek and clip-boundary scheduling, live graph snapshot lifetime, mute/solo, source-range validation and an 8,192-clip scheduling stress case. Physical audio-device timing and underrun measurements are still required before the mixer can be considered performance-verified.
 
+## Start AI Voice on Windows
+
+Extract the Windows release ZIP, then run `Start-Aura-AI.bat` from the repository root (or the script supplied with your source checkout). It creates `backend/.venv`, installs the speech dependencies, and starts the local AI server on port 8000. Keep its console window open while using AI Voice Studio. The default desktop endpoint is `http://127.0.0.1:8000`.
+
+The speech provider is online neural TTS and needs internet access. No provider API key is required. Do not expose this unauthenticated local API directly to the public internet.
+
 ## Run the FastAPI backend
 
 Requires Python 3.11 or newer.
