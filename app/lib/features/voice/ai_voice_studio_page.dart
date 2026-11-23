@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:audioplayers/audioplayers.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../../core/services/api_client.dart';
@@ -66,7 +67,11 @@ class _AiVoiceStudioPageState extends State<AiVoiceStudioPage> {
 
   Future<void> _initialize() async {
     try {
-      final url = await _api.loadBaseUrl();
+      final configuredUrl = await _api.loadBaseUrl();
+      final isDefaultUrl = configuredUrl == ApiClient.defaultBaseUrl;
+      final url = defaultTargetPlatform == TargetPlatform.android && isDefaultUrl
+          ? 'http://10.0.2.2:8000'
+          : configuredUrl;
       if (!mounted) {
         return;
       }
@@ -717,7 +722,7 @@ class _AiVoiceStudioPageState extends State<AiVoiceStudioPage> {
                 label: Text(_checking ? 'Connecting…' : 'Connect & test'),
               ),
               Text(
-                'Android emulator: http://10.0.2.2:8000',
+                'Emulator: 10.0.2.2:8000 · Physical phone: use your PC LAN IP:8000',
                 style: theme.textTheme.bodySmall?.copyWith(color: AuraTheme.muted),
               ),
             ],
