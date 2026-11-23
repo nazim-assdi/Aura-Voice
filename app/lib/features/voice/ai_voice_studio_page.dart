@@ -218,7 +218,9 @@ class _AiVoiceStudioPageState extends State<AiVoiceStudioPage> {
 
   Future<void> _playPreview() async {
     final bytes = _audioBytes;
-    if (bytes == null) return;
+    if (bytes == null) {
+      return;
+    }
     try {
       if (_playing) {
         await _player.pause();
@@ -484,7 +486,7 @@ class _AiVoiceStudioPageState extends State<AiVoiceStudioPage> {
           const _FieldLabel('LANGUAGE'),
           const SizedBox(height: 7),
           DropdownButtonFormField<String>(
-            value: _locale,
+            initialValue: _locale,
             isExpanded: true,
             items: _languages.entries
                 .map(
@@ -515,7 +517,7 @@ class _AiVoiceStudioPageState extends State<AiVoiceStudioPage> {
           ),
           const SizedBox(height: 7),
           DropdownButtonFormField<String>(
-            value: _voices.any((voice) => voice.id == _selectedVoice)
+            initialValue: _voices.any((voice) => voice.id == _selectedVoice)
                 ? _selectedVoice
                 : null,
             isExpanded: true,
