@@ -27,7 +27,7 @@ class LocalAiServer {
     if (_process == null) {
       final appDirectory = File(Platform.resolvedExecutable).parent;
       final server = File(
-        '${appDirectory.path}${Platform.pathSeparator}aura-ai-server.exe',
+        '${appDirectory.path}${Platform.pathSeparator}backend_runtime${Platform.pathSeparator}aura-ai-server.exe',
       );
       if (!await server.exists()) return false;
 
@@ -35,7 +35,7 @@ class LocalAiServer {
         final process = await Process.start(
           server.path,
           const [],
-          workingDirectory: appDirectory.path,
+          workingDirectory: File(server.path).parent.path,
           runInShell: false,
         );
         _process = process;
