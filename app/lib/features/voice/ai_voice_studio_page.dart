@@ -49,7 +49,9 @@ class _AiVoiceStudioPageState extends State<AiVoiceStudioPage> {
   void initState() {
     super.initState();
     _player.onPlayerStateChanged.listen((state) {
-      if (mounted) setState(() => _playing = state == PlayerState.playing);
+      if (mounted) {
+        setState(() => _playing = state == PlayerState.playing);
+      }
     });
     unawaited(_initialize());
   }
@@ -65,16 +67,22 @@ class _AiVoiceStudioPageState extends State<AiVoiceStudioPage> {
   Future<void> _initialize() async {
     try {
       final url = await _api.loadBaseUrl();
-      if (!mounted) return;
+      if (!mounted) {
+        return;
+      }
       _urlController.text = url;
       await _connect();
     } catch (error) {
-      if (mounted) setState(() => _error = error.toString());
+      if (mounted) {
+        setState(() => _error = error.toString());
+      }
     }
   }
 
   Future<void> _connect() async {
-    if (_checking) return;
+    if (_checking) {
+      return;
+    }
     FocusScope.of(context).unfocus();
     setState(() {
       _checking = true;
@@ -96,7 +104,9 @@ class _AiVoiceStudioPageState extends State<AiVoiceStudioPage> {
         );
       }
       await _loadVoices(baseUrl: url, updateBusy: false);
-      if (!mounted) return;
+      if (!mounted) {
+        return;
+      }
       setState(() {
         _connected = true;
         _speechReady = _voices.isNotEmpty;
@@ -105,7 +115,9 @@ class _AiVoiceStudioPageState extends State<AiVoiceStudioPage> {
             : 'The API is online, but no voices were returned for this language.';
       });
     } catch (error) {
-      if (!mounted) return;
+      if (!mounted) {
+        return;
+      }
       setState(() {
         _connected = false;
         _speechReady = false;
@@ -113,7 +125,9 @@ class _AiVoiceStudioPageState extends State<AiVoiceStudioPage> {
         _message = 'AI service is not ready. Check the server address and network.';
       });
     } finally {
-      if (mounted) setState(() => _checking = false);
+      if (mounted) {
+        setState(() => _checking = false);
+      }
     }
   }
 
@@ -129,7 +143,9 @@ class _AiVoiceStudioPageState extends State<AiVoiceStudioPage> {
         baseUrl: baseUrl,
         locale: _locale,
       );
-      if (!mounted) return;
+      if (!mounted) {
+        return;
+      }
       setState(() {
         _voices = voices;
         if (!_voices.any((voice) => voice.id == _selectedVoice)) {
@@ -137,15 +153,21 @@ class _AiVoiceStudioPageState extends State<AiVoiceStudioPage> {
         }
       });
     } catch (error) {
-      if (mounted) setState(() => _error = error.toString());
+      if (mounted) {
+        setState(() => _error = error.toString());
+      }
       rethrow;
     } finally {
-      if (updateBusy && mounted) setState(() => _loadingVoices = false);
+      if (updateBusy && mounted) {
+        setState(() => _loadingVoices = false);
+      }
     }
   }
 
   Future<void> _changeLanguage(String? value) async {
-    if (value == null || value == _locale) return;
+    if (value == null || value == _locale) {
+      return;
+    }
     setState(() {
       _locale = value;
       _selectedVoice = null;
@@ -155,7 +177,9 @@ class _AiVoiceStudioPageState extends State<AiVoiceStudioPage> {
     if (_connected) {
       try {
         await _loadVoices();
-        if (mounted) setState(() => _speechReady = _voices.isNotEmpty);
+        if (mounted) {
+          setState(() => _speechReady = _voices.isNotEmpty);
+        }
       } catch (_) {
         // Error is displayed by _loadVoices.
       }
@@ -178,7 +202,9 @@ class _AiVoiceStudioPageState extends State<AiVoiceStudioPage> {
     }
     if (!_speechReady) {
       await _connect();
-      if (!_speechReady || !mounted) return;
+      if (!_speechReady || !mounted) {
+        return;
+      }
     }
 
     FocusScope.of(context).unfocus();
@@ -199,7 +225,9 @@ class _AiVoiceStudioPageState extends State<AiVoiceStudioPage> {
         rate: _rate,
         pitch: _pitch,
       );
-      if (!mounted) return;
+      if (!mounted) {
+        return;
+      }
       setState(() {
         _audioBytes = audio;
         _message = 'Speech generated successfully. Preview it or save the MP3.';
@@ -212,7 +240,9 @@ class _AiVoiceStudioPageState extends State<AiVoiceStudioPage> {
         });
       }
     } finally {
-      if (mounted) setState(() => _generating = false);
+      if (mounted) {
+        setState(() => _generating = false);
+      }
     }
   }
 
@@ -228,7 +258,9 @@ class _AiVoiceStudioPageState extends State<AiVoiceStudioPage> {
         await _player.play(BytesSource(bytes, mimeType: 'audio/mpeg'));
       }
     } catch (error) {
-      if (mounted) setState(() => _error = 'Could not play the preview: $error');
+      if (mounted) {
+        setState(() => _error = 'Could not play the preview: $error');
+      }
     }
   }
 
@@ -247,12 +279,16 @@ class _AiVoiceStudioPageState extends State<AiVoiceStudioPage> {
         type: FileType.custom,
         allowedExtensions: const ['mp3'],
       );
-      if (!mounted) return;
+      if (!mounted) {
+        return;
+      }
       setState(() {
         _message = saved == null ? 'Save cancelled.' : 'MP3 saved successfully.';
       });
     } catch (error) {
-      if (mounted) setState(() => _error = 'MP3 save failed: $error');
+      if (mounted) {
+        setState(() => _error = 'MP3 save failed: $error');
+      }
     }
   }
 
