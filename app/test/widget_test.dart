@@ -88,9 +88,15 @@ void main() {
     await tester.tap(find.byTooltip('Save session'));
     await tester.pump();
     await tester.runAsync(
-      () => Future<void>.delayed(const Duration(seconds: 1)),
+      () => Future<void>.delayed(const Duration(seconds: 2)),
     );
     await tester.pump(const Duration(milliseconds: 100));
+    final savedScreenTexts = tester
+        .widgetList<Text>(find.byType(Text))
+        .map((widget) => widget.data ?? widget.textSpan?.toPlainText() ?? '')
+        .toList();
+    // ignore: avoid_print
+    print('SAVE_SESSION_SCREEN: $savedScreenTexts');
     expect(find.text('Project saved with packaged media assets.'), findsOneWidget);
   });
 }
