@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     app_name: str = "Aura Voice Studio API"
     app_version: str = "0.1.0"
     environment: str = "development"
-    speech_provider: str = "none"
+    speech_provider: str = "edge"
     cors_origins: str = (
         "http://localhost:3000,"
         "http://localhost:5173,"

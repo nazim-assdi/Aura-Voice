@@ -1,10 +1,11 @@
 from app.core.config import settings
 from app.engines.base import SpeechProvider, UnavailableSpeechProvider
+from app.engines.edge_tts import get_edge_tts_provider
 
 
 def get_speech_provider() -> SpeechProvider:
-    """Return a provider adapter; unregistered names fail closed."""
-    provider_name = settings.speech_provider.strip() or "none"
-    # Register a model here only after license review, startup checks,
-    # and a successful inference smoke test.
+    """Resolve a configured speech adapter; unknown names fail closed."""
+    provider_name = settings.speech_provider.strip().lower() or "none"
+    if provider_name in {"edge", "edge-tts"}:
+        return get_edge_tts_provider()
     return UnavailableSpeechProvider(provider_name=provider_name)

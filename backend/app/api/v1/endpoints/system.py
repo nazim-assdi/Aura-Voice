@@ -15,6 +15,7 @@ async def capabilities() -> dict[str, object]:
         "engine_mode": "hybrid",
         "configured_provider": provider.name,
         "speech_generation_ready": provider.is_ready,
+        "speech_mode": "online_neural" if provider.is_ready else "unavailable",
         "recording_ready": False,
         "multitrack_editing_ready": False,
         "audio_processing_ready": False,
@@ -25,5 +26,5 @@ async def capabilities() -> dict[str, object]:
         "voice_cloning_ready": False,
         "offline_inference_ready": False,
         "live_audio_routing_ready": False,
-        "note": "Capabilities remain false until a real engine is integrated and passes its tests.",
+        "note": "Neural speech generation uses the configured online provider. Recording and editing continue to run locally.",
     }
