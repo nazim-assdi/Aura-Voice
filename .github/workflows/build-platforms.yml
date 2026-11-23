@@ -76,7 +76,13 @@ jobs:
               source = source.replace("    <application", permission + "    <application", 1)
           manifest.write_text(source, encoding="utf-8")
 
-          gradle = Path("android/app/build.gradle")
+          gradle_candidates = (
+              Path("android/app/build.gradle.kts"),
+              Path("android/app/build.gradle"),
+          )
+          gradle = next((candidate for candidate in gradle_candidates if candidate.exists()), None)
+          if gradle is None:
+              raise SystemExit("Could not find Android app Gradle build file")
           gradle_source = gradle.read_text(encoding="utf-8")
           replacements = (
               ("minSdk = flutter.minSdkVersion", "minSdk = 26"),
@@ -87,7 +93,7 @@ jobs:
                   gradle_source = gradle_source.replace(old, new, 1)
                   break
           else:
-              raise SystemExit("Could not find Flutter minSdk setting in android/app/build.gradle")
+              raise SystemExit("Could not find Flutter minSdk setting in " + str(gradle))
           gradle.write_text(gradle_source, encoding="utf-8")
           PY
           mkdir -p android/app/src/main/jniLibs
