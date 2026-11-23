@@ -2377,25 +2377,21 @@ class _LibraryPageState extends State<LibraryPage> {
       ],
     );
     try {
-      final projectPath = await _projects.savePortable(session);
-      if (!mounted) {
-        return;
-      }
+      // Open the editor immediately. The first explicit Save action writes the
+      // project manifest and packages its media; the blank draft needs no disk
+      // round-trip before the user can begin editing.
       await Navigator.of(context).push<void>(
         MaterialPageRoute<void>(
-          builder: (_) => AudioEditorPage(
-            initialSession: session,
-            initialProjectPath: projectPath,
-          ),
+          builder: (_) => AudioEditorPage(initialSession: session),
         ),
       );
       if (mounted) {
         await _refresh();
-        setState(() => _message = 'Project saved in your local workspace.');
+        setState(() => _message = 'Library refreshed.');
       }
     } catch (error) {
       if (mounted) {
-        setState(() => _message = 'Could not create project: $error');
+        setState(() => _message = 'Could not open the editor: $error');
       }
     } finally {
       if (mounted) {

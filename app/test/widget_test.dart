@@ -73,18 +73,7 @@ void main() {
     );
     await tester.tap(newProjectButton);
     await tester.pump();
-    await tester.runAsync(
-      () => Future<void>.delayed(const Duration(milliseconds: 350)),
-    );
     await tester.pump(const Duration(milliseconds: 450));
-
-    final screenTexts = tester
-        .widgetList<Text>(find.byType(Text))
-        .map((widget) => widget.data ?? widget.textSpan?.toPlainText() ?? '')
-        .toList();
-    // Captured in CI logs when the async project creation route does not open.
-    // ignore: avoid_print
-    print('NEW_PROJECT_SCREEN: $screenTexts');
 
     expect(find.text('Untitled Session'), findsOneWidget);
     expect(find.text('TRACKS / TIMELINE'), findsOneWidget);
@@ -98,7 +87,10 @@ void main() {
 
     await tester.tap(find.byTooltip('Save session'));
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 300));
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(seconds: 1)),
+    );
+    await tester.pump(const Duration(milliseconds: 100));
     expect(find.text('Project saved with packaged media assets.'), findsOneWidget);
   });
 }
