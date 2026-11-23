@@ -8,7 +8,7 @@ license = "MIT"
 [lib]
 name = "aura_audio_engine"
 path = "src/lib.rs"
-crate-type = ["rlib", "cdylib"]
+crate-type = ["rlib", "cdylib", "staticlib"]
 
 [dependencies]
 cpal = "0.18.2"

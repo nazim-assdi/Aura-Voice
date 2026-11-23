@@ -217,16 +217,46 @@ jobs:
         with:
           channel: stable
           cache: true
-      - name: Build Apple targets
+      - name: Install stable Rust and iOS target
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios
+      - name: Prepare Apple projects and microphone permissions
         working-directory: app
         run: |
           flutter create --platforms=macos,ios .
           /usr/libexec/PlistBuddy -c 'Print :NSMicrophoneUsageDescription' macos/Runner/Info.plist >/dev/null 2>&1 || /usr/libexec/PlistBuddy -c 'Add :NSMicrophoneUsageDescription string "Aura Voice Studio uses microphone access for live voice input and recording."' macos/Runner/Info.plist
+          /usr/libexec/PlistBuddy -c 'Print :NSMicrophoneUsageDescription' ios/Runner/Info.plist >/dev/null 2>&1 || /usr/libexec/PlistBuddy -c 'Add :NSMicrophoneUsageDescription string "Aura Voice Studio uses microphone access for recording and live monitoring."' ios/Runner/Info.plist
+      - name: Build and link iOS native audio engine
+        run: |
+          cargo build --manifest-path native/audio_engine/Cargo.toml --target aarch64-apple-ios --release
+          test -f native/audio_engine/target/aarch64-apple-ios/release/libaura_audio_engine.a
+          cp native/audio_engine/target/aarch64-apple-ios/release/libaura_audio_engine.a app/ios/Runner/
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          project = Path("app/ios/Runner.xcodeproj/project.pbxproj")
+          source = project.read_text(encoding="utf-8")
+          setting = 'OTHER_LDFLAGS = "$(inherited) -force_load $(SRCROOT)/Runner/libaura_audio_engine.a";'
+          if setting not in source:
+              source, count = re.subn(
+                  r'(PRODUCT_BUNDLE_IDENTIFIER = [^;]+;)',
+                  lambda match: setting + "\\n\\t\\t\\t\\t" + match.group(1),
+                  source,
+              )
+              if count < 3:
+                  raise SystemExit("Expected three Runner build configurations; found " + str(count))
+          if source.count("-force_load $(SRCROOT)/Runner/libaura_audio_engine.a") < 3:
+              raise SystemExit("iOS native archive was not linked in all Runner configurations")
+          project.write_text(source, encoding="utf-8")
+          PY
+      - name: Build Apple targets
+        working-directory: app
+        run: |
           flutter pub get
           flutter build macos --release
           flutter build ios --release --no-codesign
-      - name: Install stable Rust
-        uses: dtolnay/rust-toolchain@stable
+          test -f build/ios/iphoneos/Runner.app/Runner
       - name: Build and bundle native audio engine in macOS app
         run: |
           cargo build --manifest-path native/audio_engine/Cargo.toml --release
