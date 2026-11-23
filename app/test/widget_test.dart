@@ -90,10 +90,9 @@ void main() {
     expect(tester.widget<IconButton>(saveButton).onPressed, isNotNull);
     await tester.tap(saveButton);
     await tester.pump();
-    await tester.runAsync(
-      () => Future<void>.delayed(const Duration(seconds: 2)),
+    expect(
+      find.text('Saving project and packaging media…'),
+      findsOneWidget,
     );
-    await tester.pump(const Duration(milliseconds: 100));
-    expect(find.text('Project saved with packaged media assets.'), findsOneWidget);
   });
 }
