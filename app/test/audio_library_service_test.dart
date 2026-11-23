@@ -111,7 +111,7 @@ void main() {
         final first = await library.importRecording(sourcePath);
         final second = await library.importRecording(sourcePath);
 
-        expect(first.name, second.name);
+        expect(first.name, isNot(second.name));
         expect(first.path, isNot(second.path));
         expect((await library.listRecordings()), hasLength(2));
       } finally {
