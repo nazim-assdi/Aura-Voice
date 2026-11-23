@@ -54,7 +54,7 @@ jobs:
           packages: platform-tools
       - name: Install Android NDK
         run: |
-          sdkmanager --install "ndk;27.2.12479018"
+          sdkmanager --install "ndk;27.2.12479018" "platforms;android-37"
           echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/27.2.12479018" >> "$GITHUB_ENV"
           echo "ANDROID_NDK_ROOT=$ANDROID_SDK_ROOT/ndk/27.2.12479018" >> "$GITHUB_ENV"
       - name: Install Rust Android targets and cargo-ndk
@@ -85,15 +85,18 @@ jobs:
               raise SystemExit("Could not find Android app Gradle build file")
           gradle_source = gradle.read_text(encoding="utf-8")
           replacements = (
+              ("compileSdk = flutter.compileSdkVersion", "compileSdk = 37"),
+              ("compileSdkVersion flutter.compileSdkVersion", "compileSdkVersion 37"),
               ("minSdk = flutter.minSdkVersion", "minSdk = 26"),
               ("minSdkVersion flutter.minSdkVersion", "minSdkVersion 26"),
           )
           for old, new in replacements:
               if old in gradle_source:
                   gradle_source = gradle_source.replace(old, new, 1)
-                  break
-          else:
-              raise SystemExit("Could not find Flutter minSdk setting in " + str(gradle))
+          if "compileSdk = 37" not in gradle_source and "compileSdkVersion 37" not in gradle_source:
+              raise SystemExit("Could not configure compileSdk 37 in " + str(gradle))
+          if "minSdk = 26" not in gradle_source and "minSdkVersion 26" not in gradle_source:
+              raise SystemExit("Could not configure minSdk 26 in " + str(gradle))
           gradle.write_text(gradle_source, encoding="utf-8")
           PY
           mkdir -p android/app/src/main/jniLibs
