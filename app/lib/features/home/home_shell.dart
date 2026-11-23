@@ -14,6 +14,7 @@ import '../../core/services/audio_recording_service.dart';
 import '../../core/services/audio_waveform_service.dart';
 import '../../core/theme/aura_theme.dart';
 import '../editor/audio_editor_page.dart';
+import '../session/models/audio_session.dart';
 
 class HomeShell extends StatefulWidget {
   const HomeShell({super.key});
@@ -1945,6 +1946,7 @@ class _LibraryPageState extends State<LibraryPage> {
   AudioPlaybackSession? _playback;
   String? _selectedOutputDeviceId;
   bool _loadingOutputDevices = false;
+  bool _creatingProject = false;
   Timer? _playbackTimer;
   String? _playingPath;
   String? _loadingPath;
@@ -2314,6 +2316,57 @@ class _LibraryPageState extends State<LibraryPage> {
     }
   }
 
+  Future<void> _createNewProject() async {
+    if (_creatingProject || _importingProject) {
+      return;
+    }
+    setState(() {
+      _creatingProject = true;
+      _message = 'Creating a new audio session…';
+    });
+    final stamp = DateTime.now().microsecondsSinceEpoch;
+    final session = AudioSession(
+      id: 'project-$stamp',
+      title: 'Untitled Session',
+      sampleRate: 48000,
+      channels: 2,
+      bitDepth: 24,
+      tracks: [
+        AudioTrack(
+          id: 'track-$stamp',
+          name: 'Voice 1',
+          kind: AudioTrackKind.voice,
+        ),
+      ],
+    );
+    try {
+      final projectPath = await _projects.savePortable(session);
+      if (!mounted) {
+        return;
+      }
+      await Navigator.of(context).push<void>(
+        MaterialPageRoute<void>(
+          builder: (_) => AudioEditorPage(
+            initialSession: session,
+            initialProjectPath: projectPath,
+          ),
+        ),
+      );
+      if (mounted) {
+        await _refresh();
+        setState(() => _message = 'Project saved in your local workspace.');
+      }
+    } catch (error) {
+      if (mounted) {
+        setState(() => _message = 'Could not create project: $error');
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _creatingProject = false);
+      }
+    }
+  }
+
   Future<void> _importProjectArchive() async {
     if (_importingProject) return;
     final selection = await FilePicker.pickFile(
@@ -2588,10 +2641,23 @@ class _LibraryPageState extends State<LibraryPage> {
                       ),
                     ),
                     IconButton(
+                      tooltip: _creatingProject ? 'Creating project' : 'New project',
+                      onPressed: _loading || _creatingProject || _importingProject
+                          ? null
+                          : _createNewProject,
+                      icon: _creatingProject
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.create_new_folder_outlined),
+                    ),
+                    IconButton(
                       tooltip: _importingProject
                           ? 'Importing portable project'
                           : 'Import portable ZIP project',
-                      onPressed: _loading || _importingProject
+                      onPressed: _loading || _importingProject || _creatingProject
                           ? null
                           : _importProjectArchive,
                       icon: _importingProject
