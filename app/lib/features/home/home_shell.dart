@@ -50,6 +50,7 @@ class _HomeShellState extends State<HomeShell> {
         projects: _projects,
         onRestoreRecovery: _restoreRecoverySnapshot,
         onOpenStudio: () => setState(() => _index = 1),
+        onOpenLibrary: () => setState(() => _index = 2),
         onOpenAiVoice: () => setState(() => _index = 3),
       ),
       const StudioPage(),
@@ -196,6 +197,7 @@ class _HomeShellState extends State<HomeShell> {
 class DashboardPage extends StatelessWidget {
   const DashboardPage({
     required this.onOpenStudio,
+    required this.onOpenLibrary,
     required this.onOpenAiVoice,
     required this.projects,
     required this.onRestoreRecovery,
@@ -203,6 +205,7 @@ class DashboardPage extends StatelessWidget {
   });
 
   final VoidCallback onOpenStudio;
+  final VoidCallback onOpenLibrary;
   final VoidCallback onOpenAiVoice;
   final AudioProjectStore projects;
   final Future<void> Function(AudioProjectSummary) onRestoreRecovery;
@@ -245,8 +248,20 @@ class DashboardPage extends StatelessWidget {
                     AuraTheme.mint,
                     status: 'PARTIAL',
                   ),
-                  _FeatureData(Icons.tune_rounded, 'Multitrack Editor', 'Arrange voice tracks', AuraTheme.violet),
-                  _FeatureData(Icons.multitrack_audio_rounded, 'Voice Processing', 'EQ, dynamics, cleanup', Color(0xFFFFC27A)),
+                  _FeatureData(
+                    Icons.tune_rounded,
+                    'Multitrack Editor',
+                    'Create, arrange and export sessions',
+                    AuraTheme.violet,
+                    status: 'OPEN WORKSPACE',
+                  ),
+                  _FeatureData(
+                    Icons.multitrack_audio_rounded,
+                    'Voice Processing',
+                    'High-pass filter and compressor',
+                    Color(0xFFFFC27A),
+                    status: 'BASIC DSP',
+                  ),
                   _FeatureData(
                     Icons.translate_rounded,
                     'AI Voice Studio',
@@ -265,7 +280,12 @@ class DashboardPage extends StatelessWidget {
                             data: feature,
                             onTap: feature.title == 'AI Voice Studio'
                                 ? onOpenAiVoice
-                                : null,
+                                : feature.title == 'Record Booth'
+                                    ? onOpenStudio
+                                    : (feature.title == 'Multitrack Editor' ||
+                                            feature.title == 'Voice Processing')
+                                        ? onOpenLibrary
+                                        : null,
                           ),
                         ),
                       )
