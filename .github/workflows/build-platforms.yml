@@ -56,6 +56,7 @@ jobs:
         run: |
           sdkmanager --install "ndk;27.2.12479018"
           echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/27.2.12479018" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_ROOT=$ANDROID_SDK_ROOT/ndk/27.2.12479018" >> "$GITHUB_ENV"
       - name: Install Rust Android targets and cargo-ndk
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -74,12 +75,26 @@ jobs:
           if "android.permission.RECORD_AUDIO" not in source:
               source = source.replace("    <application", permission + "    <application", 1)
           manifest.write_text(source, encoding="utf-8")
+
+          gradle = Path("android/app/build.gradle")
+          gradle_source = gradle.read_text(encoding="utf-8")
+          replacements = (
+              ("minSdk = flutter.minSdkVersion", "minSdk = 26"),
+              ("minSdkVersion flutter.minSdkVersion", "minSdkVersion 26"),
+          )
+          for old, new in replacements:
+              if old in gradle_source:
+                  gradle_source = gradle_source.replace(old, new, 1)
+                  break
+          else:
+              raise SystemExit("Could not find Flutter minSdk setting in android/app/build.gradle")
+          gradle.write_text(gradle_source, encoding="utf-8")
           PY
           mkdir -p android/app/src/main/jniLibs
       - name: Build Android native audio engine
         working-directory: native/audio_engine
         run: |
-          cargo ndk -t armeabi-v7a -t arm64-v8a -t x86_64 -o ../../app/android/app/src/main/jniLibs build --release
+          cargo ndk -P 26 -t armeabi-v7a -t arm64-v8a -t x86_64 -o ../../app/android/app/src/main/jniLibs build --release
           test -f ../../app/android/app/src/main/jniLibs/arm64-v8a/libaura_audio_engine.so
       - name: Build release artifacts
         working-directory: app
