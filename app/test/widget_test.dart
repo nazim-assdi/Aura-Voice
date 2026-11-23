@@ -46,4 +46,37 @@ void main() {
     expect(find.byTooltip('New project'), findsOneWidget);
     expect(find.byTooltip('Open saved sessions'), findsOneWidget);
   });
+
+  testWidgets('New project opens the editor and track controls update the session', (tester) async {
+    _setDesktopViewport(tester);
+    addTearDown(() => _resetViewport(tester));
+
+    await tester.pumpWidget(const AuraVoiceApp());
+    await tester.pump(const Duration(milliseconds: 100));
+
+    final editorCard = find.text('Multitrack Editor');
+    await tester.ensureVisible(editorCard);
+    await tester.tap(editorCard);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    await tester.tap(find.byTooltip('New project'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.text('Untitled Session'), findsOneWidget);
+    expect(find.text('TRACKS / TIMELINE'), findsOneWidget);
+    expect(find.text('Voice 1'), findsOneWidget);
+    expect(find.byTooltip('Add track'), findsOneWidget);
+    expect(find.byTooltip('Save session'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Add track'));
+    await tester.pump();
+    expect(find.text('Voice 2'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Save session'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.text('Project saved with packaged media assets.'), findsOneWidget);
+  });
 }
