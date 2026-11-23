@@ -249,7 +249,7 @@ void main() {
       expect(integrity.checkedAssetCount, 0);
       expect(integrity.missingMediaPaths, isEmpty);
       expect(integrity.corruptMediaPaths, isEmpty);
-      expect(integrity.hasChecksumManifest, isTrue);
+      expect(integrity.isValid, isTrue);
     });
 
     test('packages source media and resolves it from a moved project folder', () async {
