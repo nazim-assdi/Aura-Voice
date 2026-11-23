@@ -225,7 +225,23 @@ jobs:
               } catch {}
               Start-Sleep -Milliseconds 500
             }
-            if (-not $healthy) { throw "Bundled AI backend did not become healthy within 30 seconds." }
+            if (-not $healthy) {
+              $logFile = Join-Path $env:LOCALAPPDATA "Aura Voice Studio\Logs\aura-ai-server.log"
+              if (Test-Path $logFile) {
+                Write-Host "Bundled AI server startup log:"
+                Get-Content $logFile -Tail 100 | Write-Host
+              } else {
+                Write-Host "No Aura Voice AI startup log was created at $logFile"
+              }
+              $listeners = Get-NetTCPConnection -LocalPort 8000 -State Listen -ErrorAction SilentlyContinue
+              if ($listeners) {
+                Write-Host "Port 8000 listeners:"
+                $listeners | Format-Table -AutoSize | Out-String | Write-Host
+              } else {
+                Write-Host "No process is listening on TCP port 8000."
+              }
+              throw "Bundled AI backend did not become healthy within 30 seconds."
+            }
           } finally {
             if (-not $server.HasExited) { Stop-Process -Id $server.Id -Force }
           }
