@@ -200,15 +200,20 @@ jobs:
           $pyiRoot = Join-Path $env:RUNNER_TEMP "aura-pyinstaller"
           New-Item -ItemType Directory -Force "$pyiRoot\dist", "$pyiRoot\build", "$pyiRoot\spec" | Out-Null
           Push-Location backend
+          python -m PyInstaller --clean --noconfirm --onedir --console --name aura-ai-server-diagnostic --distpath "$pyiRoot\diagnostic-dist" --workpath "$pyiRoot\diagnostic-build" --specpath "$pyiRoot\diagnostic-spec" --collect-all edge_tts --collect-all uvicorn --collect-all fastapi --collect-all pydantic_settings --collect-all certifi launcher.py
           python -m PyInstaller --clean --noconfirm --onedir --noconsole --name aura-ai-server --distpath "$pyiRoot\dist" --workpath "$pyiRoot\build" --specpath "$pyiRoot\spec" --collect-all edge_tts --collect-all uvicorn --collect-all fastapi --collect-all pydantic_settings --collect-all certifi launcher.py
           Pop-Location
           New-Item -ItemType Directory -Force dist\backend\aura-ai-server | Out-Null
           Copy-Item "$pyiRoot\dist\aura-ai-server\*" dist\backend\aura-ai-server -Recurse -Force
+          New-Item -ItemType Directory -Force dist\diagnostic | Out-Null
+          Copy-Item "$pyiRoot\diagnostic-dist\aura-ai-server-diagnostic\*" dist\diagnostic -Recurse -Force
       - name: Smoke test bundled AI backend
         shell: pwsh
         run: |
-          $serverPath = (Resolve-Path "dist\backend\aura-ai-server\aura-ai-server.exe").Path
-          $server = Start-Process -FilePath $serverPath -WorkingDirectory (Split-Path $serverPath) -PassThru -WindowStyle Hidden
+          $serverPath = (Resolve-Path "dist\diagnostic\aura-ai-server-diagnostic.exe").Path
+          $stdoutLog = Join-Path $env:RUNNER_TEMP "aura-ai-server.stdout.log"
+          $stderrLog = Join-Path $env:RUNNER_TEMP "aura-ai-server.stderr.log"
+          $server = Start-Process -FilePath $serverPath -WorkingDirectory (Split-Path $serverPath) -PassThru -WindowStyle Hidden -RedirectStandardOutput $stdoutLog -RedirectStandardError $stderrLog
           $healthy = $false
           try {
             for ($attempt = 0; $attempt -lt 60; $attempt++) {
@@ -226,6 +231,12 @@ jobs:
               Start-Sleep -Milliseconds 500
             }
             if (-not $healthy) {
+              foreach ($diagnosticLog in @($stdoutLog, $stderrLog)) {
+                if (Test-Path $diagnosticLog) {
+                  Write-Host "Backend diagnostic output from $diagnosticLog"
+                  Get-Content $diagnosticLog -Tail 100 | Write-Host
+                }
+              }
               $logFile = Join-Path $env:LOCALAPPDATA "Aura Voice Studio\Logs\aura-ai-server.log"
               if (Test-Path $logFile) {
                 Write-Host "Bundled AI server startup log:"
