@@ -85,18 +85,15 @@ void main() {
     await tester.pump();
     expect(find.text('Voice 2'), findsOneWidget);
 
-    await tester.tap(find.byTooltip('Save session'));
+    final saveButton = find.byKey(const ValueKey('editor-save-session'));
+    expect(saveButton, findsOneWidget);
+    expect(tester.widget<IconButton>(saveButton).onPressed, isNotNull);
+    await tester.tap(saveButton);
     await tester.pump();
     await tester.runAsync(
       () => Future<void>.delayed(const Duration(seconds: 2)),
     );
     await tester.pump(const Duration(milliseconds: 100));
-    final savedScreenTexts = tester
-        .widgetList<Text>(find.byType(Text))
-        .map((widget) => widget.data ?? widget.textSpan?.toPlainText() ?? '')
-        .toList();
-    // ignore: avoid_print
-    print('SAVE_SESSION_SCREEN: $savedScreenTexts');
     expect(find.text('Project saved with packaged media assets.'), findsOneWidget);
   });
 }

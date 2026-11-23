@@ -1812,6 +1812,7 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
                 : const Icon(Icons.archive_outlined),
           ),
           IconButton(
+            key: const ValueKey('editor-save-session'),
             tooltip: _autosaving ? 'Autosaving session' : 'Save session',
             onPressed: _saving || _autosaving ? null : _saveProject,
             icon: _saving || _autosaving
