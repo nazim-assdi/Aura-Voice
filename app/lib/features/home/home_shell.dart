@@ -871,17 +871,18 @@ class _StudioPageState extends State<StudioPage> {
       });
     }
     try {
-      if (defaultTargetPlatform == TargetPlatform.android) {
+      if (defaultTargetPlatform == TargetPlatform.android ||
+          defaultTargetPlatform == TargetPlatform.iOS) {
         final permission = await Permission.microphone.request();
         if (!permission.isGranted) {
           throw const AudioEngineUnavailable(
-            'Microphone permission is required. Allow microphone access in Android app settings, then refresh the device list.',
+            'Microphone permission is required. Allow microphone access in your device settings, then refresh the input device list.',
           );
         }
       }
       if (!_engine.isAvailable) {
         throw const AudioEngineUnavailable(
-          'The native audio engine is not packaged in this app build. Install the Android APK containing the Aura audio library, or use the full Windows/macOS/Linux desktop bundle.',
+          'The native audio engine is not packaged in this app build. Install a platform release that includes the Aura audio library.',
         );
       }
       final devices = await _engine.listInputDevices();
