@@ -66,7 +66,7 @@ jobs:
           from pathlib import Path
           manifest = Path("android/app/src/main/AndroidManifest.xml")
           source = manifest.read_text(encoding="utf-8")
-          permission = '    <uses-permission android:name="android.permission.RECORD_AUDIO" />\\n'
+          permission = '    <uses-permission android:name="android.permission.RECORD_AUDIO" />\n'
           if "android.permission.RECORD_AUDIO" not in source:
               source = source.replace("    <application", permission + "    <application", 1)
           manifest.write_text(source, encoding="utf-8")
