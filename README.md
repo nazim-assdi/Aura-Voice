@@ -99,9 +99,11 @@ Native unit tests cover offline/realtime DSP parity, event-based block rendering
 
 ## Install Aura Voice Studio on Windows
 
-Run **Aura-Voice-Studio-Setup-x64.exe**. The installer automatically installs the Windows app, Rust audio engine, self-contained AI speech backend and Microsoft Visual C++ runtime. No separate Python installation, pip command or manual dependency setup is required.
+Run **Aura-Voice-Studio-Setup-x64.exe**. The setup package contains the Windows app, compiled Rust audio engine, self-contained AI speech backend and an offline Microsoft Visual C++ x64 runtime installer. During installation, an automatic prerequisite check verifies the required app files and Windows architecture, detects whether the Visual C++ runtime is already installed, and installs it only when it is missing. Setup verifies the runtime installation before offering to launch the app. If Windows reports that a restart is required, restart before using the app.
 
-When AI Voice Studio is opened, the app starts its bundled local backend automatically at `http://127.0.0.1:8000`. The server runs while the AI Voice workspace is open and is stopped when that workspace is closed. An optional portable ZIP is also provided.
+No separate Flutter, Rust, Python, pip, Node.js or Docker installation is required on the target PC: those build tools are used to produce the packaged application, not to run it. The installer performs the required Windows runtime setup automatically, including during a silent install. An optional portable ZIP is also provided; the portable build still requires the Microsoft Visual C++ x64 runtime on the target PC.
+
+When AI Voice Studio is opened, the app starts its bundled local backend automatically at `http://127.0.0.1:8000`. The server runs while the AI Voice workspace is open and is stopped when that workspace is closed.
 
 The speech provider is online neural TTS and still requires an internet connection when generating speech. No provider API key or Python installation is required. The bundled server binds only to `127.0.0.1`; do not expose it on a public network without adding authentication and access controls.
 
