@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../../core/services/api_client.dart';
+import '../../core/services/local_ai_server.dart';
 import '../../core/theme/aura_theme.dart';
 
 class AiVoiceStudioPage extends StatefulWidget {
@@ -61,6 +62,7 @@ class _AiVoiceStudioPageState extends State<AiVoiceStudioPage> {
     _scriptController.dispose();
     _urlController.dispose();
     unawaited(_player.dispose());
+    unawaited(LocalAiServer.instance.stop());
     super.dispose();
   }
 
@@ -98,6 +100,14 @@ class _AiVoiceStudioPageState extends State<AiVoiceStudioPage> {
     try {
       final url = _urlController.text.trim();
       await _api.saveBaseUrl(url);
+      if (defaultTargetPlatform == TargetPlatform.windows &&
+          url == ApiClient.defaultBaseUrl &&
+          !await _api.isApiHealthy(baseUrl: url)) {
+        if (mounted) {
+          setState(() => _message = 'Starting the bundled local AI speech server…');
+        }
+        await LocalAiServer.instance.ensureRunning(baseUrl: url);
+      }
       final health = await _api.health(baseUrl: url);
       if (health['ok'] != true) {
         throw const ApiClientException('The API server did not report healthy.');
