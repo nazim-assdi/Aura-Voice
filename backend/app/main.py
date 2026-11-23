@@ -8,7 +8,7 @@ from app.engines.registry import get_speech_provider
 app = FastAPI(
     title=settings.app_name,
     version=settings.app_version,
-    description="API foundation for Aura Voice Studio. Audio and speech engines remain disabled until real providers are configured and tested.",
+    description="Aura Voice API with optional online neural speech generation and local-first audio production workflows.",
 )
 
 app.add_middleware(

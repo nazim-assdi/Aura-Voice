@@ -234,7 +234,9 @@ class _AiVoiceStudioPageState extends State<AiVoiceStudioPage> {
 
   Future<void> _saveMp3() async {
     final bytes = _audioBytes;
-    if (bytes == null) return;
+    if (bytes == null) {
+      return;
+    }
     final safeName = DateTime.now().toIso8601String().replaceAll(':', '-');
     try {
       final saved = await FilePicker.saveFile(

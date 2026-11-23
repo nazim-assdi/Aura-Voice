@@ -11,7 +11,7 @@ def test_health_endpoint_reports_configured_speech_provider() -> None:
     body = response.json()
     assert body["ok"] is True
     assert body["service"] == "aura-voice-api"
-    assert body["speech_provider"] == "edge"
+    assert body["speech_provider"] == "edge-tts"
     assert body["speech_ready"] is True
     assert body["speech_mode"] == "online_neural"
 
