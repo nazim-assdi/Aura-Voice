@@ -1377,13 +1377,10 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
         setState(() => _message = 'WAV render completed, but saving was cancelled.');
         return;
       }
-      final peak = result.samplePeak.toStringAsFixed(3);
       setState(() {
         _message = result.clippedSamples == 0
-            ? 'WAV mix exported. Peak: ' + peak + ' · no clipped samples.'
-            : 'WAV mix exported. Peak: ' + peak + ' · ' +
-                result.clippedSamples.toString() +
-                ' clipped samples; reduce track or clip gain to avoid distortion.';
+            ? 'WAV mix exported. Peak: ${result.samplePeak.toStringAsFixed(3)} · no clipped samples.'
+            : 'WAV mix exported. Peak: ${result.samplePeak.toStringAsFixed(3)} · ${result.clippedSamples} clipped samples; reduce track or clip gain to avoid distortion.';
       });
     } catch (error) {
       if (mounted) {
@@ -1824,6 +1821,21 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
                 : const Icon(Icons.save_outlined),
+          ),
+          IconButton(
+            tooltip: _engine.isAvailable
+                ? 'Export full mix as WAV'
+                : 'WAV export unavailable: native audio engine is not linked',
+            onPressed: _rendering || _saving || _autosaving || !_engine.isAvailable
+                ? null
+                : _exportMixWav,
+            icon: _rendering
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.file_download_outlined),
           ),
           IconButton(
             tooltip: _playback == null ? 'Start realtime mix' : 'Stop realtime mix',
