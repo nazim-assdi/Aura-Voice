@@ -194,9 +194,15 @@ jobs:
         run: |
           cargo build --manifest-path native/audio_engine/Cargo.toml --release
           Copy-Item native/audio_engine/target/release/aura_audio_engine.dll app/build/windows/x64/runner/Release/
-      - name: Package Windows bundle
+      - name: Package Windows bundle with local AI backend
         shell: pwsh
-        run: Compress-Archive -Path app/build/windows/x64/runner/Release/* -DestinationPath aura-voice-windows-x64.zip -Force
+        run: |
+          $release = "app/build/windows/x64/runner/Release"
+          New-Item -ItemType Directory -Force "$release/backend/app" | Out-Null
+          Copy-Item -Path "backend/app/*" -Destination "$release/backend/app" -Recurse -Force
+          Copy-Item -Path "backend/requirements.txt" -Destination "$release/backend/requirements.txt" -Force
+          Copy-Item -Path "Start-Aura-AI.bat" -Destination "$release/Start-Aura-AI.bat" -Force
+          Compress-Archive -Path "$release/*" -DestinationPath aura-voice-windows-x64.zip -Force
       - uses: actions/upload-artifact@v4
         with:
           name: aura-voice-windows-x64

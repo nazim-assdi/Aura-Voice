@@ -34,7 +34,7 @@ echo Aura Voice AI is starting at http://127.0.0.1:8000
 echo Keep this window open while using AI Voice Studio.
 echo Press Ctrl+C here to stop the AI server.
 echo.
-".venv\Scripts\python.exe" -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+".venv\Scripts\python.exe" -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 if errorlevel 1 (
   echo Aura Voice AI stopped with an error.
   pause

@@ -99,9 +99,9 @@ Native unit tests cover offline/realtime DSP parity, event-based block rendering
 
 ## Start AI Voice on Windows
 
-Extract the Windows release ZIP, then run `Start-Aura-AI.bat` from the repository root (or the script supplied with your source checkout). It creates `backend/.venv`, installs the speech dependencies, and starts the local AI server on port 8000. Keep its console window open while using AI Voice Studio. The default desktop endpoint is `http://127.0.0.1:8000`.
+Extract the Windows release ZIP, then run `Start-Aura-AI.bat` from the extracted Windows release folder; the release ZIP includes the required backend source. It creates `backend/.venv`, installs the speech dependencies, and starts the local AI server on port 8000. Keep its console window open while using AI Voice Studio. The default desktop endpoint is `http://127.0.0.1:8000`.
 
-The speech provider is online neural TTS and needs internet access. No provider API key is required. Do not expose this unauthenticated local API directly to the public internet.
+The speech provider is online neural TTS and needs internet access. No provider API key is required. By default the launcher binds only to `127.0.0.1`; do not change it to a public interface without adding authentication and access controls.
 
 ## Run the FastAPI backend
 

@@ -37,4 +37,4 @@ For web clients, set `AURA_CORS_ORIGINS` to the exact deployed web origin.
 
 ## Windows one-click start
 
-From the repository root, double-click `Start-Aura-AI.bat`. It creates a local virtual environment, installs `backend/requirements.txt`, then starts Uvicorn on port 8000. Keep the terminal open while generating speech from the Windows app. The local endpoint is `http://127.0.0.1:8000`.
+From the repository root, double-click `Start-Aura-AI.bat`. It creates a local virtual environment, installs `backend/requirements.txt`, then starts Uvicorn on `127.0.0.1:8000`. Keep the terminal open while generating speech from the Windows app. The local endpoint is `http://127.0.0.1:8000`.
