@@ -10,5 +10,6 @@ void main() {
     expect(find.text('Home'), findsOneWidget);
     expect(find.text('Studio'), findsOneWidget);
     expect(find.text('Library'), findsOneWidget);
+    expect(find.text('AI Voice'), findsOneWidget);
   });
 }
