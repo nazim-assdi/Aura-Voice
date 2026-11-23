@@ -48,6 +48,10 @@ jobs:
         with:
           channel: stable
           cache: true
+      - name: Set up Android SDK command-line tools
+        uses: android-actions/setup-android@v4
+        with:
+          packages: platform-tools
       - name: Install Android NDK
         run: |
           sdkmanager --install "ndk;27.2.12479018"
