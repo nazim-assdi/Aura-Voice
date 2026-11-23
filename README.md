@@ -97,11 +97,13 @@ cargo test --all-targets
 
 Native unit tests cover offline/realtime DSP parity, event-based block rendering, seek and clip-boundary scheduling, live graph snapshot lifetime, mute/solo, source-range validation and an 8,192-clip scheduling stress case. Physical audio-device timing and underrun measurements are still required before the mixer can be considered performance-verified.
 
-## Start AI Voice on Windows
+## Install Aura Voice Studio on Windows
 
-Extract the Windows release ZIP, then run `Start-Aura-AI.bat` from the extracted Windows release folder; the release ZIP includes the required backend source. It creates `backend/.venv`, installs the speech dependencies, and starts the local AI server on port 8000. Keep its console window open while using AI Voice Studio. The default desktop endpoint is `http://127.0.0.1:8000`.
+Run **Aura-Voice-Studio-Setup-x64.exe**. The installer automatically installs the Windows app, Rust audio engine, self-contained AI speech backend and Microsoft Visual C++ runtime. No separate Python installation, pip command or manual dependency setup is required.
 
-The speech provider is online neural TTS and needs internet access. No provider API key is required. By default the launcher binds only to `127.0.0.1`; do not change it to a public interface without adding authentication and access controls.
+When AI Voice Studio is opened, the app starts its bundled local backend automatically at `http://127.0.0.1:8000`. The server runs while the AI Voice workspace is open and is stopped when that workspace is closed. An optional portable ZIP is also provided.
+
+The speech provider is online neural TTS and still requires an internet connection when generating speech. No provider API key or Python installation is required. The bundled server binds only to `127.0.0.1`; do not expose it on a public network without adding authentication and access controls.
 
 ## Run the FastAPI backend
 
