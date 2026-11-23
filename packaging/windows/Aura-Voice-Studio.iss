@@ -33,13 +33,14 @@ Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription:
 [Files]
 Source: "..\..\app\build\windows\x64\runner\Release\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "..\..\dist\prerequisites\vc_redist.x64.exe"; DestDir: "{app}\_prerequisites"; Flags: ignoreversion
+Source: "install-prerequisites.ps1"; DestDir: "{app}\_prerequisites"; Flags: ignoreversion
 
 [Icons]
 Name: "{autoprograms}\Aura Voice Studio"; Filename: "{app}\{#AppExe}"; WorkingDir: "{app}"
 Name: "{autodesktop}\Aura Voice Studio"; Filename: "{app}\{#AppExe}"; WorkingDir: "{app}"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\_prerequisites\vc_redist.x64.exe"; Parameters: "/install /quiet /norestart"; StatusMsg: "Installing Microsoft Visual C++ runtime..."; Flags: runhidden waituntilterminated
+Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ""{app}\_prerequisites\install-prerequisites.ps1"""; StatusMsg: "Checking and installing required Windows components..."; Flags: runhidden waituntilterminated
 Filename: "{app}\{#AppExe}"; Description: "Launch Aura Voice Studio"; WorkingDir: "{app}"; Flags: postinstall nowait skipifsilent
 
 [UninstallRun]
