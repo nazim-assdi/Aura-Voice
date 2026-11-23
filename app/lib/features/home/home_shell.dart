@@ -5,6 +5,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../../core/services/api_client.dart';
+import '../voice/ai_voice_studio_page.dart';
 import '../../core/services/audio_engine_service.dart';
 import '../../core/services/audio_file_service.dart';
 import '../../core/services/audio_library_service.dart';
@@ -51,18 +52,141 @@ class _HomeShellState extends State<HomeShell> {
       ),
       const StudioPage(),
       const LibraryPage(),
+      const AiVoiceStudioPage(),
     ];
-    return Scaffold(
-      body: SafeArea(child: IndexedStack(index: _index, children: pages)),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _index,
-        onDestinationSelected: (value) => setState(() => _index = value),
-        destinations: const [
-          NavigationDestination(icon: Icon(Icons.grid_view_rounded), label: 'Home'),
-          NavigationDestination(icon: Icon(Icons.graphic_eq_rounded), label: 'Studio'),
-          NavigationDestination(icon: Icon(Icons.library_music_rounded), label: 'Library'),
-        ],
+    final width = MediaQuery.sizeOf(context).width;
+    final showRail = width >= 780;
+    final extendRail = width >= 1180;
+
+    const destinations = [
+      NavigationRailDestination(
+        icon: Icon(Icons.grid_view_rounded),
+        selectedIcon: Icon(Icons.grid_view_rounded),
+        label: Text('Home'),
       ),
+      NavigationRailDestination(
+        icon: Icon(Icons.graphic_eq_rounded),
+        selectedIcon: Icon(Icons.graphic_eq_rounded),
+        label: Text('Record'),
+      ),
+      NavigationRailDestination(
+        icon: Icon(Icons.library_music_rounded),
+        selectedIcon: Icon(Icons.library_music_rounded),
+        label: Text('Library'),
+      ),
+      NavigationRailDestination(
+        icon: Icon(Icons.auto_awesome_rounded),
+        selectedIcon: Icon(Icons.auto_awesome_rounded),
+        label: Text('AI Voice'),
+      ),
+    ];
+
+    return Scaffold(
+      body: SafeArea(
+        child: Row(
+          children: [
+            if (showRail)
+              Container(
+                width: extendRail ? 224 : 88,
+                decoration: const BoxDecoration(
+                  color: Color(0xFF0C1422),
+                  border: Border(right: BorderSide(color: Colors.white10)),
+                ),
+                child: Column(
+                  children: [
+                    Padding(
+                      padding: EdgeInsets.fromLTRB(
+                        extendRail ? 22 : 12, 22, 12, 22,
+                      ),
+                      child: Row(
+                        mainAxisAlignment: extendRail
+                            ? MainAxisAlignment.start
+                            : MainAxisAlignment.center,
+                        children: [
+                          Container(
+                            height: 42,
+                            width: 42,
+                            decoration: BoxDecoration(
+                              gradient: const LinearGradient(
+                                colors: [AuraTheme.mint, AuraTheme.violet],
+                              ),
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            child: const Icon(
+                              Icons.graphic_eq_rounded,
+                              color: Color(0xFF07151A),
+                            ),
+                          ),
+                          if (extendRail) ...[
+                            const SizedBox(width: 12),
+                            const Expanded(
+                              child: Text(
+                                'AURA\\nVOICE STUDIO',
+                                style: TextStyle(
+                                  height: 1.15,
+                                  fontWeight: FontWeight.w900,
+                                  letterSpacing: 1.2,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                    Expanded(
+                      child: NavigationRail(
+                        backgroundColor: Colors.transparent,
+                        selectedIndex: _index,
+                        onDestinationSelected: (value) =>
+                            setState(() => _index = value),
+                        extended: extendRail,
+                        labelType: extendRail
+                            ? NavigationRailLabelType.none
+                            : NavigationRailLabelType.all,
+                        indicatorColor: const Color(0xFF23434B),
+                        destinations: destinations,
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.all(14),
+                      child: Text(
+                        'v0.2',
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                              color: AuraTheme.muted,
+                            ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            Expanded(child: IndexedStack(index: _index, children: pages)),
+          ],
+        ),
+      ),
+      bottomNavigationBar: showRail
+          ? null
+          : NavigationBar(
+              selectedIndex: _index,
+              onDestinationSelected: (value) => setState(() => _index = value),
+              destinations: const [
+                NavigationDestination(
+                  icon: Icon(Icons.grid_view_rounded),
+                  label: 'Home',
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.graphic_eq_rounded),
+                  label: 'Record',
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.library_music_rounded),
+                  label: 'Library',
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.auto_awesome_rounded),
+                  label: 'AI Voice',
+                ),
+              ],
+            ),
     );
   }
 }
