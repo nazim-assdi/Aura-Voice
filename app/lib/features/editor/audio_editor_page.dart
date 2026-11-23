@@ -1403,7 +1403,7 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
     var saveSucceeded = false;
     setState(() {
       _saving = true;
-      _message = null;
+      _message = 'Saving project and packaging media…';
     });
     try {
       final path = await _projects.savePortable(snapshot);
@@ -1813,7 +1813,7 @@ class _AudioEditorPageState extends State<AudioEditorPage> {
           ),
           IconButton(
             key: const ValueKey('editor-save-session'),
-            tooltip: _autosaving ? 'Autosaving session' : 'Save session',
+            tooltip: _saving || _autosaving ? 'Saving session' : 'Save session',
             onPressed: _saving || _autosaving ? null : _saveProject,
             icon: _saving || _autosaving
                 ? const SizedBox(
