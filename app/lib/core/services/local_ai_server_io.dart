@@ -4,9 +4,9 @@ import 'dart:io';
 import 'api_client.dart';
 
 class LocalAiServer {
-  const LocalAiServer._();
+  LocalAiServer._();
 
-  static const instance = LocalAiServer._();
+  static final instance = LocalAiServer._();
 
   Process? _process;
 
@@ -27,7 +27,7 @@ class LocalAiServer {
     if (_process == null) {
       final appDirectory = File(Platform.resolvedExecutable).parent;
       final server = File(
-        appDirectory.path + Platform.pathSeparator + 'aura-ai-server.exe',
+        '${appDirectory.path}${Platform.pathSeparator}aura-ai-server.exe',
       );
       if (!await server.exists()) return false;
 
