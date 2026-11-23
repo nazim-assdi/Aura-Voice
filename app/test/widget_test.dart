@@ -76,7 +76,7 @@ void main() {
     await tester.runAsync(
       () => Future<void>.delayed(const Duration(milliseconds: 350)),
     );
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 450));
 
     expect(find.text('Untitled Session'), findsOneWidget);
     expect(find.text('TRACKS / TIMELINE'), findsOneWidget);
