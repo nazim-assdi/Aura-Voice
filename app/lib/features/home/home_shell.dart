@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../../core/services/api_client.dart';
@@ -869,6 +871,19 @@ class _StudioPageState extends State<StudioPage> {
       });
     }
     try {
+      if (defaultTargetPlatform == TargetPlatform.android) {
+        final permission = await Permission.microphone.request();
+        if (!permission.isGranted) {
+          throw const AudioEngineUnavailable(
+            'Microphone permission is required. Allow microphone access in Android app settings, then refresh the device list.',
+          );
+        }
+      }
+      if (!_engine.isAvailable) {
+        throw const AudioEngineUnavailable(
+          'The native audio engine is not packaged in this app build. Install the Android APK containing the Aura audio library, or use the full Windows/macOS/Linux desktop bundle.',
+        );
+      }
       final devices = await _engine.listInputDevices();
       final outputs = await _engine.listOutputDevices();
       if (!mounted) {

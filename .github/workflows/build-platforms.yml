@@ -48,10 +48,38 @@ jobs:
         with:
           channel: stable
           cache: true
-      - name: Build release artifacts
+      - name: Install Android NDK
+        run: |
+          sdkmanager --install "ndk;27.2.12479018"
+          echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/27.2.12479018" >> "$GITHUB_ENV"
+      - name: Install Rust Android targets and cargo-ndk
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
+      - name: Install cargo-ndk
+        run: cargo install cargo-ndk --version 4.1.2 --locked
+      - name: Prepare Android project and microphone permission
         working-directory: app
         run: |
           flutter create --platforms=android .
+          python - <<'PY'
+          from pathlib import Path
+          manifest = Path("android/app/src/main/AndroidManifest.xml")
+          source = manifest.read_text(encoding="utf-8")
+          permission = '    <uses-permission android:name="android.permission.RECORD_AUDIO" />\\n'
+          if "android.permission.RECORD_AUDIO" not in source:
+              source = source.replace("    <application", permission + "    <application", 1)
+          manifest.write_text(source, encoding="utf-8")
+          PY
+          mkdir -p android/app/src/main/jniLibs
+      - name: Build Android native audio engine
+        working-directory: native/audio_engine
+        run: |
+          cargo ndk -t armeabi-v7a -t arm64-v8a -t x86_64 -o ../../app/android/app/src/main/jniLibs build --release
+          test -f ../../app/android/app/src/main/jniLibs/arm64-v8a/libaura_audio_engine.so
+      - name: Build release artifacts
+        working-directory: app
+        run: |
           flutter pub get
           flutter build apk --release
           flutter build appbundle --release
