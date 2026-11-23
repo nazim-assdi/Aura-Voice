@@ -241,7 +241,7 @@ jobs:
           if setting not in source:
               source, count = re.subn(
                   r'(PRODUCT_BUNDLE_IDENTIFIER = [^;]+;)',
-                  lambda match: setting + "\\n\\t\\t\\t\\t" + match.group(1),
+                  lambda match: setting + "\n\t\t\t\t" + match.group(1),
                   source,
               )
               if count < 3:
