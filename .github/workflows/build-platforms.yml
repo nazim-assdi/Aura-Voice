@@ -200,15 +200,15 @@ jobs:
           $pyiRoot = Join-Path $env:RUNNER_TEMP "aura-pyinstaller"
           New-Item -ItemType Directory -Force "$pyiRoot\dist", "$pyiRoot\build", "$pyiRoot\spec" | Out-Null
           Push-Location backend
-          python -m PyInstaller --clean --noconfirm --onefile --noconsole --name aura-ai-server --distpath "$pyiRoot\dist" --workpath "$pyiRoot\build" --specpath "$pyiRoot\spec" --collect-all edge_tts --collect-all uvicorn --collect-all fastapi --collect-all pydantic_settings --collect-all certifi launcher.py
+          python -m PyInstaller --clean --noconfirm --onedir --noconsole --name aura-ai-server --distpath "$pyiRoot\dist" --workpath "$pyiRoot\build" --specpath "$pyiRoot\spec" --collect-all edge_tts --collect-all uvicorn --collect-all fastapi --collect-all pydantic_settings --collect-all certifi launcher.py
           Pop-Location
-          New-Item -ItemType Directory -Force dist\backend | Out-Null
-          Copy-Item "$pyiRoot\dist\aura-ai-server.exe" dist\backend\aura-ai-server.exe
+          New-Item -ItemType Directory -Force dist\backend\aura-ai-server | Out-Null
+          Copy-Item "$pyiRoot\dist\aura-ai-server\*" dist\backend\aura-ai-server -Recurse -Force
       - name: Smoke test bundled AI backend
         shell: pwsh
         run: |
-          $serverPath = (Resolve-Path "dist\backend\aura-ai-server.exe").Path
-          $server = Start-Process -FilePath $serverPath -PassThru -WindowStyle Hidden
+          $serverPath = (Resolve-Path "dist\backend\aura-ai-server\aura-ai-server.exe").Path
+          $server = Start-Process -FilePath $serverPath -WorkingDirectory (Split-Path $serverPath) -PassThru -WindowStyle Hidden
           $healthy = $false
           try {
             for ($attempt = 0; $attempt -lt 60; $attempt++) {
@@ -237,7 +237,8 @@ jobs:
           cargo build --manifest-path native/audio_engine/Cargo.toml --release
           $release = "app/build/windows/x64/runner/Release"
           Copy-Item native/audio_engine/target/release/aura_audio_engine.dll "$release\aura_audio_engine.dll"
-          Copy-Item dist/backend/aura-ai-server.exe "$release\aura-ai-server.exe"
+          New-Item -ItemType Directory -Force "$release\backend_runtime" | Out-Null
+          Copy-Item "dist/backend/aura-ai-server/*" "$release\backend_runtime" -Recurse -Force
           Copy-Item Start-Aura-AI.bat "$release\Start-Aura-AI.bat" -Force
       - name: Download Microsoft Visual C++ runtime
         shell: pwsh
@@ -269,10 +270,11 @@ jobs:
           if ($install.ExitCode -ne 0) { throw "Silent installation failed with exit code $($install.ExitCode)." }
           $vcRuntime = Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64" -ErrorAction SilentlyContinue
           if ($null -eq $vcRuntime -or $vcRuntime.Installed -ne 1) { throw "Microsoft Visual C++ x64 runtime was not installed." }
-          foreach ($required in @("aura_voice_ai.exe", "aura_audio_engine.dll", "aura-ai-server.exe", "_prerequisites\vc_redist.x64.exe", "Start-Aura-AI.bat")) {
+          foreach ($required in @("aura_voice_ai.exe", "aura_audio_engine.dll", "backend_runtime\aura-ai-server.exe", "_prerequisites\vc_redist.x64.exe", "Start-Aura-AI.bat")) {
             if (-not (Test-Path (Join-Path $installRoot $required))) { throw "Installer did not install $required." }
           }
-          $server = Start-Process -FilePath (Join-Path $installRoot "aura-ai-server.exe") -PassThru -WindowStyle Hidden
+          $installedServer = Join-Path $installRoot "backend_runtime\aura-ai-server.exe"
+          $server = Start-Process -FilePath $installedServer -WorkingDirectory (Split-Path $installedServer) -PassThru -WindowStyle Hidden
           try {
             $healthy = $false
             for ($attempt = 0; $attempt -lt 60; $attempt++) {
