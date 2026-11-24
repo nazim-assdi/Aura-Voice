@@ -79,6 +79,7 @@ class ApiClient {
     required String language,
     int rate = 0,
     int pitch = 0,
+    String delivery = 'natural',
   }) async {
     final url = await _resolveBaseUrl(baseUrl);
     final response = await http
@@ -91,6 +92,7 @@ class ApiClient {
             'voice': voice,
             'rate': rate,
             'pitch': pitch,
+            'delivery': delivery,
           }),
         )
         .timeout(const Duration(seconds: 120));
