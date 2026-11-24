@@ -1,6 +1,7 @@
 from app.core.config import settings
 from app.engines.base import SpeechProvider, UnavailableSpeechProvider
 from app.engines.edge_tts import get_edge_tts_provider
+from app.engines.elevenlabs_tts import ElevenLabsSpeechProvider
 
 
 def get_speech_provider() -> SpeechProvider:
@@ -8,4 +9,12 @@ def get_speech_provider() -> SpeechProvider:
     provider_name = settings.speech_provider.strip().lower() or "none"
     if provider_name in {"edge", "edge-tts"}:
         return get_edge_tts_provider()
+    if provider_name in {"elevenlabs", "elevenlabs-v4", "eleven_v4"}:
+        api_key = settings.elevenlabs_api_key.strip()
+        if not api_key:
+            return UnavailableSpeechProvider(provider_name="elevenlabs (API key required)")
+        return ElevenLabsSpeechProvider(
+            api_key=api_key,
+            model_id=settings.elevenlabs_model.strip() or "eleven_v4",
+        )
     return UnavailableSpeechProvider(provider_name=provider_name)
