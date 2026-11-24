@@ -53,6 +53,7 @@ class EdgeTtsSpeechProvider:
         rate: int = 0,
         pitch: int = 0,
         audio_format: str = "mp3",
+        delivery: str = "natural",
     ) -> bytes:
         if audio_format != "mp3":
             raise ValueError("The online neural voice provider currently returns MP3 audio.")
