@@ -21,6 +21,7 @@ class SpeechGenerateRequest(BaseModel):
     voice: str = Field(default="bn-BD-NabanitaNeural", min_length=4, max_length=128)
     rate: int = Field(default=0, ge=-50, le=50)
     pitch: int = Field(default=0, ge=-50, le=50)
+    delivery: Literal["natural", "warm", "storytelling", "energetic", "calm"] = "natural"
     audio_format: Literal["mp3"] = "mp3"
 
 
@@ -97,6 +98,7 @@ async def generate_speech(payload: SpeechGenerateRequest, request: Request) -> R
                 rate=payload.rate,
                 pitch=payload.pitch,
                 audio_format=payload.audio_format,
+                delivery=payload.delivery,
             ),
             timeout=120,
         )
@@ -107,6 +109,16 @@ async def generate_speech(payload: SpeechGenerateRequest, request: Request) -> R
                 "code": "speech_generation_timeout",
                 "message": "Speech generation timed out. Try a shorter script or retry.",
             },
+        ) from error
+    except ValueError as error:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "invalid_speech_request", "message": str(error)},
+        ) from error
+    except RuntimeError as error:
+        raise HTTPException(
+            status_code=502,
+            detail={"code": "speech_generation_failed", "message": str(error)},
         ) from error
     except Exception as error:
         raise HTTPException(
