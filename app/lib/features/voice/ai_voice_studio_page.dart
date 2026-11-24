@@ -4,6 +4,7 @@ import 'package:audioplayers/audioplayers.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import '../../core/services/api_client.dart';
 import '../../core/services/local_ai_server.dart';
@@ -27,9 +28,17 @@ class _AiVoiceStudioPageState extends State<AiVoiceStudioPage> {
   };
 
   final _api = const ApiClient();
+  static const _elevenLabsKeyName = 'aura_elevenlabs_api_key';
+
   final _scriptController = TextEditingController();
-  final _urlController = TextEditingController();
   final _player = AudioPlayer();
+  final _secureStorage = FlutterSecureStorage();
+
+  String? _baseUrl;
+  String _speechProvider = 'edge-tts';
+  String _delivery = 'natural';
+
+  bool get _premiumEngine => _speechProvider == 'elevenlabs';
 
   List<SpeechVoice> _voices = const [];
   String _locale = 'bn-BD';
@@ -60,7 +69,6 @@ class _AiVoiceStudioPageState extends State<AiVoiceStudioPage> {
   @override
   void dispose() {
     _scriptController.dispose();
-    _urlController.dispose();
     unawaited(_player.dispose());
     unawaited(LocalAiServer.instance.stop());
     super.dispose();
@@ -70,13 +78,12 @@ class _AiVoiceStudioPageState extends State<AiVoiceStudioPage> {
     try {
       final configuredUrl = await _api.loadBaseUrl();
       final isDefaultUrl = configuredUrl == ApiClient.defaultBaseUrl;
-      final url = defaultTargetPlatform == TargetPlatform.android && isDefaultUrl
+      _baseUrl = defaultTargetPlatform == TargetPlatform.android && isDefaultUrl
           ? 'http://10.0.2.2:8000'
           : configuredUrl;
       if (!mounted) {
         return;
       }
-      _urlController.text = url;
       await _connect();
     } catch (error) {
       if (mounted) {
@@ -98,23 +105,46 @@ class _AiVoiceStudioPageState extends State<AiVoiceStudioPage> {
       _speechReady = false;
     });
     try {
-      final url = _urlController.text.trim();
-      await _api.saveBaseUrl(url);
-      if (defaultTargetPlatform == TargetPlatform.windows &&
-          url == ApiClient.defaultBaseUrl &&
-          !await _api.isApiHealthy(baseUrl: url)) {
+      final url = _baseUrl ?? ApiClient.defaultBaseUrl;
+      final isBundledWindows =
+          defaultTargetPlatform == TargetPlatform.windows &&
+          url == ApiClient.defaultBaseUrl;
+      final elevenLabsKey = isBundledWindows
+          ? (await _secureStorage.read(key: _elevenLabsKeyName) ?? '').trim()
+          : '';
+
+      if (isBundledWindows) {
         if (mounted) {
-          setState(() => _message = 'Starting the bundled local AI speech server…');
+          setState(() => _message = 'Starting the local voice engine…');
         }
-        await LocalAiServer.instance.ensureRunning(baseUrl: url);
+        final started = await LocalAiServer.instance.ensureRunning(
+          baseUrl: url,
+          elevenLabsApiKey: elevenLabsKey,
+        );
+        if (!started) {
+          throw ApiClientException(
+            elevenLabsKey.isNotEmpty
+                ? 'Could not start the premium voice engine. Close any other Aura Voice server and reconnect.'
+                : 'Could not start the bundled local voice engine. Reinstall Aura Voice Studio and try again.',
+          );
+        }
       }
+
       final health = await _api.health(baseUrl: url);
       if (health['ok'] != true) {
-        throw const ApiClientException('The API server did not report healthy.');
+        throw const ApiClientException('The voice engine did not report healthy.');
       }
       if (health['speech_ready'] != true) {
         throw const ApiClientException(
-          'The API is online, but its neural speech provider is not configured.',
+          'The speech engine is online, but no provider is ready. Check your premium key or use the standard engine.',
+        );
+      }
+      final providerName = health['speech_provider'] as String? ?? 'edge-tts';
+      if (elevenLabsKey.isNotEmpty &&
+          isBundledWindows &&
+          providerName != 'elevenlabs') {
+        throw const ApiClientException(
+          'The saved premium key could not be applied. Restart Aura Voice Studio and reconnect.',
         );
       }
       await _loadVoices(baseUrl: url, updateBusy: false);
@@ -122,11 +152,14 @@ class _AiVoiceStudioPageState extends State<AiVoiceStudioPage> {
         return;
       }
       setState(() {
+        _speechProvider = providerName;
         _connected = true;
         _speechReady = _voices.isNotEmpty;
         _message = _voices.isNotEmpty
-            ? 'Neural speech service is connected. Choose a voice and generate a sample.'
-            : 'The API is online, but no voices were returned for this language.';
+            ? (_premiumEngine
+                ? 'ElevenLabs v4 is ready. Choose a voice and delivery style.'
+                : 'Standard neural speech is ready. Choose a voice and generate a sample.')
+            : 'The voice engine is online, but no voices were returned for this language.';
       });
     } catch (error) {
       if (!mounted) {
@@ -136,7 +169,7 @@ class _AiVoiceStudioPageState extends State<AiVoiceStudioPage> {
         _connected = false;
         _speechReady = false;
         _error = error.toString();
-        _message = 'AI service is not ready. Check the server address and network.';
+        _message = 'Voice engine is not ready. Check your internet connection or premium key.';
       });
     } finally {
       if (mounted) {
@@ -210,6 +243,10 @@ class _AiVoiceStudioPageState extends State<AiVoiceStudioPage> {
       setState(() => _error = 'The script is limited to 5,000 characters.');
       return;
     }
+    if (_premiumEngine && script.length > 2000) {
+      setState(() => _error = 'ElevenLabs v4 dialogue supports up to 2,000 characters per request. Shorten the script or use the standard engine.');
+      return;
+    }
     if (_selectedVoice == null) {
       setState(() => _error = 'Select an available neural voice first.');
       return;
@@ -228,23 +265,28 @@ class _AiVoiceStudioPageState extends State<AiVoiceStudioPage> {
       _playing = false;
       _audioBytes = null;
       _error = null;
-      _message = 'Generating natural neural speech…';
+      _message = _premiumEngine
+          ? 'Generating expressive, human-like speech with ElevenLabs v4…'
+          : 'Generating neural speech…';
     });
     try {
       final audio = await _api.generateSpeech(
-        baseUrl: _urlController.text.trim(),
+        baseUrl: _baseUrl ?? ApiClient.defaultBaseUrl,
         text: script,
         voice: _selectedVoice!,
         language: _locale,
         rate: _rate,
         pitch: _pitch,
+        delivery: _delivery,
       );
       if (!mounted) {
         return;
       }
       setState(() {
         _audioBytes = audio;
-        _message = 'Speech generated successfully. Preview it or save the MP3.';
+        _message = _premiumEngine
+            ? 'Premium speech generated. Preview it or save the MP3.'
+            : 'Speech generated successfully. Preview it or save the MP3.';
       });
     } catch (error) {
       if (mounted) {
@@ -454,7 +496,7 @@ class _AiVoiceStudioPageState extends State<AiVoiceStudioPage> {
               _connectionSettings(context),
               const SizedBox(height: 16),
               Text(
-                'Online neural speech requires an active internet connection and a running Aura Voice API server. Recording, project editing and local playback remain separate from this service.',
+                'The voice engine connects automatically. Its backend address is hidden from the workspace. Premium voice generation uses your own ElevenLabs account and consumes its available credits.',
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: AuraTheme.muted,
                   height: 1.5,
@@ -593,24 +635,56 @@ class _AiVoiceStudioPageState extends State<AiVoiceStudioPage> {
               hintText: _voices.isEmpty ? 'Connect to load voices' : null,
             ),
           ),
-          const SizedBox(height: 16),
-          _SliderSetting(
-            label: 'Speech rate',
-            value: _rate.toDouble(),
-            min: -30,
-            max: 30,
-            valueText: _rate == 0 ? 'Normal' : '${_rate > 0 ? '+' : ''}$_rate%',
-            onChanged: (value) => setState(() => _rate = value.round()),
-          ),
-          const SizedBox(height: 8),
-          _SliderSetting(
-            label: 'Pitch',
-            value: _pitch.toDouble(),
-            min: -30,
-            max: 30,
-            valueText: _pitch == 0 ? 'Normal' : '${_pitch > 0 ? '+' : ''}$_pitch Hz',
-            onChanged: (value) => setState(() => _pitch = value.round()),
-          ),
+          if (_premiumEngine) ...[
+            const SizedBox(height: 16),
+            const _FieldLabel('SPEAKING STYLE'),
+            const SizedBox(height: 7),
+            DropdownButtonFormField<String>(
+              initialValue: _delivery,
+              isExpanded: true,
+              items: const [
+                DropdownMenuItem(value: 'natural', child: Text('Natural conversation')),
+                DropdownMenuItem(value: 'warm', child: Text('Warm and friendly')),
+                DropdownMenuItem(value: 'storytelling', child: Text('Expressive storytelling')),
+                DropdownMenuItem(value: 'energetic', child: Text('Energetic delivery')),
+                DropdownMenuItem(value: 'calm', child: Text('Calm and gentle')),
+              ],
+              onChanged: (value) {
+                if (value != null) setState(() => _delivery = value);
+              },
+              decoration: const InputDecoration(
+                prefixIcon: Icon(Icons.tune_rounded),
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'ElevenLabs v4 uses expressive delivery cues while keeping your selected voice consistent.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: AuraTheme.muted,
+                height: 1.4,
+              ),
+            ),
+          ] else ...[
+            const SizedBox(height: 16),
+            _SliderSetting(
+              label: 'Speech rate',
+              value: _rate.toDouble(),
+              min: -30,
+              max: 30,
+              valueText: _rate == 0 ? 'Normal' : '${_rate > 0 ? '+' : ''}$_rate%',
+              onChanged: (value) => setState(() => _rate = value.round()),
+            ),
+            const SizedBox(height: 8),
+            _SliderSetting(
+              label: 'Pitch',
+              value: _pitch.toDouble(),
+              min: -30,
+              max: 30,
+              valueText: _pitch == 0 ? 'Normal' : '${_pitch > 0 ? '+' : ''}$_pitch Hz',
+              onChanged: (value) => setState(() => _pitch = value.round()),
+            ),
+          ],
           const SizedBox(height: 10),
           Text(
             selectedLabel,
@@ -680,17 +754,16 @@ class _AiVoiceStudioPageState extends State<AiVoiceStudioPage> {
 
   Widget _connectionSettings(BuildContext context) {
     final theme = Theme.of(context);
+    final isWindows = defaultTargetPlatform == TargetPlatform.windows;
     return _StudioCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              const Icon(Icons.cloud_sync_outlined, color: AuraTheme.violet),
+              const Icon(Icons.graphic_eq_rounded, color: AuraTheme.violet),
               const SizedBox(width: 9),
-              Expanded(
-                child: Text('AI server connection', style: theme.textTheme.titleSmall),
-              ),
+              Expanded(child: Text('Voice engine', style: theme.textTheme.titleSmall)),
               Text(
                 _connected ? 'CONNECTED' : 'NOT CONNECTED',
                 style: theme.textTheme.labelSmall?.copyWith(
@@ -702,43 +775,107 @@ class _AiVoiceStudioPageState extends State<AiVoiceStudioPage> {
             ],
           ),
           const SizedBox(height: 10),
-          TextField(
-            controller: _urlController,
-            keyboardType: TextInputType.url,
-            autocorrect: false,
-            decoration: const InputDecoration(
-              labelText: 'Backend URL',
-              hintText: 'https://your-aura-api.example.com',
-              prefixIcon: Icon(Icons.link_rounded),
-              border: OutlineInputBorder(),
-            ),
+          Text(
+            _premiumEngine
+                ? 'ElevenLabs v4 · expressive, lifelike speech'
+                : 'Standard neural voice · automatic connection',
+            style: theme.textTheme.bodyMedium?.copyWith(color: Colors.white70, height: 1.45),
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 14),
           Wrap(
             spacing: 8,
             runSpacing: 8,
-            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
               FilledButton.tonalIcon(
-                onPressed: _checking ? null : _connect,
+                onPressed: _checking || _generating ? null : _connect,
                 icon: _checking
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.wifi_tethering_rounded),
-                label: Text(_checking ? 'Connecting…' : 'Connect & test'),
+                    ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Icon(Icons.refresh_rounded),
+                label: Text(_checking ? 'Connecting…' : 'Reconnect'),
               ),
-              Text(
-                'Emulator: 10.0.2.2:8000 · Physical phone: use your PC LAN IP:8000',
-                style: theme.textTheme.bodySmall?.copyWith(color: AuraTheme.muted),
+              OutlinedButton.icon(
+                onPressed: _checking || _generating ? null : _openPremiumSetup,
+                icon: const Icon(Icons.auto_awesome_rounded, size: 18),
+                label: Text(_premiumEngine ? 'Premium voice settings' : 'Enable realistic voice'),
               ),
             ],
+          ),
+          if (!isWindows) ...[
+            const SizedBox(height: 9),
+            Text(
+              'Premium key setup is currently available in the Windows desktop app. Other platforms can use a server configured by the administrator.',
+              style: theme.textTheme.bodySmall?.copyWith(color: AuraTheme.muted, height: 1.4),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Future<void> _openPremiumSetup() async {
+    if (defaultTargetPlatform != TargetPlatform.windows) {
+      setState(() => _error = 'Premium key setup is currently available in the Windows desktop app.');
+      return;
+    }
+
+    final controller = TextEditingController();
+    final selected = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Enable realistic AI voice'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Add your ElevenLabs API key to use the expressive ElevenLabs v4 voice engine. The key is stored encrypted on this Windows account and passed only to Aura Voice’s bundled local backend.',
+            ),
+            const SizedBox(height: 14),
+            TextField(
+              controller: controller,
+              obscureText: true,
+              autocorrect: false,
+              enableSuggestions: false,
+              decoration: const InputDecoration(
+                labelText: 'ElevenLabs API key',
+                hintText: 'Paste API key',
+                prefixIcon: Icon(Icons.key_rounded),
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Speech generation uses your ElevenLabs account credits. Never share this key or add it to a public repository.',
+              style: Theme.of(dialogContext).textTheme.bodySmall?.copyWith(color: AuraTheme.muted, height: 1.4),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(dialogContext).pop(null), child: const Text('Cancel')),
+          TextButton(onPressed: () => Navigator.of(dialogContext).pop('__standard__'), child: const Text('Use standard voice')),
+          FilledButton(
+            onPressed: () {
+              final key = controller.text.trim();
+              if (key.isNotEmpty) Navigator.of(dialogContext).pop(key);
+            },
+            child: const Text('Save and connect'),
           ),
         ],
       ),
     );
+    controller.dispose();
+
+    if (!mounted || selected == null) return;
+    try {
+      if (selected == '__standard__') {
+        await _secureStorage.delete(key: _elevenLabsKeyName);
+      } else {
+        await _secureStorage.write(key: _elevenLabsKeyName, value: selected);
+      }
+      await _connect();
+    } catch (error) {
+      if (mounted) setState(() => _error = 'Could not save the premium key securely: $error');
+    }
   }
 }
 
