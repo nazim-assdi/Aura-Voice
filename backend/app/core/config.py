@@ -12,6 +12,8 @@ class Settings(BaseSettings):
     app_version: str = "0.1.0"
     environment: str = "development"
     speech_provider: str = "edge"
+    elevenlabs_api_key: str = ""
+    elevenlabs_model: str = "eleven_v4"
     cors_origins: str = (
         "http://localhost:3000,"
         "http://localhost:5173,"
