@@ -9,8 +9,12 @@ class LocalAiServer {
   static final instance = LocalAiServer._();
 
   Process? _process;
+  String? _processApiKey;
 
-  Future<bool> ensureRunning({required String baseUrl}) async {
+  Future<bool> ensureRunning({
+    required String baseUrl,
+    String? elevenLabsApiKey,
+  }) async {
     if (!Platform.isWindows) return false;
 
     final uri = Uri.tryParse(baseUrl);
@@ -21,8 +25,29 @@ class LocalAiServer {
       return false;
     }
 
+    final apiKey = elevenLabsApiKey?.trim() ?? '';
+    if (_process != null && _processApiKey != apiKey) {
+      await stop();
+    }
+
     const api = ApiClient();
-    if (await api.isApiHealthy(baseUrl: baseUrl)) return true;
+    final expectedProvider = apiKey.isEmpty ? 'edge-tts' : 'elevenlabs';
+
+    Future<Map<String, dynamic>?> readHealth() async {
+      try {
+        return await api.health(baseUrl: baseUrl);
+      } catch (_) {
+        return null;
+      }
+    }
+
+    final existingHealth = await readHealth();
+    if (existingHealth?['ok'] == true) {
+      if (existingHealth?['speech_provider'] == expectedProvider) return true;
+      // Do not terminate a server that this app did not start.
+      if (_process == null) return false;
+      await stop();
+    }
 
     if (_process == null) {
       final appDirectory = File(Platform.resolvedExecutable).parent;
@@ -31,19 +56,32 @@ class LocalAiServer {
       );
       if (!await server.exists()) return false;
 
+      final environment = Map<String, String>.from(Platform.environment);
+      environment['AURA_SPEECH_PROVIDER'] = expectedProvider;
+      if (apiKey.isEmpty) {
+        environment.remove('AURA_ELEVENLABS_API_KEY');
+      } else {
+        environment['AURA_ELEVENLABS_API_KEY'] = apiKey;
+      }
+
       try {
         final process = await Process.start(
           server.path,
           const [],
           workingDirectory: File(server.path).parent.path,
+          environment: environment,
           runInShell: false,
         );
         _process = process;
+        _processApiKey = apiKey;
         unawaited(process.stdout.drain<void>());
         unawaited(process.stderr.drain<void>());
         unawaited(
           process.exitCode.then((_) {
-            if (identical(_process, process)) _process = null;
+            if (identical(_process, process)) {
+              _process = null;
+              _processApiKey = null;
+            }
           }),
         );
       } on ProcessException {
@@ -51,9 +89,13 @@ class LocalAiServer {
       }
     }
 
-    for (var attempt = 0; attempt < 50; attempt++) {
+    for (var attempt = 0; attempt < 60; attempt++) {
       await Future<void>.delayed(const Duration(milliseconds: 400));
-      if (await api.isApiHealthy(baseUrl: baseUrl)) return true;
+      final health = await readHealth();
+      if (health?['ok'] == true &&
+          health?['speech_provider'] == expectedProvider) {
+        return true;
+      }
       if (_process == null) return false;
     }
     return false;
@@ -62,6 +104,7 @@ class LocalAiServer {
   Future<void> stop() async {
     final process = _process;
     _process = null;
+    _processApiKey = null;
     if (process == null) return;
     process.kill();
     try {
