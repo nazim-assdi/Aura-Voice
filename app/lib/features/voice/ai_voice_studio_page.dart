@@ -29,6 +29,8 @@ class _AiVoiceStudioPageState extends State<AiVoiceStudioPage> {
 
   final _api = const ApiClient();
   static const _elevenLabsKeyName = 'aura_elevenlabs_api_key';
+  static const _cartesiaKeyName = 'aura_cartesia_api_key';
+  static const _providerKeyName = 'aura_speech_provider';
 
   final _scriptController = TextEditingController();
   final _player = AudioPlayer();
@@ -38,7 +40,8 @@ class _AiVoiceStudioPageState extends State<AiVoiceStudioPage> {
   String _speechProvider = 'edge-tts';
   String _delivery = 'natural';
 
-  bool get _premiumEngine => _speechProvider == 'elevenlabs';
+  bool get _premiumEngine =>
+      _speechProvider == 'elevenlabs' || _speechProvider == 'cartesia';
 
   List<SpeechVoice> _voices = const [];
   String _locale = 'bn-BD';
@@ -109,23 +112,37 @@ class _AiVoiceStudioPageState extends State<AiVoiceStudioPage> {
       final isBundledWindows =
           defaultTargetPlatform == TargetPlatform.windows &&
           url == ApiClient.defaultBaseUrl;
-      final elevenLabsKey = isBundledWindows
+      final preferredProvider = isBundledWindows
+          ? (await _secureStorage.read(key: _providerKeyName) ?? 'edge').trim()
+          : 'edge';
+      final elevenLabsKey = isBundledWindows && preferredProvider == 'elevenlabs'
           ? (await _secureStorage.read(key: _elevenLabsKeyName) ?? '').trim()
+          : '';
+      final cartesiaKey = isBundledWindows && preferredProvider == 'cartesia'
+          ? (await _secureStorage.read(key: _cartesiaKeyName) ?? '').trim()
           : '';
 
       if (isBundledWindows) {
+        if (preferredProvider == 'elevenlabs' && elevenLabsKey.isEmpty) {
+          throw const ApiClientException('Add your ElevenLabs API key in Voice Engine settings.');
+        }
+        if (preferredProvider == 'cartesia' && cartesiaKey.isEmpty) {
+          throw const ApiClientException('Add your Cartesia API key in Voice Engine settings.');
+        }
         if (mounted) {
           setState(() => _message = 'Starting the local voice engine…');
         }
         final started = await LocalAiServer.instance.ensureRunning(
           baseUrl: url,
+          speechProvider: preferredProvider,
           elevenLabsApiKey: elevenLabsKey,
+          cartesiaApiKey: cartesiaKey,
         );
         if (!started) {
           throw ApiClientException(
-            elevenLabsKey.isNotEmpty
-                ? 'Could not start the premium voice engine. Close any other Aura Voice server and reconnect.'
-                : 'Could not start the bundled local voice engine. Reinstall Aura Voice Studio and try again.',
+            preferredProvider == 'edge'
+                ? 'Could not start the bundled local voice engine. Reinstall Aura Voice Studio and try again.'
+                : 'Could not start the selected premium voice engine. Close any other Aura Voice server and reconnect.',
           );
         }
       }
@@ -136,15 +153,14 @@ class _AiVoiceStudioPageState extends State<AiVoiceStudioPage> {
       }
       if (health['speech_ready'] != true) {
         throw const ApiClientException(
-          'The speech engine is online, but no provider is ready. Check your premium key or use the standard engine.',
+          'The speech engine is online, but no provider is ready. Check your API key or use the standard engine.',
         );
       }
       final providerName = health['speech_provider'] as String? ?? 'edge-tts';
-      if (elevenLabsKey.isNotEmpty &&
-          isBundledWindows &&
-          providerName != 'elevenlabs') {
+      final expectedProvider = preferredProvider == 'edge' ? 'edge-tts' : preferredProvider;
+      if (isBundledWindows && providerName != expectedProvider) {
         throw const ApiClientException(
-          'The saved premium key could not be applied. Restart Aura Voice Studio and reconnect.',
+          'The selected voice engine could not be applied. Restart Aura Voice Studio and reconnect.',
         );
       }
       await _loadVoices(baseUrl: url, updateBusy: false);
@@ -156,9 +172,11 @@ class _AiVoiceStudioPageState extends State<AiVoiceStudioPage> {
         _connected = true;
         _speechReady = _voices.isNotEmpty;
         _message = _voices.isNotEmpty
-            ? (_premiumEngine
-                ? 'ElevenLabs v4 is ready. Choose a voice and delivery style.'
-                : 'Standard neural speech is ready. Choose a voice and generate a sample.')
+            ? (_speechProvider == 'cartesia'
+                ? 'Cartesia Sonic 3.6 is ready. Choose a voice and delivery style.'
+                : _speechProvider == 'elevenlabs'
+                    ? 'ElevenLabs v4 is ready. Choose a voice and delivery style.'
+                    : 'Standard neural speech is ready. Choose a voice and generate a sample.')
             : 'The voice engine is online, but no voices were returned for this language.';
       });
     } catch (error) {
@@ -243,7 +261,7 @@ class _AiVoiceStudioPageState extends State<AiVoiceStudioPage> {
       setState(() => _error = 'The script is limited to 5,000 characters.');
       return;
     }
-    if (_premiumEngine && script.length > 2000) {
+    if (_speechProvider == 'elevenlabs' && script.length > 2000) {
       setState(() => _error = 'ElevenLabs v4 dialogue supports up to 2,000 characters per request. Shorten the script or use the standard engine.');
       return;
     }
@@ -265,9 +283,11 @@ class _AiVoiceStudioPageState extends State<AiVoiceStudioPage> {
       _playing = false;
       _audioBytes = null;
       _error = null;
-      _message = _premiumEngine
-          ? 'Generating expressive, human-like speech with ElevenLabs v4…'
-          : 'Generating neural speech…';
+      _message = _speechProvider == 'cartesia'
+          ? 'Generating expressive speech with Cartesia Sonic 3.6…'
+          : _speechProvider == 'elevenlabs'
+              ? 'Generating expressive speech with ElevenLabs v4…'
+              : 'Generating neural speech…';
     });
     try {
       final audio = await _api.generateSpeech(
@@ -777,7 +797,9 @@ class _AiVoiceStudioPageState extends State<AiVoiceStudioPage> {
           const SizedBox(height: 10),
           Text(
             _premiumEngine
-                ? 'ElevenLabs v4 · expressive, lifelike speech'
+                ? (_speechProvider == 'cartesia'
+                    ? 'Cartesia Sonic 3.6 · expressive natural speech'
+                    : 'ElevenLabs v4 · expressive, lifelike speech')
                 : 'Standard neural voice · automatic connection',
             style: theme.textTheme.bodyMedium?.copyWith(color: Colors.white70, height: 1.45),
           ),
@@ -796,7 +818,7 @@ class _AiVoiceStudioPageState extends State<AiVoiceStudioPage> {
               OutlinedButton.icon(
                 onPressed: _checking || _generating ? null : _openPremiumSetup,
                 icon: const Icon(Icons.auto_awesome_rounded, size: 18),
-                label: Text(_premiumEngine ? 'Premium voice settings' : 'Enable realistic voice'),
+                label: Text(_premiumEngine ? 'Premium voice settings' : 'Choose voice engine'),
               ),
             ],
           ),
@@ -814,67 +836,128 @@ class _AiVoiceStudioPageState extends State<AiVoiceStudioPage> {
 
   Future<void> _openPremiumSetup() async {
     if (defaultTargetPlatform != TargetPlatform.windows) {
-      setState(() => _error = 'Premium key setup is currently available in the Windows desktop app.');
+      setState(() => _error = 'API key setup is currently available in the Windows desktop app.');
       return;
     }
 
+    String selectedProvider =
+        await _secureStorage.read(key: _providerKeyName) ?? 'edge';
     final controller = TextEditingController();
-    final selected = await showDialog<String>(
+    final result = await showDialog<Map<String, String>>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Enable realistic AI voice'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Add your ElevenLabs API key to use the expressive ElevenLabs v4 voice engine. The key is stored encrypted on this Windows account and passed only to Aura Voice’s bundled local backend.',
-            ),
-            const SizedBox(height: 14),
-            TextField(
-              controller: controller,
-              obscureText: true,
-              autocorrect: false,
-              enableSuggestions: false,
-              decoration: const InputDecoration(
-                labelText: 'ElevenLabs API key',
-                hintText: 'Paste API key',
-                prefixIcon: Icon(Icons.key_rounded),
-                border: OutlineInputBorder(),
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) => AlertDialog(
+          title: const Text('Choose Aura Voice Engine'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              DropdownButtonFormField<String>(
+                initialValue: selectedProvider,
+                isExpanded: true,
+                items: const [
+                  DropdownMenuItem(value: 'edge', child: Text('Standard Neural Voice · Free')),
+                  DropdownMenuItem(value: 'elevenlabs', child: Text('ElevenLabs v4 · Premium')),
+                  DropdownMenuItem(value: 'cartesia', child: Text('Cartesia Sonic 3.6 · Premium')),
+                ],
+                onChanged: (value) {
+                  if (value != null) {
+                    setDialogState(() => selectedProvider = value);
+                    controller.clear();
+                  }
+                },
+                decoration: const InputDecoration(
+                  labelText: 'Speech provider',
+                  prefixIcon: Icon(Icons.graphic_eq_rounded),
+                  border: OutlineInputBorder(),
+                ),
               ),
+              if (selectedProvider != 'edge') ...[
+                const SizedBox(height: 14),
+                TextField(
+                  controller: controller,
+                  obscureText: true,
+                  autocorrect: false,
+                  enableSuggestions: false,
+                  decoration: InputDecoration(
+                    labelText: selectedProvider == 'cartesia'
+                        ? 'Cartesia API key'
+                        : 'ElevenLabs API key',
+                    hintText: 'Paste API key',
+                    prefixIcon: const Icon(Icons.key_rounded),
+                    border: const OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  selectedProvider == 'cartesia'
+                      ? 'Cartesia Sonic 3.6 supports Bengali and expressive emotion/speed controls. Generation uses your Cartesia account credits.'
+                      : 'ElevenLabs v4 supports expressive delivery. Generation uses your ElevenLabs account credits.',
+                  style: Theme.of(dialogContext).textTheme.bodySmall?.copyWith(
+                        color: AuraTheme.muted,
+                        height: 1.4,
+                      ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Your key is stored encrypted on this Windows account and is passed only to the bundled local backend. It is never uploaded to GitHub.',
+                  style: Theme.of(dialogContext).textTheme.bodySmall?.copyWith(
+                        color: AuraTheme.muted,
+                        height: 1.4,
+                      ),
+                ),
+              ] else ...[
+                const SizedBox(height: 12),
+                Text(
+                  'Use the standard Edge neural voice without a premium API key.',
+                  style: Theme.of(dialogContext).textTheme.bodySmall?.copyWith(
+                        color: AuraTheme.muted,
+                      ),
+                ),
+              ],
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(null),
+              child: const Text('Cancel'),
             ),
-            const SizedBox(height: 8),
-            Text(
-              'Speech generation uses your ElevenLabs account credits. Never share this key or add it to a public repository.',
-              style: Theme.of(dialogContext).textTheme.bodySmall?.copyWith(color: AuraTheme.muted, height: 1.4),
+            FilledButton(
+              onPressed: () {
+                final key = controller.text.trim();
+                if (selectedProvider != 'edge' && key.isEmpty) return;
+                Navigator.of(dialogContext).pop({
+                  'provider': selectedProvider,
+                  'key': key,
+                });
+              },
+              child: const Text('Save and connect'),
             ),
           ],
         ),
-        actions: [
-          TextButton(onPressed: () => Navigator.of(dialogContext).pop(null), child: const Text('Cancel')),
-          TextButton(onPressed: () => Navigator.of(dialogContext).pop('__standard__'), child: const Text('Use standard voice')),
-          FilledButton(
-            onPressed: () {
-              final key = controller.text.trim();
-              if (key.isNotEmpty) Navigator.of(dialogContext).pop(key);
-            },
-            child: const Text('Save and connect'),
-          ),
-        ],
       ),
     );
     controller.dispose();
 
-    if (!mounted || selected == null) return;
+    if (!mounted || result == null) return;
     try {
-      if (selected == '__standard__') {
+      final provider = result['provider'] ?? 'edge';
+      final key = result['key'] ?? '';
+      if (provider == 'edge') {
         await _secureStorage.delete(key: _elevenLabsKeyName);
-      } else {
-        await _secureStorage.write(key: _elevenLabsKeyName, value: selected);
+        await _secureStorage.delete(key: _cartesiaKeyName);
+      } else if (provider == 'elevenlabs') {
+        await _secureStorage.write(key: _elevenLabsKeyName, value: key);
+      } else if (provider == 'cartesia') {
+        await _secureStorage.write(key: _cartesiaKeyName, value: key);
       }
+      await _secureStorage.write(key: _providerKeyName, value: provider);
+      await LocalAiServer.instance.stop();
       await _connect();
     } catch (error) {
-      if (mounted) setState(() => _error = 'Could not save the premium key securely: $error');
+      if (mounted) {
+        setState(() => _error = 'Could not save the voice engine settings securely: $error');
+      }
     }
   }
 }
