@@ -314,8 +314,11 @@ jobs:
           foreach ($required in @("aura_voice_ai.exe", "aura_audio_engine.dll", "backend_runtime\aura-ai-server.exe", "_prerequisites\vc_redist.x64.exe", "Start-Aura-AI.bat")) {
             if (-not (Test-Path (Join-Path $installRoot $required))) { throw "Installer did not install $required." }
           }
-          $desktopShortcut = Join-Path ([Environment]::GetFolderPath('DesktopDirectory')) "Aura Voice Studio.lnk"
-          if (-not (Test-Path $desktopShortcut)) { throw "Installer did not create the NTech desktop shortcut." }
+          $userDesktopShortcut = Join-Path ([Environment]::GetFolderPath('DesktopDirectory')) "Aura Voice Studio.lnk"
+          $commonDesktopShortcut = Join-Path ([Environment]::GetFolderPath('CommonDesktopDirectory')) "Aura Voice Studio.lnk"
+          if (-not (Test-Path $userDesktopShortcut) -and -not (Test-Path $commonDesktopShortcut)) {
+            throw "Installer did not create the NTech desktop shortcut."
+          }
           $installedServer = Join-Path $installRoot "backend_runtime\aura-ai-server.exe"
           $server = Start-Process -FilePath $installedServer -WorkingDirectory (Split-Path $installedServer) -PassThru -WindowStyle Hidden
           try {
