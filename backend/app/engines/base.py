@@ -21,6 +21,7 @@ class SpeechProvider(Protocol):
         rate: int = 0,
         pitch: int = 0,
         audio_format: str = "mp3",
+        delivery: str = "natural",
     ) -> bytes: ...
 
 
@@ -50,5 +51,6 @@ class UnavailableSpeechProvider:
         rate: int = 0,
         pitch: int = 0,
         audio_format: str = "mp3",
+        delivery: str = "natural",
     ) -> bytes:
         raise RuntimeError("Speech provider is unavailable. Configure a real provider first.")
