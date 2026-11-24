@@ -22,9 +22,14 @@ Check `/health`, `/api/v1/capabilities`, and `/docs`.
 
 The default provider is `edge`. It uses the community `edge-tts` Python client and the Edge online neural speech service. It is not an offline engine, is not a Microsoft-supported public API, and may change or become unavailable upstream.
 
-For more expressive, lifelike speech, configure the optional ElevenLabs v4 provider. Set `AURA_SPEECH_PROVIDER=elevenlabs`, `AURA_ELEVENLABS_API_KEY`, and optionally `AURA_ELEVENLABS_MODEL=eleven_v4`. The provider loads voices from the authenticated account and uses the Text to Dialogue endpoint with one speaker and selectable delivery cues. Keep individual requests at or below 2,000 characters. Generation consumes the account's credits; check the provider's current plan and usage limits before production use. Never commit the API key.
+For more expressive, lifelike speech, configure either optional premium provider:
 
-The Windows desktop app stores the key with Flutter Secure Storage and injects it into the bundled local backend process only. The backend URL is not shown in the AI Voice Studio workspace. For remote deployments, configure the provider key on the server; do not send user secrets to an untrusted backend.
+- **Cartesia Sonic 3.6:** set `AURA_SPEECH_PROVIDER=cartesia`, `AURA_CARTESIA_API_KEY`, and optionally `AURA_CARTESIA_MODEL=sonic-3.6`. It supports Bengali and 43 other languages. The provider loads voices from the account, returns MP3, adjusts pacing, and applies explicit emotion guidance for English transcripts. For Bengali, Sonic infers emotion from the transcript.
+- **ElevenLabs v4:** set `AURA_SPEECH_PROVIDER=elevenlabs`, `AURA_ELEVENLABS_API_KEY`, and optionally `AURA_ELEVENLABS_MODEL=eleven_v4`. The provider loads voices from the authenticated account and uses the Text to Dialogue endpoint with one speaker and selectable delivery cues. Keep individual requests at or below 2,000 characters.
+
+Both providers use your own account credits. Check the provider's current plan and usage limits before production use. Never commit API keys.
+
+The Windows desktop app stores the selected provider and API key with Flutter Secure Storage, then injects the key into the bundled local backend process only. The backend URL is not shown in the AI Voice Studio workspace. For remote deployments, configure the provider key on the server; do not send user secrets to an untrusted backend.
 
 The API accepts at most 5,000 characters per script and currently limits each client IP to eight generation requests per minute. Keep the API private or behind suitable authentication/rate limiting when deploying it to the public internet. Set `AURA_SPEECH_PROVIDER=none` to disable cloud TTS.
 
