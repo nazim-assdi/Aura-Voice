@@ -177,14 +177,32 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - name: Generate 3D Aura Voice app icon
+        shell: pwsh
+        run: |
+          python -m pip install --disable-pip-version-check pillow
+          python packaging/windows/generate_icon.py --output-dir packaging/windows
+          $runnerIcon = "app/windows/runner/resources/app_icon.ico"
+          New-Item -ItemType Directory -Force (Split-Path $runnerIcon) | Out-Null
+          Copy-Item packaging/windows/app_icon.ico $runnerIcon -Force
+          if ((Get-Item packaging/windows/app_icon.ico).Length -lt 1000) {
+            throw "The generated Aura Voice icon is missing or incomplete."
+          }
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
           cache: true
       - name: Build Windows app
         working-directory: app
+        shell: pwsh
         run: |
           flutter create --platforms=windows .
+          Copy-Item ..\packaging\windows\app_icon.ico windows\runner\resources\app_icon.ico -Force
           flutter pub get
           flutter build windows --release
       - uses: actions/setup-python@v5
@@ -201,7 +219,7 @@ jobs:
           New-Item -ItemType Directory -Force "$pyiRoot\dist", "$pyiRoot\build", "$pyiRoot\spec" | Out-Null
           Push-Location backend
           python -m PyInstaller --clean --noconfirm --onedir --console --name aura-ai-server-diagnostic --distpath "$pyiRoot\diagnostic-dist" --workpath "$pyiRoot\diagnostic-build" --specpath "$pyiRoot\diagnostic-spec" --collect-all edge_tts --collect-all uvicorn --collect-all fastapi --collect-all pydantic_settings --collect-all certifi --collect-all httpx --collect-all httpcore launcher.py
-          python -m PyInstaller --clean --noconfirm --onedir --noconsole --name aura-ai-server --distpath "$pyiRoot\dist" --workpath "$pyiRoot\build" --specpath "$pyiRoot\spec" --collect-all edge_tts --collect-all uvicorn --collect-all fastapi --collect-all pydantic_settings --collect-all certifi launcher.py
+          python -m PyInstaller --clean --noconfirm --onedir --noconsole --name aura-ai-server --distpath "$pyiRoot\dist" --workpath "$pyiRoot\build" --specpath "$pyiRoot\spec" --collect-all edge_tts --collect-all uvicorn --collect-all fastapi --collect-all pydantic_settings --collect-all certifi --collect-all httpx --collect-all httpcore launcher.py
           Pop-Location
           New-Item -ItemType Directory -Force dist\backend\aura-ai-server | Out-Null
           Copy-Item "$pyiRoot\dist\aura-ai-server\*" dist\backend\aura-ai-server -Recurse -Force
