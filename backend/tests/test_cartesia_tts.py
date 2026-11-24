@@ -16,7 +16,7 @@ def _voice_response() -> dict:
                 "name": "Bangla Natural",
                 "gender": "feminine",
                 "language": "bn",
-                "accents": [{"accent": "standard-bangladesh", "locale": "bn-BD", "is_native": True}],
+                "accents": [{"accent": "standard-bangladesh", "locale": "bn-IN", "is_native": True}],
             }
         ],
         "has_more": False,
@@ -56,11 +56,11 @@ def test_cartesia_lists_account_voices_for_requested_locale() -> None:
     assert len(voices) == 1
     assert voices[0].id == "voice-bn-01"
     assert voices[0].name == "Bangla Natural"
-    assert voices[0].locale == "bn-BD"
+    assert voices[0].locale == "bn-IN"
     assert voices[0].gender == "Female"
     assert seen[0].headers["authorization"] == "Bearer test-secret"
     assert seen[0].headers["cartesia-version"] == "2026-08-14"
-    assert seen[0].url.params.get("language") == "bn-BD"
+    assert seen[0].url.params.get("language") == "bn"
     assert seen[0].url.params.get("limit") == "100"
 
 
@@ -92,7 +92,7 @@ def test_cartesia_generates_mp3_with_sonic_36_and_bengali_safe_emotion() -> None
             provider = CartesiaSpeechProvider(api_key="test-secret")
             return await provider.synthesize(
                 text="আজকের দিনটি খুব সুন্দর।",
-                language="bn-BD",
+                language="bn-IN",
                 voice="voice-bn-01",
                 delivery="warm",
             )
@@ -105,7 +105,7 @@ def test_cartesia_generates_mp3_with_sonic_36_and_bengali_safe_emotion() -> None
     body = json.loads(generation.content.decode("utf-8"))
     assert body["model_id"] == "sonic-3.6"
     assert body["voice"] == "voice-bn-01"
-    assert body["language"] == "bn-BD"
+    assert body["language"] == "bn-IN"
     assert body["normalization"] == "auto"
     assert body["output_format"] == {
         "container": "mp3",
