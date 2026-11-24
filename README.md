@@ -41,7 +41,7 @@ A feature is only advertised as ready after its real engine is integrated and te
 ## What works in the current foundation
 
 - Flutter shell with a premium dark theme and responsive navigation.
-- FastAPI health and capabilities endpoints plus standard Edge neural speech and optional ElevenLabs v4 expressive text-to-dialogue generation, account voice discovery and MP3 response.
+- FastAPI health and capabilities endpoints plus standard Edge neural speech and optional Cartesia Sonic 3.6 / ElevenLabs v4 expressive speech generation, account voice discovery and MP3 response.
 - Speech-provider interface and a safe unavailable provider that fails instead of returning fake audio.
 - Initial Rust offline PCM WAV renderer in `native/audio_engine`: integer/float WAV decode, sample-frame clip placement, multitrack gain/pan/mute/solo, fades, sample-peak/clipping report and PCM WAV export.
 - Versioned C ABI and public header for offline export, microphone capture, standalone WAV audition and callback-driven real-time multitrack session playback with sample-frame seek, pause/resume and loop controls.
@@ -74,7 +74,7 @@ flutter pub get
 flutter run
 ```
 
-The AI Voice workspace connects to its backend automatically; the backend URL is hidden from the workspace. By default, it uses the online Edge neural speech adapter (no API key is required). For more expressive, lifelike Bengali and multilingual speech, the Windows desktop app can optionally use ElevenLabs v4. Add your own ElevenLabs API key in Voice Engine settings; it is stored encrypted on the Windows account and passed only to the bundled local backend. ElevenLabs generation consumes account credits and supports up to 2,000 characters per dialogue request in the current integration. Both providers require internet access. Edge TTS is a community client, not an offline engine or a Microsoft-supported public API. Keep a publicly deployed backend behind appropriate access controls and rate limiting.
+The AI Voice workspace connects to its backend automatically; the backend URL is hidden from the workspace. By default, it uses the online Edge neural speech adapter (no API key is required). For more expressive, lifelike Bengali and multilingual speech, the Windows desktop app can optionally use Cartesia Sonic 3.6 or ElevenLabs v4. Add your own provider API key in Voice Engine settings; it is stored encrypted on the Windows account and passed only to the bundled local backend. Cartesia Sonic 3.6 supports Bengali and 43 other languages; it follows the emotional context of the transcript and supports explicit emotion controls for English. ElevenLabs v4 supports expressive dialogue delivery and is limited to 2,000 characters per request in this integration. Both premium providers consume your own account credits and require internet access. Edge TTS remains the no-key fallback. Keep a publicly deployed backend behind appropriate access controls and rate limiting.
 
 For web builds, set `AURA_CORS_ORIGINS` to the exact website origin. Android emulator builds use the host-loopback bridge; physical phones need a reachable server configured for that deployment. The backend address is managed internally by the desktop workspace and is not displayed to the user.
 
@@ -160,3 +160,8 @@ See [docs/PRO_VOICE_STUDIO_ARCHITECTURE.md](docs/PRO_VOICE_STUDIO_ARCHITECTURE.m
 ## Contributing
 
 Keep API contracts versioned, add tests for behavior and document model/license requirements with every engine integration. Work directly on the repository's `main` branch.
+
+
+---
+
+**Developer:** NTech
