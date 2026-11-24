@@ -153,12 +153,25 @@ class _HomeShellState extends State<HomeShell> {
                       ),
                     ),
                     Padding(
-                      padding: const EdgeInsets.all(14),
-                      child: Text(
-                        'v0.2',
-                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                              color: AuraTheme.muted,
-                            ),
+                      padding: const EdgeInsets.fromLTRB(14, 10, 14, 18),
+                      child: Column(
+                        children: [
+                          Text(
+                            'v0.2',
+                            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                                  color: AuraTheme.muted,
+                                ),
+                          ),
+                          const SizedBox(height: 5),
+                          Text(
+                            'NTech',
+                            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                                  color: AuraTheme.mint,
+                                  fontWeight: FontWeight.w900,
+                                  letterSpacing: 1.8,
+                                ),
+                          ),
+                        ],
                       ),
                     ),
                   ],
@@ -170,27 +183,49 @@ class _HomeShellState extends State<HomeShell> {
       ),
       bottomNavigationBar: showRail
           ? null
-          : NavigationBar(
-              selectedIndex: _index,
-              onDestinationSelected: (value) => setState(() => _index = value),
-              destinations: const [
-                NavigationDestination(
-                  icon: Icon(Icons.grid_view_rounded),
-                  label: 'Home',
-                ),
-                NavigationDestination(
-                  icon: Icon(Icons.graphic_eq_rounded),
-                  label: 'Record',
-                ),
-                NavigationDestination(
-                  icon: Icon(Icons.library_music_rounded),
-                  label: 'Library',
-                ),
-                NavigationDestination(
-                  icon: Icon(Icons.auto_awesome_rounded),
-                  label: 'AI Voice',
-                ),
-              ],
+          : SafeArea(
+              top: false,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  NavigationBar(
+                    selectedIndex: _index,
+                    onDestinationSelected: (value) => setState(() => _index = value),
+                    destinations: const [
+                      NavigationDestination(
+                        icon: Icon(Icons.grid_view_rounded),
+                        label: 'Home',
+                      ),
+                      NavigationDestination(
+                        icon: Icon(Icons.graphic_eq_rounded),
+                        label: 'Record',
+                      ),
+                      NavigationDestination(
+                        icon: Icon(Icons.library_music_rounded),
+                        label: 'Library',
+                      ),
+                      NavigationDestination(
+                        icon: Icon(Icons.auto_awesome_rounded),
+                        label: 'AI Voice',
+                      ),
+                    ],
+                  ),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.only(top: 4, bottom: 7),
+                    color: const Color(0xFF0C1422),
+                    child: Text(
+                      'NTech',
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                            color: AuraTheme.mint,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 2.2,
+                          ),
+                    ),
+                  ),
+                ],
+              ),
             ),
     );
   }
