@@ -5,7 +5,9 @@ class LocalAiServer {
 
   Future<bool> ensureRunning({
     required String baseUrl,
+    String speechProvider = 'edge',
     String? elevenLabsApiKey,
+    String? cartesiaApiKey,
   }) async =>
       false;
 
