@@ -679,7 +679,9 @@ class _AiVoiceStudioPageState extends State<AiVoiceStudioPage> {
             ),
             const SizedBox(height: 8),
             Text(
-              'ElevenLabs v4 uses expressive delivery cues while keeping your selected voice consistent.',
+              _speechProvider == 'cartesia'
+                  ? 'Sonic 3.6 naturally reads the emotion in your script. These styles refine pace; explicit emotion tags apply to English.'
+                  : 'ElevenLabs v4 uses expressive delivery cues while keeping your selected voice consistent.',
               style: theme.textTheme.bodySmall?.copyWith(
                 color: AuraTheme.muted,
                 height: 1.4,
@@ -891,7 +893,7 @@ class _AiVoiceStudioPageState extends State<AiVoiceStudioPage> {
                 const SizedBox(height: 8),
                 Text(
                   selectedProvider == 'cartesia'
-                      ? 'Cartesia Sonic 3.6 supports Bengali and expressive emotion/speed controls. Generation uses your Cartesia account credits.'
+                      ? 'Cartesia Sonic 3.6 supports Bengali. It naturally reads emotion in Bengali transcripts, with explicit emotion controls for English. Generation uses your Cartesia account credits.'
                       : 'ElevenLabs v4 supports expressive delivery. Generation uses your ElevenLabs account credits.',
                   style: Theme.of(dialogContext).textTheme.bodySmall?.copyWith(
                         color: AuraTheme.muted,
