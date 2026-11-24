@@ -32,8 +32,10 @@ def test_elevenlabs_lists_account_voices_for_requested_language() -> None:
         original = httpx.AsyncClient
 
         class ClientProxy:
-            async def __aenter__(self):
+            def __init__(self, *args, **kwargs) -> None:
                 self._client = original(transport=httpx.MockTransport(handler))
+
+            async def __aenter__(self):
                 await self._client.__aenter__()
                 return self._client
 
