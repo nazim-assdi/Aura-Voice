@@ -20,19 +20,17 @@ Check `/health`, `/api/v1/capabilities`, and `/docs`.
 - `GET /api/v1/speech/voices?locale=bn-BD` returns online voices for a locale.
 - `POST /api/v1/speech/generate` returns MP3 bytes. JSON body includes `text`, `language`, `voice`, `rate`, and `pitch`.
 
-The default provider is `edge`. It uses the community `edge-tts` Python client and the Edge online neural speech service. It is not an offline engine, is not a Microsoft-supported public API, and may change or become unavailable upstream. For offline synthesis, replace it with a licensed local provider adapter and benchmark the model before marking it ready.
+The default provider is `edge`. It uses the community `edge-tts` Python client and the Edge online neural speech service. It is not an offline engine, is not a Microsoft-supported public API, and may change or become unavailable upstream.
+
+For more expressive, lifelike speech, configure the optional ElevenLabs v4 provider. Set `AURA_SPEECH_PROVIDER=elevenlabs`, `AURA_ELEVENLABS_API_KEY`, and optionally `AURA_ELEVENLABS_MODEL=eleven_v4`. The provider loads voices from the authenticated account and uses the Text to Dialogue endpoint with one speaker and selectable delivery cues. Keep individual requests at or below 2,000 characters. Generation consumes the account's credits; check the provider's current plan and usage limits before production use. Never commit the API key.
+
+The Windows desktop app stores the key with Flutter Secure Storage and injects it into the bundled local backend process only. The backend URL is not shown in the AI Voice Studio workspace. For remote deployments, configure the provider key on the server; do not send user secrets to an untrusted backend.
 
 The API accepts at most 5,000 characters per script and currently limits each client IP to eight generation requests per minute. Keep the API private or behind suitable authentication/rate limiting when deploying it to the public internet. Set `AURA_SPEECH_PROVIDER=none` to disable cloud TTS.
 
 ## Client connection
 
-The Flutter client can store a backend base URL in AI Voice Studio. Common addresses:
-
-- Desktop running API locally: `http://127.0.0.1:8000`
-- Android emulator: `http://10.0.2.2:8000`
-- Physical phone: use the computer/server's reachable LAN or HTTPS address.
-
-For web clients, set `AURA_CORS_ORIGINS` to the exact deployed web origin.
+The Flutter client resolves its backend internally. The Windows desktop build starts its bundled server at loopback automatically. Android emulator builds use the host-loopback bridge; physical phones and web clients need a reachable server configured for that deployment. For web clients, set `AURA_CORS_ORIGINS` to the exact deployed web origin.
 
 
 ## Windows one-click start
