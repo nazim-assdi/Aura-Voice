@@ -41,7 +41,7 @@ A feature is only advertised as ready after its real engine is integrated and te
 ## What works in the current foundation
 
 - Flutter shell with a premium dark theme and responsive navigation.
-- FastAPI health and capabilities endpoints plus real online neural speech generation, locale-based voice discovery and MP3 response.
+- FastAPI health and capabilities endpoints plus standard Edge neural speech and optional ElevenLabs v4 expressive text-to-dialogue generation, account voice discovery and MP3 response.
 - Speech-provider interface and a safe unavailable provider that fails instead of returning fake audio.
 - Initial Rust offline PCM WAV renderer in `native/audio_engine`: integer/float WAV decode, sample-frame clip placement, multitrack gain/pan/mute/solo, fades, sample-peak/clipping report and PCM WAV export.
 - Versioned C ABI and public header for offline export, microphone capture, standalone WAV audition and callback-driven real-time multitrack session playback with sample-frame seek, pause/resume and loop controls.
@@ -74,17 +74,9 @@ flutter pub get
 flutter run
 ```
 
-The AI Voice workspace connects to the FastAPI backend. By default, the backend uses the online Edge neural speech adapter (no API key is requested). It requires internet access and is not an offline model or a Microsoft-supported public API. Voice availability depends on the upstream service. The API caps scripts at 5,000 characters and limits each client to eight speech generations per minute. Keep a publicly deployed backend behind appropriate access controls and rate limiting.
+The AI Voice workspace connects to its backend automatically; the backend URL is hidden from the workspace. By default, it uses the online Edge neural speech adapter (no API key is required). For more expressive, lifelike Bengali and multilingual speech, the Windows desktop app can optionally use ElevenLabs v4. Add your own ElevenLabs API key in Voice Engine settings; it is stored encrypted on the Windows account and passed only to the bundled local backend. ElevenLabs generation consumes account credits and supports up to 2,000 characters per dialogue request in the current integration. Both providers require internet access. Edge TTS is a community client, not an offline engine or a Microsoft-supported public API. Keep a publicly deployed backend behind appropriate access controls and rate limiting.
 
-For web builds, set `AURA_CORS_ORIGINS` to the exact website origin. On a physical Android phone, enter a reachable server/LAN URL in AI Voice Studio. An Android emulator uses `http://10.0.2.2:8000`.
-
-Configure the API base URL at run time:
-
-```bash
-flutter run --dart-define=AURA_API_BASE_URL=http://127.0.0.1:8000
-```
-
-For the Android emulator, use `http://10.0.2.2:8000` instead of `127.0.0.1`. A physical phone needs the computer's reachable LAN address and matching backend/CORS configuration.
+For web builds, set `AURA_CORS_ORIGINS` to the exact website origin. Android emulator builds use the host-loopback bridge; physical phones need a reachable server configured for that deployment. The backend address is managed internally by the desktop workspace and is not displayed to the user.
 
 ## Test the native offline audio renderer
 
@@ -105,7 +97,7 @@ No separate Flutter, Rust, Python, pip, Node.js or Docker installation is requir
 
 When AI Voice Studio is opened, the app starts its bundled local backend automatically at `http://127.0.0.1:8000`. The server runs while the AI Voice workspace is open and is stopped when that workspace is closed.
 
-The speech provider is online neural TTS and still requires an internet connection when generating speech. No provider API key or Python installation is required. The bundled server binds only to `127.0.0.1`; do not expose it on a public network without adding authentication and access controls.
+The standard speech provider is online neural TTS and still requires an internet connection when generating speech. No Python installation is required. ElevenLabs is optional and requires the user's own API key and account credits. The bundled server binds only to `127.0.0.1`; do not expose it on a public network without adding authentication and access controls.
 
 ## Run the FastAPI backend
 
