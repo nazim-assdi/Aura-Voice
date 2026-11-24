@@ -24,7 +24,7 @@ The default provider is `edge`. It uses the community `edge-tts` Python client a
 
 For more expressive, lifelike speech, configure either optional premium provider:
 
-- **Cartesia Sonic 3.6:** set `AURA_SPEECH_PROVIDER=cartesia`, `AURA_CARTESIA_API_KEY`, and optionally `AURA_CARTESIA_MODEL=sonic-3.6`. It supports Bengali and 43 other languages. The provider loads voices from the account, returns MP3, adjusts pacing, and applies explicit emotion guidance for English transcripts. For Bengali, Sonic infers emotion from the transcript.
+- **Cartesia Sonic 3.6:** set `AURA_SPEECH_PROVIDER=cartesia`, `AURA_CARTESIA_API_KEY`, and optionally `AURA_CARTESIA_MODEL=sonic-3.6`. It supports Bengali (the currently listed locale is `bn-IN`) and dozens of other languages. The provider loads voices from the account, returns MP3, adjusts pacing, and applies explicit emotion guidance for English transcripts. For Bengali, Sonic infers emotion from the transcript.
 - **ElevenLabs v4:** set `AURA_SPEECH_PROVIDER=elevenlabs`, `AURA_ELEVENLABS_API_KEY`, and optionally `AURA_ELEVENLABS_MODEL=eleven_v4`. The provider loads voices from the authenticated account and uses the Text to Dialogue endpoint with one speaker and selectable delivery cues. Keep individual requests at or below 2,000 characters.
 
 Both providers use your own account credits. Check the provider's current plan and usage limits before production use. Never commit API keys.
