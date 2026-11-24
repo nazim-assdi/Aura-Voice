@@ -155,15 +155,20 @@ class CartesiaSpeechProvider:
             "speed": round(max(0.6, min(1.5, 1.0 + rate / 100)), 2),
             "volume": 1.0,
         }
-        emotion = self._EMOTIONS.get(delivery)
-        if emotion:
-            generation_config["emotion"] = emotion
+        # Cartesia emotion tags are currently supported only for English.
+        # For Bengali and other languages, let Sonic infer natural emotion
+        # from punctuation, wording and context; pace remains adjustable.
+        if language.strip().split("-", 1)[0].lower() == "en":
+            emotion = self._EMOTIONS.get(delivery)
+            if emotion:
+                generation_config["emotion"] = emotion
 
         body = {
             "model_id": self._model_id,
             "transcript": text.strip(),
             "voice": voice,
             "language": language.strip(),
+            "normalization": "auto",
             "output_format": {
                 "container": "mp3",
                 "sample_rate": 44100,
