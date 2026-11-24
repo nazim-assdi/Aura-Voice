@@ -3,7 +3,11 @@ class LocalAiServer {
 
   static const instance = LocalAiServer._();
 
-  Future<bool> ensureRunning({required String baseUrl}) async => false;
+  Future<bool> ensureRunning({
+    required String baseUrl,
+    String? elevenLabsApiKey,
+  }) async =>
+      false;
 
   Future<void> stop() async {}
 }
