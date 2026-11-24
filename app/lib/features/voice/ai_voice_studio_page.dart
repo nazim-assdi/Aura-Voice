@@ -290,11 +290,21 @@ class _AiVoiceStudioPageState extends State<AiVoiceStudioPage> {
               : 'Generating neural speech…';
     });
     try {
+      var generationLanguage = _locale;
+      if (_speechProvider == 'cartesia') {
+        for (final availableVoice in _voices) {
+          if (availableVoice.id == _selectedVoice &&
+              availableVoice.locale.isNotEmpty) {
+            generationLanguage = availableVoice.locale;
+            break;
+          }
+        }
+      }
       final audio = await _api.generateSpeech(
         baseUrl: _baseUrl ?? ApiClient.defaultBaseUrl,
         text: script,
         voice: _selectedVoice!,
-        language: _locale,
+        language: generationLanguage,
         rate: _rate,
         pitch: _pitch,
         delivery: _delivery,
