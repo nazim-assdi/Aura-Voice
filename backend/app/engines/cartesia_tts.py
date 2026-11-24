@@ -23,6 +23,13 @@ class CartesiaSpeechProvider:
         "energetic": "excited",
         "calm": "calm",
     }
+    _DELIVERY_SPEED = {
+        "natural": 1.0,
+        "warm": 0.96,
+        "storytelling": 0.92,
+        "energetic": 1.10,
+        "calm": 0.88,
+    }
 
     def __init__(
         self,
@@ -151,8 +158,9 @@ class CartesiaSpeechProvider:
         if not any(item.id == voice for item in available):
             raise ValueError("The selected Cartesia voice is not available for this language.")
 
+        guided_speed = (1.0 + rate / 100) * self._DELIVERY_SPEED[delivery]
         generation_config: dict[str, Any] = {
-            "speed": round(max(0.6, min(1.5, 1.0 + rate / 100)), 2),
+            "speed": round(max(0.6, min(1.5, guided_speed)), 2),
             "volume": 1.0,
         }
         # Cartesia emotion tags are currently supported only for English.
