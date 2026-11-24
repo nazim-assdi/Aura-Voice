@@ -14,6 +14,9 @@ class Settings(BaseSettings):
     speech_provider: str = "edge"
     elevenlabs_api_key: str = ""
     elevenlabs_model: str = "eleven_v4"
+    cartesia_api_key: str = ""
+    cartesia_model: str = "sonic-3.6"
+    cartesia_api_version: str = "2026-08-14"
     cors_origins: str = (
         "http://localhost:3000,"
         "http://localhost:5173,"
