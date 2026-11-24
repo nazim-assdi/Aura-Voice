@@ -82,11 +82,14 @@ class CartesiaSpeechProvider:
         if not language:
             return []
 
+        # Use the base language to discover available accents. For example,
+        # Cartesia currently lists Bengali as bn-IN, not a bn-BD locale.
+        request_language = language.split("-", 1)[0].lower()
         async with httpx.AsyncClient(timeout=httpx.Timeout(30.0, connect=12.0)) as client:
             response = await client.get(
                 f"{self._BASE_URL}/voices",
                 headers=self._headers(),
-                params={"limit": 100, "language": language},
+                params={"limit": 100, "language": request_language},
             )
         self._raise_for_status(response)
 
