@@ -9,11 +9,13 @@ class LocalAiServer {
   static final instance = LocalAiServer._();
 
   Process? _process;
-  String? _processApiKey;
+  String? _processConfigFingerprint;
 
   Future<bool> ensureRunning({
     required String baseUrl,
+    String speechProvider = 'edge',
     String? elevenLabsApiKey,
+    String? cartesiaApiKey,
   }) async {
     if (!Platform.isWindows) return false;
 
@@ -25,13 +27,24 @@ class LocalAiServer {
       return false;
     }
 
-    final apiKey = elevenLabsApiKey?.trim() ?? '';
-    if (_process != null && _processApiKey != apiKey) {
+    final provider = speechProvider.trim().toLowerCase();
+    if (!{'edge', 'elevenlabs', 'cartesia'}.contains(provider)) {
+      return false;
+    }
+    final elevenKey = elevenLabsApiKey?.trim() ?? '';
+    final cartesiaKey = cartesiaApiKey?.trim() ?? '';
+    if (provider == 'elevenlabs' && elevenKey.isEmpty) return false;
+    if (provider == 'cartesia' && cartesiaKey.isEmpty) return false;
+
+    // This fingerprint is used only in memory to restart the local backend if
+    // the selected provider or its credential changes. It is never logged.
+    final configFingerprint = '$provider\u0000$elevenKey\u0000$cartesiaKey';
+    if (_process != null && _processConfigFingerprint != configFingerprint) {
       await stop();
     }
 
     const api = ApiClient();
-    final expectedProvider = apiKey.isEmpty ? 'edge-tts' : 'elevenlabs';
+    final expectedProvider = provider == 'edge' ? 'edge-tts' : provider;
 
     Future<Map<String, dynamic>?> readHealth() async {
       try {
@@ -57,11 +70,16 @@ class LocalAiServer {
       if (!await server.exists()) return false;
 
       final environment = Map<String, String>.from(Platform.environment);
-      environment['AURA_SPEECH_PROVIDER'] = expectedProvider;
-      if (apiKey.isEmpty) {
+      environment['AURA_SPEECH_PROVIDER'] = provider;
+      if (elevenKey.isEmpty) {
         environment.remove('AURA_ELEVENLABS_API_KEY');
       } else {
-        environment['AURA_ELEVENLABS_API_KEY'] = apiKey;
+        environment['AURA_ELEVENLABS_API_KEY'] = elevenKey;
+      }
+      if (cartesiaKey.isEmpty) {
+        environment.remove('AURA_CARTESIA_API_KEY');
+      } else {
+        environment['AURA_CARTESIA_API_KEY'] = cartesiaKey;
       }
 
       try {
@@ -73,14 +91,14 @@ class LocalAiServer {
           runInShell: false,
         );
         _process = process;
-        _processApiKey = apiKey;
+        _processConfigFingerprint = configFingerprint;
         unawaited(process.stdout.drain<void>());
         unawaited(process.stderr.drain<void>());
         unawaited(
           process.exitCode.then((_) {
             if (identical(_process, process)) {
               _process = null;
-              _processApiKey = null;
+              _processConfigFingerprint = null;
             }
           }),
         );
@@ -104,7 +122,7 @@ class LocalAiServer {
   Future<void> stop() async {
     final process = _process;
     _process = null;
-    _processApiKey = null;
+    _processConfigFingerprint = null;
     if (process == null) return;
     process.kill();
     try {
