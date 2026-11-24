@@ -48,6 +48,11 @@ async def list_voices(
                 "message": "The online voice service did not respond in time.",
             },
         ) from error
+    except RuntimeError as error:
+        raise HTTPException(
+            status_code=502,
+            detail={"code": "voice_list_failed", "message": str(error)},
+        ) from error
     except Exception as error:
         raise HTTPException(
             status_code=502,
