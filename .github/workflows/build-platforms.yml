@@ -146,7 +146,7 @@ jobs:
       - name: Install Linux desktop dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev libasound2-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev
+          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev libasound2-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libsecret-1-dev libsecret-1-0
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
@@ -200,7 +200,7 @@ jobs:
           $pyiRoot = Join-Path $env:RUNNER_TEMP "aura-pyinstaller"
           New-Item -ItemType Directory -Force "$pyiRoot\dist", "$pyiRoot\build", "$pyiRoot\spec" | Out-Null
           Push-Location backend
-          python -m PyInstaller --clean --noconfirm --onedir --console --name aura-ai-server-diagnostic --distpath "$pyiRoot\diagnostic-dist" --workpath "$pyiRoot\diagnostic-build" --specpath "$pyiRoot\diagnostic-spec" --collect-all edge_tts --collect-all uvicorn --collect-all fastapi --collect-all pydantic_settings --collect-all certifi launcher.py
+          python -m PyInstaller --clean --noconfirm --onedir --console --name aura-ai-server-diagnostic --distpath "$pyiRoot\diagnostic-dist" --workpath "$pyiRoot\diagnostic-build" --specpath "$pyiRoot\diagnostic-spec" --collect-all edge_tts --collect-all uvicorn --collect-all fastapi --collect-all pydantic_settings --collect-all certifi --collect-all httpx --collect-all httpcore launcher.py
           python -m PyInstaller --clean --noconfirm --onedir --noconsole --name aura-ai-server --distpath "$pyiRoot\dist" --workpath "$pyiRoot\build" --specpath "$pyiRoot\spec" --collect-all edge_tts --collect-all uvicorn --collect-all fastapi --collect-all pydantic_settings --collect-all certifi launcher.py
           Pop-Location
           New-Item -ItemType Directory -Force dist\backend\aura-ai-server | Out-Null
